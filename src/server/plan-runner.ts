@@ -3,7 +3,6 @@ import { randomUUID } from "node:crypto";
 import { db, schema } from "../db/index.js";
 import { getAdapter } from "../adapters/registry.js";
 import { broadcast } from "./ws.js";
-import { cancelRun } from "./runner.js";
 import { claudeProfileManager } from "../adapters/claude/profile-manager.js";
 import { startWatch, stopWatch } from "./file-watcher.js";
 import pino from "pino";
@@ -81,8 +80,6 @@ export async function runPlanStep(options: StepRunOptions): Promise<void> {
       cwd,
     });
 
-    let streamLog = "";
-
     try {
       const result = await adapter.execute({
         runId,
@@ -93,7 +90,6 @@ export async function runPlanStep(options: StepRunOptions): Promise<void> {
         timeoutSec: 1800,
         claudeProfileEnv,
         onLog: (stream, chunk) => {
-          if (stream === "stdout") streamLog += chunk;
           broadcast({
             type: "plan:log",
             planId,

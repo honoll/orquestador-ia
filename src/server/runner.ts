@@ -161,10 +161,10 @@ async function executeInBackground(
     const timeoutSec = input.timeoutSec ?? DEFAULT_TIMEOUT[input.adapter] ?? 180;
 
     // For Claude: pick best available profile (failover on rate-limit requires API keys)
-    let claudeProfile = input.adapter === "claude"
+    const claudeProfile = input.adapter === "claude"
       ? claudeProfileManager.getBestProfile()
       : null;
-    let claudeProfileEnv = claudeProfile
+    const claudeProfileEnv = claudeProfile
       ? claudeProfileManager.getEnvForProfile(claudeProfile.id)
       : undefined;
 

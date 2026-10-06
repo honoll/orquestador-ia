@@ -139,7 +139,6 @@ export async function generatePlan(
   const plannerCwd = os.tmpdir();
 
   // Stream stdout chunks, extracting text deltas for the UI
-  let textBuffer = "";
   const { promise, kill } = runProcess({
     command: "claude",
     args,
@@ -155,7 +154,6 @@ export async function generatePlan(
         try {
           const msg: ClaudeStreamMessage = JSON.parse(trimmed);
           if (msg.type === "content_block_delta" && msg.delta?.text) {
-            textBuffer += msg.delta.text;
             options.onStream(msg.delta.text);
           }
         } catch {
