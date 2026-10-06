@@ -270,7 +270,7 @@ function GeneratingView({
         <span className="font-mono text-xs text-text-secondary">/plan</span>
         {plan.tier && (
           <span className="font-mono text-[10px] text-text-secondary">
-            tier: {TIER_TEXT[plan.tier]} ({tierDetail(plan).replace(/^JEV · confianza /, "JEV ")})
+            tier: {TIER_TEXT[plan.tier]} ({tierShort(plan)})
           </span>
         )}
         <div className="ml-auto flex items-center gap-3">
@@ -1213,6 +1213,10 @@ function BudgetBar({ plan, disabled, onSave }: { plan: Plan; disabled: boolean; 
 
 const TIER_TEXT = { trivial: "trivial", normal: "normal", critical: "crítico" } as const;
 
+function tierShort(plan: Plan): string {
+  return plan.tierSource === "jev" ? `JEV ${Math.round((plan.tierConfidence ?? 0) * 100)} %` : "sin JEV";
+}
+
 function tierDetail(plan: Plan): string {
   return plan.tierSource === "jev"
     ? `JEV · confianza ${Math.round((plan.tierConfidence ?? 0) * 100)} %`
@@ -1230,9 +1234,9 @@ function TierBadge({ plan }: { plan: Plan }) {
   );
 }
 
-function CriticalBanner({ plan, onApprove }: { plan: Plan; onApprove: () => void }) {
+function CriticalBanner({ plan, busy, onApprove }: { plan: Plan; busy: boolean; onApprove: () => void }) {
   const untouched = plan.steps.every((s) => s.status === "pending");
-  if (plan.tier !== "critical" || plan.status !== "pending" || plan.pauseReason || !untouched) return null;
+  if (plan.tier !== "critical" || plan.status !== "pending" || plan.pauseReason || !untouched || busy) return null;
   return (
     <div role="status" className="mx-4 my-2 flex flex-wrap items-center gap-3 rounded-lg border border-err/40 bg-err/10 px-3 py-2 font-mono text-[11px] text-text-primary">
       <span>Plan crítico: revisa los pasos (incluye una revisión de Opus al final) y apruébalo para ejecutarlo.</span>
@@ -1528,11 +1532,12 @@ export function PlanView({
   }
 
   async function handleApproveStep(stepId: string) {
+    setMode("running-all");
     const r = await postAction(`steps/${stepId}/approve`);
     if (r) {
-      setPlan((p) => ({ ...p, pauseReason: null, steps: p.steps.map((s) => (s.id === stepId ? { ...s, guardApproved: 1 } : s)) }));
+      setPlan((p) => ({ ...p, pauseReason: null, status: "running", steps: p.steps.map((s) => (s.id === stepId ? { ...s, guardApproved: 1 } : s)) }));
     }
-    await reloadPlan();
+    if (!r) await reloadPlan();
   }
 
   async function handleStop() {
@@ -1677,7 +1682,7 @@ export function PlanView({
               </button>
               )}
               {/* paso a paso no reanuda pasos cancelados; para un plan cancelado solo se ofrece reanudar todo */}
-              {plan.status !== "cancelled" && !hasCancelled && (
+              {plan.status !== "cancelled" && !hasCancelled && !criticalUntouched && (
                 <button
                   onClick={handleRunNext}
                   className="font-mono text-[11px] text-accent hover:text-text-primary border border-accent/30 rounded px-2.5 py-1 transition-colors"
@@ -1727,7 +1732,7 @@ export function PlanView({
       <BudgetBar plan={plan} disabled={isRunning} onSave={handleSettings} />
       {actionError && <p role="alert" className="mx-4 font-mono text-[10px] text-err">{actionError}</p>}
       <PauseBanner plan={plan} onContinue={handleContinue} />
-      <CriticalBanner plan={plan} onApprove={handleRunAll} />
+      <CriticalBanner plan={plan} busy={mode !== "idle"} onApprove={handleRunAll} />
       <GuardBanner plan={plan} onApprove={handleApproveStep} onCancel={handleStop} />
 
       {/* ── Resizable body: [plan+preview] / [chat] ── */}
