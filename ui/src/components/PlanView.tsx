@@ -1517,6 +1517,8 @@ export function PlanView({
   const isPaused = plan.status === "pending" && !!plan.pauseReason;
   const pendingCount = plan.steps.filter((s) => s.status === "pending").length;
   const failedCount = plan.steps.filter((s) => s.status === "failed").length;
+  const cancelledCount = plan.steps.filter((s) => s.status === "cancelled").length;
+  const hasCancelled = cancelledCount > 0;
   const succeededCount = plan.steps.filter((s) => s.status === "succeeded").length;
   const totalCost = plan.steps.reduce((acc, s) => acc + (s.costUsd ?? 0), 0);
   // Plan has failed/pending steps that can be resumed
@@ -1573,13 +1575,13 @@ export function PlanView({
           {!allDone && !isRunning && failedCount === 0 && !plan.pauseReason && plan.status !== "completed" && (
             <>
               <button
-                onClick={handleRunAll}
+                onClick={hasCancelled ? handleResume : handleRunAll}
                 className="font-mono text-[11px] text-ok hover:text-text-primary border border-ok/30 rounded px-2.5 py-1 transition-colors"
               >
-                {plan.status === "cancelled" || plan.status === "failed" ? "reanudar todo" : "ejecutar todo"}
+                {plan.status === "cancelled" || plan.status === "failed" || hasCancelled ? "reanudar todo" : "ejecutar todo"}
               </button>
               {/* paso a paso no reanuda pasos cancelados; para un plan cancelado solo se ofrece reanudar todo */}
-              {plan.status !== "cancelled" && (
+              {plan.status !== "cancelled" && !hasCancelled && (
                 <button
                   onClick={handleRunNext}
                   className="font-mono text-[11px] text-accent hover:text-text-primary border border-accent/30 rounded px-2.5 py-1 transition-colors"
@@ -1619,6 +1621,9 @@ export function PlanView({
           )}
           {!isRunning && plan.status === "cancelled" && (
             <span className="font-mono text-[10px] text-text-tertiary">cancelado</span>
+          )}
+          {!isRunning && plan.status === "pending" && !plan.pauseReason && !allDone && (
+            <span className="font-mono text-[10px] text-text-tertiary">pendiente</span>
           )}
         </div>
       </div>

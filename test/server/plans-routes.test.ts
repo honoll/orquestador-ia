@@ -122,6 +122,28 @@ describe("rutas de planes (F2)", () => {
     expect((await getStep(s3)).status).toBe("failed");
   });
 
+  it("run-all de un plan pending con un paso cancelado lo reanuda", async () => {
+    const id = await mk({ status: "pending" });
+    await mkStep(id, { stepIndex: 0, stepKey: "s1", dependsOn: "[]", status: "succeeded" });
+    const s2 = await mkStep(id, { stepIndex: 1, stepKey: "s2", dependsOn: JSON.stringify(["s1"]), status: "cancelled" });
+    h.runPlanDag.mockClear();
+    expect((await req(`/${id}/run-all`)).status).toBe(202);
+    expect((await getStep(s2)).status).toBe("pending");
+    expect(h.runPlanDag).toHaveBeenCalledTimes(1);
+  });
+
+  it("run-next sin pasos pending pero con cancelados los resetea y lanza", async () => {
+    const id = await mk({ status: "pending" });
+    await mkStep(id, { stepIndex: 0, stepKey: "s1", dependsOn: "[]", status: "succeeded" });
+    const s2 = await mkStep(id, { stepIndex: 1, stepKey: "s2", dependsOn: JSON.stringify(["s1"]), status: "cancelled" });
+    h.runPlanDag.mockClear();
+    const r = await req(`/${id}/run-next`);
+    expect(r.status).toBe(202);
+    expect(await r.json()).toMatchObject({ ok: true, stepId: s2 });
+    expect((await getStep(s2)).status).toBe("pending");
+    expect(h.runPlanDag).toHaveBeenCalledTimes(1);
+  });
+
   it("reintentar un paso borra la síntesis vieja", async () => {
     const id = await mk({ status: "completed", synthesisStatus: "succeeded", synthesis: "vieja" });
     const s = await mkStep(id, { status: "failed" });

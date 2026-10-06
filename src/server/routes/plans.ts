@@ -255,7 +255,10 @@ app.post("/:id/run-all", async (c) => {
   const plan = await getPlan(id);
   if (!plan) return c.json({ error: "Not found" }, 404);
   if (isPlanRunning(id)) return c.json(RUNNING, 409);
-  if (plan.status === "cancelled" || plan.status === "failed") await resetUnfinishedSteps(id);
+  const hasCancelled = await db.select({ id: schema.planSteps.id }).from(schema.planSteps)
+    .where(and(eq(schema.planSteps.planId, id), eq(schema.planSteps.status, "cancelled"))).then((r) => r.length > 0);
+  // Un plan pending con pasos cancelados (p. ej. tras reintentar un paso después de detener) también se reanuda.
+  if (plan.status === "cancelled" || plan.status === "failed" || hasCancelled) await resetUnfinishedSteps(id);
   runPlanDag(id, await planCwd(plan), { mode: "all" }).catch((err) => console.error("runPlanDag error:", err));
   return c.json({ ok: true, planId: id }, 202);
 });
@@ -267,9 +270,18 @@ app.post("/:id/run-next", async (c) => {
   if (!plan) return c.json({ error: "Not found" }, 404);
   if (isPlanRunning(id)) return c.json(RUNNING, 409);
 
-  const allSteps = await db.select().from(schema.planSteps)
+  let allSteps = await db.select().from(schema.planSteps)
     .where(eq(schema.planSteps.planId, id))
     .orderBy(asc(schema.planSteps.stepIndex));
+  if (!allSteps.some((r) => r.status === "pending") && allSteps.some((r) => r.status === "cancelled")) {
+    // Quedan pasos sin hacer (cancelados): se reanudan en vez de responder done.
+    await db.update(schema.planSteps)
+      .set({ status: "pending", errorMessage: null, startedAt: null, finishedAt: null })
+      .where(and(eq(schema.planSteps.planId, id), eq(schema.planSteps.status, "cancelled")));
+    allSteps = await db.select().from(schema.planSteps)
+      .where(eq(schema.planSteps.planId, id))
+      .orderBy(asc(schema.planSteps.stepIndex));
+  }
   if (!allSteps.some((r) => r.status === "pending")) return c.json({ done: true }, 200);
   // El paso que el planificador realmente puede arrancar. Con el plan parado, un running es huérfano
   // (el planificador lo regresa a pending). La cuota de agy no se mira aquí: si bloquea, el planificador pausa.
