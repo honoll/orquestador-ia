@@ -1,5 +1,37 @@
 # Orquestador-IA — Continuación y Estado
 
+## F2 — Plan como DAG en paralelo y síntesis de Opus · completado 2026-10-06
+
+**Rama:** `f2-dag-paralelo`
+
+Lo que se agregó:
+- **Plans como grafo (DAG):** cada paso tiene `step_key`, `depends_on` (array de claves), `writes` (0=lector, 1=escritor), `estimated_tokens`; el plan tiene `estimated_tokens`, `budget_tokens`, `used_tokens`, `max_parallel` (default 3), `pause_reason` (cuota|presupuesto), `synthesis`, `synthesis_status`, `synthesis_error`. Planes viejos sin claves corren como cadena lineal.
+- **Paralelismo "A":** lectores en paralelo (hasta `max_parallel`), escritores en fila (nunca dos escritores simultáneamente, un lector puede correr junto a un escritor)
+- **Contexto mínimo:** cada paso recibe solo los resultados de sus dependencias directas, recortados a 4000 caracteres cada uno
+- **Planificador dueño del estado:** `src/server/plan-scheduler.ts` es el único que maneja estado, lanza pasos listos, verifica cuota antes de lanzar agy, detiene en falla y espera a tareas en vuelo
+- **Presupuesto "A":** tope por defecto = 1.5 × estimación de Opus (editable); se cuentan tokens de todos los intentos y síntesis; al alcanzarlo pausa sin lanzar más; "continuar" sube tope +50%
+- **Síntesis final:** Opus 5.5 vía adapter claude en modo solo lectura recibe pedido original + resultados (recortados a 6000 c/u) y escribe respuesta final en español. Si falla, plan queda `completed` con `synthesis_status = failed` y botón "reintentar síntesis"
+- **Rutas nuevas:** run-all, run-next (mode next), resume, steps/:id/retry, settings (PATCH), continue (budget pause), synthesis/retry, cancel
+- **Eventos WS nuevos:** plan:budget, plan:synthesis, plan:synthesis:log, plan:done {paused}
+- **UI:** diagrama por niveles, insignias lee/escribe, tokens por paso, barra presupuesto (tope editable, paralelismo), aviso pausa con "continuar", tarjeta respuesta final con markdown
+
+Verificación en vivo (2026-10-06):
+- Suite verde: `npm test && npm run lint && npm run typecheck && npm run build:ui`
+- Plan real: dos lectores sin dependencia se ejecutaron en paralelo; escritor dependió de ambos
+- RESUMEN.md se escribió correctamente
+- Presupuesto pausó antes de síntesis (216k usado vs 55.5k cap), "continuar (+50 %)" completó síntesis
+- PlanView mostró diagrama, barra presupuesto, tarjeta respuesta final; sin errores nuevos en consola
+
+Cómo usar:
+1. POST /api/plans con descripción → Opus planifica pasos con dependencias
+2. GET /api/plans/:id verifica: pasos con stepKey, dependencias, estimatedTokens, budgetTokens
+3. POST /api/plans/:id/run-all lanza todos en paralelo hasta maxParallel; PATCH settings si necesitas ajustar presupuesto o paralelismo
+4. Si presupuesto toca cuota antes de síntesis: pausa y muestra banner "continuar"; POST /api/plans/:id/continue (+50 %) para seguir
+5. POST /api/plans/:id/synthesis/retry si síntesis falló
+6. WebSocket escucha plan:budget, plan:synthesis, plan:done para actualizar UI
+
+---
+
 ## F1 — Antigravity (agy), cuentas y medidor · completado 2026-10-06
 
 **Rama:** `f1-antigravity-cuentas`

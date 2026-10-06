@@ -55,11 +55,50 @@ POST /api/tasks → POST /api/tasks/:id/run
   → parse() extracts metadata → run saved to DB → final status broadcast
 ```
 
-### Plan System
+### Plan System (F2: DAG, Parallelism, Budget, Opus Synthesis)
 
-`POST /api/plans` → `planner.ts` calls Claude (`PLANNER_MODEL` from `src/config/models.ts`, Opus 5.5) with a routing system prompt generated from `ROUTABLE_ADAPTERS` + `MODEL_CATALOG` (`claude`, `codex`, `agy` are routable); `normalizeSteps` validates each step against the catalog (disallowed adapter throws, unknown model falls back to the adapter default) → Claude outputs JSON with steps `{ description, adapter, model, reason, prompt }` → stored as `plan_steps` → `plan-runner.ts` executes steps sequentially with up to 2 retries per step.
+**Core design:** Plans are DAGs where each step has `step_key`, `depends_on` (JSON array of step keys), `writes` (0=read, 1=write), and `estimated_tokens`. Plans track `estimated_tokens`, `budget_tokens` (default `ceil(1.5 × estimated)`), `used_tokens`, `max_parallel` (default **3**, configurable 1–5), `pause_reason` (quota|budget), and final `synthesis` result. Old plans without step keys run as a linear write-once chain.
 
-Retry logic: transient errors (429, 503, rate limit text) → retry; unknown session error → retry without `--resume`; other errors → fail step and stop plan.
+**Step execution model:**
+- `src/server/plan-dag.ts` — pure logic: `validateDag` (unique keys, no invalid/self/circular deps), `toDagSteps` (compute levels), `pickRunnable` (steps whose `depends_on` are `succeeded`/`skipped`), budget helpers, and prompt builders. Dependency results are framed as data (not instructions) and clipped to **4000 chars**; synthesis output clipped to **6000**.
+- `src/server/plan-scheduler.ts` — **sole owner of plan state:** launches ready steps (readers in parallel up to `max_parallel`, one writer at a time), passes only direct-dependency results to each step, checks active agy account quota (pre-dispatch: if only agy is ready and account is blocked, pause without issuing a call), checks budget before each launch round, pauses on budget exhaustion (`pause_reason: budget`), cancels in-flight processes on failure/cancel (Windows: `taskkill /T /F`, kills entire subtree including synthesis), marks cancelled, then runs Opus synthesis (read-only adapter, cwd = `os.tmpdir()`).
+- `runPlanStep(step)` returns `{ status: succeeded | failed | paused_quota, tokensUsed }`. Plan `failed` if any non-agy step fails; plan stops launching on any failure but waits for in-flight tasks.
+
+**Parallelism rule A:** Readers run in parallel; **never two writers simultaneously.** A writer can run alongside readers.
+
+**Budget rule A:** Default limit = `ceil(1.5 × Opus estimate)`, editable per plan. Counts all step attempts + synthesis. On budget exhaustion: terminates in-flight, marks paused, shows "continuar" banner. POST `/api/plans/:id/continue` raises limit by `ceil(1.5 × max(previous_limit, used_tokens))`.
+
+**Quota handling:** Before launching an agy step, check if active account is quota-blocked. If the only ready step is agy and it is blocked, pause plan (no API call). If agy step runs and returns `quota_exhausted`, revert step to `pending` ("Pausado por cuota…"), do not retry, plan becomes `pending`.
+
+**Final synthesis:** After all steps `succeeded`/`skipped`, Opus 5.5 (via claude adapter in **read-only mode**, cwd = `os.tmpdir()`) receives original request + all results (each clipped to 6000 chars, marked untrusted), outputs final Spanish answer. Stored in plan as `synthesis` with `synthesis_status` (succeeded|failed) and optional `synthesis_error`. If synthesis fails, plan is `completed` with `synthesis_status: failed` and a "retry synthesis" button.
+
+**Routes (new in F2):**
+- `POST /api/plans/:id/run-all` — launch all-in-parallel mode
+- `POST /api/plans/:id/run-next` — mode next: one step per request
+- `POST /api/plans/:id/resume` — resume after pause
+- `POST /api/plans/:id/steps/:stepId/retry` — retry a failed step
+- `PATCH /api/plans/:id/settings` — `{ budgetTokens, maxParallel }`
+- `POST /api/plans/:id/continue` — budget pause → raise limit +50%
+- `POST /api/plans/:id/synthesis/retry` — re-run synthesis on failure
+- `DELETE /api/plans/:id` → `cancel` kill in-flight + mark cancelled + clear running synthesis
+
+**WebSocket events (new in F2):**
+- `plan:budget` — `{ planId, usedTokens, budgetTokens, estimatedTokens }`
+- `plan:synthesis` — `{ planId, synthesisStatus, synthesisError? }`
+- `plan:synthesis:log` — text chunks from synthesis streaming
+- `plan:done` — `{ planId, status, paused?: boolean }`
+
+**UI (F2):**
+- PlanView diagram by levels (parallel steps stacked vertically)
+- Read/write badges and token count per step
+- Budget bar with editable limit and parallel slider
+- Pause banner (quota or budget) with "continuar" button
+- Final-answer card with markdown synthesis
+- Cancel kills in-flight processes
+
+**Known issues (deferred to F3):**
+1. **Codex token spike:** Loads user's global skills and AGENTS.md (walks up from cwd under `C:\Users\sidel`) → inflates estimate (Codex used 168k on a 12k step). Candidate fix: isolate worker config.
+2. **PlanView header:** Shows "✓ completado" while paused before synthesis (cosmetic; fixed in final review wave).
 
 ### WebSocket
 
