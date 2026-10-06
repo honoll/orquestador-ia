@@ -5,7 +5,7 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 
 const h = vi.hoisted(() => {
-  const state = { current: 0, max: 0, calls: [] as { type: string; key: string; prompt: string; start: number; end: number; readOnly?: boolean; model?: string }[], fail: new Set<string>(), tokens: 100, delayMs: 40, withKill: false, killed: 0, onStart: null as null | (() => void) };
+  const state = { current: 0, max: 0, calls: [] as { type: string; key: string; prompt: string; start: number; end: number; readOnly?: boolean; model?: string }[], fail: new Set<string>(), tokens: 100, delayMs: 40, withKill: false, killed: 0, onStart: null as null | (() => void), delayByKey: {} as Record<string, number>, accountThrows: false };
   const ok = (summary: string) => ({
     exitCode: 0, signal: null, timedOut: false, stdout: "", stderr: "", summary, sessionId: null, model: null,
     costUsd: 0, inputTokens: state.tokens, outputTokens: 0, errorMessage: null, errorFamily: null, retryNotBefore: null,
@@ -17,13 +17,14 @@ const h = vi.hoisted(() => {
       state.current++;
       state.max = Math.max(state.max, state.current);
       const start = Date.now();
+      const key = /\[(s\d+)\]/.exec(ctx.prompt)?.[1] ?? "synth";
       state.onStart?.();
       await new Promise<void>((r) => {
-        const t = setTimeout(r, state.delayMs);
-        if (state.withKill) ctx.onKill?.(() => { state.killed++; clearTimeout(t); r(); });
+        let done = false;
+        const t = setTimeout(() => { done = true; r(); }, state.delayByKey[key] ?? state.delayMs);
+        if (state.withKill) ctx.onKill?.(() => { if (done) return; done = true; state.killed++; clearTimeout(t); r(); });
       });
       state.current--;
-      const key = /\[(s\d+)\]/.exec(ctx.prompt)?.[1] ?? "synth";
       state.calls.push({ type, key, prompt: ctx.prompt, start, end: Date.now(), readOnly: ctx.readOnly, model: ctx.model });
       if (state.fail.has(key)) return { ...ok(""), exitCode: 1, errorMessage: "boom", errorFamily: "unknown" };
       return ok(`resultado-${key}`);
@@ -32,6 +33,16 @@ const h = vi.hoisted(() => {
   return { state, adapters: { claude: make("claude"), codex: make("codex"), agy: make("agy") } as Record<string, any> };
 });
 
+vi.mock("../../src/server/agy-accounts.js", async (importOriginal) => {
+  const orig = await importOriginal<typeof import("../../src/server/agy-accounts.js")>();
+  return {
+    ...orig,
+    getActiveAccount: (...a: Parameters<typeof orig.getActiveAccount>) => {
+      if (h.state.accountThrows) throw new Error("db caída");
+      return orig.getActiveAccount(...a);
+    },
+  };
+});
 vi.mock("../../src/adapters/registry.js", () => ({ getAdapter: (t: string) => h.adapters[t], adapters: h.adapters }));
 
 const { migrationDone } = await import("../../src/db/migrate.js");
@@ -43,7 +54,7 @@ const { eq } = await import("drizzle-orm");
 const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "sched-"));
 beforeAll(async () => { await migrationDone; });
 beforeEach(() => {
-  Object.assign(h.state, { current: 0, max: 0, calls: [], tokens: 100, delayMs: 40, withKill: false, killed: 0, onStart: null });
+  Object.assign(h.state, { current: 0, max: 0, calls: [], tokens: 100, delayMs: 40, withKill: false, killed: 0, onStart: null, delayByKey: {}, accountThrows: false });
   h.state.fail.clear();
 });
 
@@ -176,7 +187,39 @@ describe("planificador", () => {
 
   it("si algo truena (plan inexistente), no deja el plan marcado como corriendo", async () => {
     const id = randomUUID();
-    await expect(runPlanDag(id, cwd)).rejects.toThrow(/not found/);
+    await expect(runPlanDag(id, cwd)).resolves.toBeUndefined();
+    expect(isPlanRunning(id)).toBe(false);
+  });
+
+  it("cancelar durante la síntesis mata a Opus y no marca el plan completed", async () => {
+    Object.assign(h.state, { withKill: true, delayByKey: { synth: 2000 } });
+    const id = await mkPlan([{ key: "s1" }]);
+    const p = runPlanDag(id, cwd);
+    const t0 = Date.now();
+    while ((await plan(id)).synthesisStatus !== "running") {
+      if (Date.now() - t0 > 3000) throw new Error("la síntesis nunca arrancó");
+      await new Promise((r) => setTimeout(r, 10));
+    }
+    await new Promise((r) => setTimeout(r, 30)); // que el proceso registre su kill
+    expect(cancelPlanRun(id)).toBe(true);
+    await p;
+    expect(h.state.killed).toBe(1);
+    expect(Date.now() - t0).toBeLessThan(1500);
+    const row = await plan(id);
+    expect(row.status).not.toBe("completed");
+    expect(row.synthesis).toBeNull();
+    expect(isPlanRunning(id)).toBe(false);
+  });
+
+  it("si algo truena a media corrida: mata lo que corre y deja el plan failed con el error", async () => {
+    Object.assign(h.state, { withKill: true, delayByKey: { s2: 2000 } });
+    const id = await mkPlan([{ key: "s1" }, { key: "s2" }]);
+    h.state.onStart = () => { h.state.accountThrows = true; };
+    const t0 = Date.now();
+    await runPlanDag(id, cwd);
+    expect(Date.now() - t0).toBeLessThan(1500);
+    expect(h.state.killed).toBe(1);
+    expect(await plan(id)).toMatchObject({ status: "failed", errorMessage: "db caída" });
     expect(isPlanRunning(id)).toBe(false);
   });
 });

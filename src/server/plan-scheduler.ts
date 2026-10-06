@@ -26,6 +26,20 @@ const active = new Map<string, ActiveRun>();
 const now = () => new Date().toISOString();
 const emit = (event: Record<string, unknown>) => broadcast({ ...event, timestamp: now() } as any);
 
+/** Registra el kill de un proceso; si el run ya está cancelado, lo mata en cuanto aparece. */
+function registerKill(run: ActiveRun, kill: () => void): void {
+  run.kills.add(kill);
+  if (run.cancelled) {
+    try { kill(); } catch { /* proceso ya terminado */ }
+  }
+}
+
+function killAll(run: ActiveRun): void {
+  for (const kill of run.kills) {
+    try { kill(); } catch { /* proceso ya terminado */ }
+  }
+}
+
 export function isPlanRunning(planId: string): boolean {
   return active.has(planId);
 }
@@ -35,9 +49,7 @@ export function cancelPlanRun(planId: string): boolean {
   const run = active.get(planId);
   if (!run) return false;
   run.cancelled = true;
-  for (const kill of run.kills) {
-    try { kill(); } catch { /* proceso ya terminado */ }
-  }
+  killAll(run);
   return true;
 }
 
@@ -121,13 +133,8 @@ export async function runPlanDag(planId: string, cwd: string, opts: { mode?: "al
           stepId: step.id,
           cwd,
           promptOverride: buildStepPrompt(row.prompt, deps),
-          onKillRegistered: (kill) => {
-            run.kills.add(kill);
-            // Si cancelaron entre el arranque del paso y el spawn, matar en cuanto haya proceso.
-            if (run.cancelled) {
-              try { kill(); } catch { /* proceso ya terminado */ }
-            }
-          },
+          // Si cancelaron entre el arranque del paso y el spawn, se mata en cuanto haya proceso.
+          onKillRegistered: (kill) => registerKill(run, kill),
         })
           .catch(async (err: Error) => {
             log.error({ err, stepId: step.id }, "runPlanStep lanzó una excepción");
@@ -182,7 +189,19 @@ export async function runPlanDag(planId: string, cwd: string, opts: { mode?: "al
       emit({ type: "plan:done", planId, status: "completed" });
       return;
     }
-    await runSynthesis(planId);
+    await runSynthesis(planId, run);
+  } catch (err) {
+    // Error inesperado (p. ej. la base de datos): matar lo que corre y dejar el plan failed, sin relanzar.
+    log.error({ err, planId }, "runPlanDag falló de forma inesperada");
+    killAll(run);
+    if (run.cancelled) return; // cancelar nunca deja el plan failed
+    const message = (err as Error)?.message ?? String(err);
+    try {
+      await setPlan(planId, { status: "failed", errorMessage: message.slice(0, 2000) });
+    } catch (dbErr) {
+      log.error({ err: dbErr, planId }, "No se pudo marcar el plan como failed");
+    }
+    emit({ type: "plan:done", planId, status: "failed", error: message });
   } finally {
     stopWatch(planId); // idempotente: cubre la salida por excepción
     active.delete(planId);
@@ -190,7 +209,7 @@ export async function runPlanDag(planId: string, cwd: string, opts: { mode?: "al
 }
 
 /** Opus 5.5 junta los resultados en la respuesta final. Asume que el plan no tiene pasos corriendo. */
-export async function runSynthesis(planId: string): Promise<void> {
+export async function runSynthesis(planId: string, run?: ActiveRun): Promise<void> {
   const plan = await getPlan(planId);
   if (budgetExceeded(plan.usedTokens, plan.budgetTokens)) {
     await setPlan(planId, { status: "pending", pauseReason: "budget" });
@@ -223,6 +242,7 @@ export async function runSynthesis(planId: string): Promise<void> {
       timeoutSec: 600,
       readOnly: true,
       onLog: (stream, data) => emit({ type: "plan:synthesis:log", planId, stream, data }),
+      onKill: run ? (kill) => registerKill(run, kill) : undefined,
     });
     await addUsedTokens(planId, (result.inputTokens || 0) + (result.outputTokens || 0));
     text = result.summary?.trim() ?? "";
@@ -232,6 +252,9 @@ export async function runSynthesis(planId: string): Promise<void> {
   } catch (err) {
     errorMessage = (err as Error).message;
   }
+
+  // Cancelado durante la síntesis: la ruta de cancelar es dueña del estado del plan.
+  if (run?.cancelled) return;
 
   if (errorMessage) {
     await setPlan(planId, { status: "completed", synthesisStatus: "failed", synthesisError: errorMessage.slice(0, 2000) });
@@ -246,9 +269,10 @@ export async function runSynthesis(planId: string): Promise<void> {
 /** Reintento manual de la síntesis (botón de la UI). */
 export async function retrySynthesis(planId: string): Promise<boolean> {
   if (active.has(planId)) return false;
-  active.set(planId, { cancelled: false, kills: new Set() });
+  const run: ActiveRun = { cancelled: false, kills: new Set() };
+  active.set(planId, run);
   try {
-    await runSynthesis(planId);
+    await runSynthesis(planId, run);
   } finally {
     active.delete(planId);
   }

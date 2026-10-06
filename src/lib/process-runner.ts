@@ -52,6 +52,25 @@ export function runProcess(options: RunProcessOptions): { promise: Promise<RunPr
   let child: ChildProcess;
   let timedOut = false;
   let killed = false;
+  let closed = false;
+
+  /**
+   * En Windows con shell:true, child.kill solo termina cmd.exe y deja vivo al CLI: se mata el árbol con
+   * taskkill /T /F. No hace nada si el proceso ya cerró (evita matar un pid reciclado).
+   */
+  const killTree = (signal: NodeJS.Signals) => {
+    if (closed || !child) return;
+    if (process.platform === "win32" && child.pid) {
+      try {
+        const tk = spawn("taskkill", ["/pid", String(child.pid), "/T", "/F"], { stdio: "ignore", windowsHide: true });
+        tk.on("error", () => child?.kill(signal));
+      } catch {
+        child.kill(signal);
+      }
+      return;
+    }
+    child.kill(signal);
+  };
 
   const mergedEnv = { ...process.env, ...env } as NodeJS.ProcessEnv;
 
@@ -100,14 +119,15 @@ export function runProcess(options: RunProcessOptions): { promise: Promise<RunPr
     if (timeoutSec > 0) {
       timeoutHandle = setTimeout(() => {
         timedOut = true;
-        child.kill("SIGTERM");
+        killTree("SIGTERM");
         graceHandle = setTimeout(() => {
-          child.kill("SIGKILL");
+          killTree("SIGKILL");
         }, graceSec * 1000);
       }, timeoutSec * 1000);
     }
 
     child.on("close", (code, signal) => {
+      closed = true;
       if (timeoutHandle) clearTimeout(timeoutHandle);
       if (graceHandle) clearTimeout(graceHandle);
       resolve({
@@ -120,6 +140,7 @@ export function runProcess(options: RunProcessOptions): { promise: Promise<RunPr
     });
 
     child.on("error", (err) => {
+      closed = true;
       if (timeoutHandle) clearTimeout(timeoutHandle);
       if (graceHandle) clearTimeout(graceHandle);
       resolve({
@@ -135,8 +156,8 @@ export function runProcess(options: RunProcessOptions): { promise: Promise<RunPr
   const kill = () => {
     if (!killed) {
       killed = true;
-      child?.kill("SIGTERM");
-      setTimeout(() => child?.kill("SIGKILL"), graceSec * 1000);
+      killTree("SIGTERM");
+      setTimeout(() => killTree("SIGKILL"), graceSec * 1000).unref();
     }
   };
 
