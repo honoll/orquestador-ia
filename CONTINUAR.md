@@ -5,10 +5,10 @@
 **Rama:** `f1-antigravity-cuentas`
 
 Lo que se agregó:
-- **Adapter agy** (Antigravity) con 4 archivos: meta, detect, execute (NDJSON stdin), parse (stream-json)
+- **Adapter agy** (Antigravity; se resuelve por `AGY_PATH` o `%LOCALAPPDATA%gyingy.exe`, no PATH; spawn con `shell:false`, el resto de adapters usa `shell:true` en Windows; el análisis de adjuntos corre en modo solo lectura) con 4 archivos: meta, detect, execute (NDJSON stdin), parse (stream-json)
 - **Tablas** `agy_accounts` (etiqueta, activo, topes manuales 5h/7d, tope calibrado 5h, bloqueo por cuota, notas) y `agy_usage` (account_id, timestamp, tokens, origen: chat|plan|analysis)
-- **API** `/api/accounts` (CRUD), `/api/accounts/active` (activa actual + uso), `/api/accounts/switch-terminal` (terminal interactiva agy), `/api/usage/session` (tokens de sesión actual)
-- **Medidor estimado:** ventanas de 5h y 7d; límite efectivo = manual si existe, si no calibrado (5h); calibración al primer error de cuota (uso de la ventana 5h se vuelve tope calibrado); bloqueo hasta hora del error + 5h; un éxito posterior limpia el bloqueo
+- **API** `/api/accounts` (CRUD), `/api/accounts/active` (activa actual + uso), `/api/accounts/switch-terminal` (terminal interactiva agy), `/api/usage/session` (suma de filas `runs` desde que arrancó el servidor + filas `agy_usage` de origen analysis); una sola cuenta activa global
+- **Medidor estimado:** ventanas de 5h y 7d; límite efectivo = manual si existe, si no calibrado (5h); calibración en CADA error de cuota (lo gastado en 5 h se vuelve tope calibrado); bloqueo hasta la hora de reinicio del mensaje o ahora + 5 h; solo lo limpia un éxito cuya llamada empezó después del bloqueo; las corridas de agy con timeout/cancelación registran 0 tokens (subestima)
 - **Panel de cuentas** (izquierda): listar cuentas, uso por ventana, agregar/cambiar/eliminar/editar topes/cambiar cuenta
 - **HUD** (arriba): cuenta activa, uso 5h "~70 % · estimado · reinicia en 2h", aviso si >85% o bloqueado, tokens de sesión
 - **Pausa por cuota en planes:** paso agy con error cuota vuelve a `pending` ("Pausado por cuota…"), plan queda `pending`, UI ofrece reintentar tras cambiar de cuenta
@@ -24,7 +24,8 @@ Cómo usar:
 Pruebas:
 - Suite completa verde: `npm test && npm run lint && npm run typecheck && npm run build:ui`
 - API verificada en vivo: llamada agy de 11.6k tokens registrada correctamente en cuenta activa
-- UI sin errores en consola
+- Hay un error previo de `sw.js` en consola (no es de F1)
+- Desbordamiento horizontal del panel de cuentas: corregido en la revisión final
 
 ---
 

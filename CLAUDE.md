@@ -69,15 +69,15 @@ Retry logic: transient errors (429, 503, rate limit text) → retry; unknown ses
 
 - **Single-user, local-only**: backend binds `127.0.0.1:3100`, no auth.
 - **Session resume is adapter-scoped**: a conversation's `sessionId` is only passed as `--resume` if the new task uses the same adapter. Cross-adapter turns fall back to text prefix injection.
-- **Windows spawn**: `process-runner.ts` always uses `shell: true` on Windows to avoid `ENOENT`. Codex requires prompt via stdin (using `-` flag) because its args don't survive cmd.exe quoting.
+- **Windows spawn**: `process-runner.ts` uses `shell: true` on Windows to avoid `ENOENT`, except agy (`agy.exe`, `shell:false`). Codex requires prompt via stdin (using `-` flag) because its args don't survive cmd.exe quoting.
 - **No prompts as cmd.exe arguments (F1 rule)**: `quoteWindowsArg` cannot make `&` or `%VAR%` safe under cmd.exe (see `it.fails` in `test/lib/quote-windows-arg.test.ts`). Send prompts via stdin or spawn with `shell:false`.
-- **`agy` is spawned directly (`agy.exe`, `shell:false`) with the prompt as NDJSON on stdin.**
-- **Attachments pipeline**: attached files are pre-analyzed by agy via `POST /api/analyze` before reaching the main adapter.
+- **`agy` is spawned directly (`agy.exe`, `shell:false`) with the prompt as NDJSON on stdin.** It is resolved via `AGY_PATH` or `%LOCALAPPDATA%gyingy.exe` (not PATH).
+- **Attachments pipeline**: attached files are pre-analyzed by agy via `POST /api/analyze` before reaching the main adapter. The analysis runs agy in read-only mode (no `--dangerously-skip-permissions`).
 - **Headless flags**: Claude uses `--dangerously-skip-permissions`, Codex uses `--json`. These are required — interactive prompts break the runner.
 
 ### Database Schema (`src/db/schema.ts`)
 
-Tables: `projects`, `tasks`, `runs`, `plans`, `plan_steps`. Tasks belong to a project and a `conversation_id` (UUID grouping multi-turn exchanges). Runs belong to tasks and store raw output, parsed result, session IDs, cost, and tokens.
+Tables: `projects`, `tasks`, `runs`, `plans`, `plan_steps`, `agy_accounts`, `agy_usage`. Tasks belong to a project and a `conversation_id` (UUID grouping multi-turn exchanges). Runs belong to tasks and store raw output, parsed result, session IDs, cost, and tokens.
 
 ### Frontend State
 
@@ -91,7 +91,7 @@ Tables: `projects`, `tasks`, `runs`, `plans`, `plan_steps`. Tasks belong to a pr
 Introduced in F1 (2026-10-06). Support for multiple agy accounts with usage tracking and quota management.
 
 ### Tables
-- **`agy_accounts`** — `label` (free text), `active` (single active per session), `manual_limit_5h`, `manual_limit_7d`, `calibrated_limit_5h`, `quota_blocked_until` (ISO timestamp), `notes`
+- **`agy_accounts`** — `label` (free text), `active` (single active account globally), `manual_limit_5h`, `manual_limit_7d`, `calibrated_limit_5h`, `quota_blocked_until` (ISO timestamp), `quota_blocked_at` (ISO timestamp of the quota error), `notes`
 - **`agy_usage`** — `account_id`, `at` (ISO timestamp), `input_tokens`, `output_tokens`, `source` (enum: chat | plan | analysis)
 
 ### Routes
@@ -102,12 +102,13 @@ Introduced in F1 (2026-10-06). Support for multiple agy accounts with usage trac
 - `PATCH /api/accounts/:id` — edit label, manual limits, notes
 - `DELETE /api/accounts/:id` — delete account and its usage records
 - `POST /api/accounts/switch-terminal` — open visible terminal with interactive `agy` to log in / switch accounts
-- `GET /api/usage/session` — session-scoped tokens (from current run's WebSocket broadcasts)
+- `GET /api/usage/session` — sum of `runs` rows since the server started + `agy_usage` rows with source `analysis`
 
 ### Meter (Estimated)
 Tracks tokens per account in 5-hour and 7-day rolling windows. Effective limit = manual (if set), else calibrated (5h only).
-- **Calibration:** on first quota error in an account, tokens spent in the 5h window become the calibrated limit (7d window only has manual limit since we cannot determine which window was exhausted).
-- **Block until:** if error message includes reset time, store it; else estimate now + 5h. A later successful call clears the block.
+- **Calibration:** redone on EVERY quota error: tokens spent in the 5h window become the calibrated limit (7d window only has manual limit since we cannot determine which window was exhausted).
+- **Block until:** if error message includes reset time, store it; else estimate now + 5h. Only a success whose call started after the block (`quota_blocked_at`) clears it.
+- **Known underestimate:** agy runs that time out or are cancelled record 0 tokens.
 - **UI warning:** at 85% usage or while blocked. Orchestrator never auto-switches accounts; user must open "cambiar cuenta" terminal to interact with `agy` and mark the new active account in the orchestrator panel.
 
 ### Plans & Quota
