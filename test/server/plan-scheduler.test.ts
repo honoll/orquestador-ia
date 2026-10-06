@@ -30,7 +30,12 @@ const h = vi.hoisted(() => {
       return ok(`resultado-${key}`);
     },
   });
-  return { state, adapters: { claude: make("claude"), codex: make("codex"), agy: make("agy") } as Record<string, any> };
+  return { state, events: [] as any[], adapters: { claude: make("claude"), codex: make("codex"), agy: make("agy") } as Record<string, any> };
+});
+
+vi.mock("../../src/server/ws.js", async (importOriginal) => {
+  const orig = await importOriginal<typeof import("../../src/server/ws.js")>();
+  return { ...orig, broadcast: (e: any) => { h.events.push(e); } };
 });
 
 vi.mock("../../src/server/agy-accounts.js", async (importOriginal) => {
@@ -56,16 +61,17 @@ beforeAll(async () => { await migrationDone; });
 beforeEach(() => {
   Object.assign(h.state, { current: 0, max: 0, calls: [], tokens: 100, delayMs: 40, withKill: false, killed: 0, onStart: null, delayByKey: {}, accountThrows: false });
   h.state.fail.clear();
+  h.events.length = 0;
 });
 
-type S = { key: string; deps?: string[]; writes?: boolean; adapter?: string };
+type S = { key: string; deps?: string[]; writes?: boolean; adapter?: string; status?: string };
 async function mkPlan(steps: S[], extra: Record<string, unknown> = {}) {
   const planId = randomUUID();
   await db.insert(schema.plans).values({ id: planId, description: "pedido de prueba", status: "pending", ...extra } as any);
   for (const [i, s] of steps.entries()) {
     await db.insert(schema.planSteps).values({
       id: randomUUID(), planId, stepIndex: i, description: `desc ${s.key}`, adapter: s.adapter ?? "codex",
-      prompt: `[${s.key}] haz algo`, status: "pending", stepKey: s.key, dependsOn: JSON.stringify(s.deps ?? []), writes: s.writes ? 1 : 0,
+      prompt: `[${s.key}] haz algo`, status: (s.status ?? "pending") as any, stepKey: s.key, dependsOn: JSON.stringify(s.deps ?? []), writes: s.writes ? 1 : 0,
     });
   }
   return planId;
@@ -73,6 +79,7 @@ async function mkPlan(steps: S[], extra: Record<string, unknown> = {}) {
 const plan = (id: string) => db.select().from(schema.plans).where(eq(schema.plans.id, id)).then((r) => r[0]);
 const steps = (id: string) => db.select().from(schema.planSteps).where(eq(schema.planSteps.planId, id)).then((r) => r.sort((a, b) => a.stepIndex - b.stepIndex));
 const stepCalls = () => h.state.calls.filter((c) => c.key !== "synth");
+const doneEvents = (id: string) => h.events.filter((e) => e.type === "plan:done" && e.planId === id);
 
 describe("planificador", () => {
   it("lectores en paralelo, el escritor espera a sus dependencias y recibe sus resultados; síntesis al final", async () => {
@@ -163,6 +170,7 @@ describe("planificador", () => {
     expect(s2.status).toBe("pending");
     expect(stepCalls()).toHaveLength(1);
     expect(isPlanRunning(id)).toBe(false);
+    expect(await plan(id)).toMatchObject({ status: "cancelled", pauseReason: null });
   });
 
   it("si la síntesis falla, el plan queda completed con synthesis_status failed", async () => {
@@ -206,7 +214,8 @@ describe("planificador", () => {
     expect(h.state.killed).toBe(1);
     expect(Date.now() - t0).toBeLessThan(1500);
     const row = await plan(id);
-    expect(row.status).not.toBe("completed");
+    expect(row.status).toBe("cancelled");
+    expect(row.synthesisStatus).toBeNull();
     expect(row.synthesis).toBeNull();
     expect(isPlanRunning(id)).toBe(false);
   });
@@ -221,5 +230,30 @@ describe("planificador", () => {
     expect(h.state.killed).toBe(1);
     expect(await plan(id)).toMatchObject({ status: "failed", errorMessage: "db caída" });
     expect(isPlanRunning(id)).toBe(false);
+  });
+
+  it("pasos cancelados no cuentan como hechos: sin síntesis y el plan queda pending", async () => {
+    const id = await mkPlan([{ key: "s1", status: "succeeded" }, { key: "s2", status: "cancelled" }]);
+    await runPlanDag(id, cwd);
+    expect(h.state.calls).toHaveLength(0);
+    expect(await plan(id)).toMatchObject({ status: "pending", synthesisStatus: null });
+    expect(doneEvents(id)).toEqual([expect.objectContaining({ status: "pending" })]);
+  });
+
+  it("un paso running huérfano (reinicio) vuelve a pending y el plan corre normal", async () => {
+    const id = await mkPlan([{ key: "s1", status: "running" }, { key: "s2", deps: ["s1"] }], { maxParallel: 1, synthesisStatus: "running" });
+    await runPlanDag(id, cwd);
+    expect(stepCalls().map((x) => x.key)).toEqual(["s1", "s2"]);
+    expect(await plan(id)).toMatchObject({ status: "completed", synthesisStatus: "succeeded" });
+  });
+
+  it("modo next sin nada que lanzar emite plan:done pending; si lanza uno, no", async () => {
+    const blocked = await mkPlan([{ key: "s1", status: "cancelled" }, { key: "s2", deps: ["s1"] }]);
+    await runPlanDag(blocked, cwd, { mode: "next" });
+    expect(h.state.calls).toHaveLength(0);
+    expect(doneEvents(blocked)).toEqual([expect.objectContaining({ status: "pending" })]);
+    const ok = await mkPlan([{ key: "s1" }, { key: "s2" }]);
+    await runPlanDag(ok, cwd, { mode: "next" });
+    expect(doneEvents(ok)).toHaveLength(0);
   });
 });

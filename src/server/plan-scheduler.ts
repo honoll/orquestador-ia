@@ -1,6 +1,6 @@
 import os from "node:os";
 import { randomUUID } from "node:crypto";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import pino from "pino";
 import { db, schema } from "../db/index.js";
 import { broadcast } from "./ws.js";
@@ -63,6 +63,16 @@ async function setPlan(planId: string, patch: Partial<typeof schema.plans.$infer
   await db.update(schema.plans).set({ ...patch, updatedAt: now() }).where(eq(schema.plans.id, planId));
 }
 
+/**
+ * Salida por cancelación: la ruta de cancelar ya marcó el plan y emitió plan:done, pero el planificador
+ * lo vuelve a escribir (idempotente) para que una carrera no deje el plan en running. No emite plan:done.
+ */
+async function markCancelled(planId: string): Promise<void> {
+  await setPlan(planId, { status: "cancelled", pauseReason: null });
+  await db.update(schema.plans).set({ synthesisStatus: null })
+    .where(and(eq(schema.plans.id, planId), eq(schema.plans.synthesisStatus, "running")));
+}
+
 async function addUsedTokens(planId: string, tokens: number) {
   if (tokens > 0) {
     await db.update(schema.plans).set({ usedTokens: sql`${schema.plans.usedTokens} + ${tokens}` }).where(eq(schema.plans.id, planId));
@@ -88,6 +98,11 @@ export async function runPlanDag(planId: string, cwd: string, opts: { mode?: "al
   active.set(planId, run);
 
   try {
+    // Huérfanos tras un reinicio: con el plan ya registrado aquí nadie más es dueño de sus pasos.
+    await db.update(schema.planSteps).set({ status: "pending" })
+      .where(and(eq(schema.planSteps.planId, planId), eq(schema.planSteps.status, "running")));
+    await db.update(schema.plans).set({ synthesisStatus: null })
+      .where(and(eq(schema.plans.id, planId), eq(schema.plans.synthesisStatus, "running")));
     await setPlan(planId, { status: "running", pauseReason: null });
     startWatch(planId, cwd);
 
@@ -162,7 +177,10 @@ export async function runPlanDag(planId: string, cwd: string, opts: { mode?: "al
     }
 
     stopWatch(planId);
-    if (run.cancelled) return; // la ruta de cancelar ya marcó el plan y emitió plan:done
+    if (run.cancelled) {
+      await markCancelled(planId); // la ruta de cancelar ya emitió plan:done
+      return;
+    }
 
     if (failed) {
       await setPlan(planId, { status: "failed" });
@@ -176,10 +194,12 @@ export async function runPlanDag(planId: string, cwd: string, opts: { mode?: "al
     }
 
     const finalRows = await db.select().from(schema.planSteps).where(eq(schema.planSteps.planId, planId));
-    const allDone = finalRows.length > 0 && finalRows.every((s) => ["succeeded", "skipped", "cancelled"].includes(s.status));
+    // Cancelados no cuentan como hechos: el plan queda pending hasta que se reanude.
+    const allDone = finalRows.length > 0 && finalRows.every((s) => s.status === "succeeded" || s.status === "skipped");
     if (!allDone) {
       await setPlan(planId, { status: "pending" });
-      if (mode !== "next") emit({ type: "plan:done", planId, status: "pending" });
+      // En modo next que sí lanzó un paso, la UI espera "continuar"; si no lanzó nada, sale del paso a paso.
+      if (mode !== "next" || launched === 0) emit({ type: "plan:done", planId, status: "pending" });
       return;
     }
 
@@ -194,7 +214,11 @@ export async function runPlanDag(planId: string, cwd: string, opts: { mode?: "al
     // Error inesperado (p. ej. la base de datos): matar lo que corre y dejar el plan failed, sin relanzar.
     log.error({ err, planId }, "runPlanDag falló de forma inesperada");
     killAll(run);
-    if (run.cancelled) return; // cancelar nunca deja el plan failed
+    if (run.cancelled) {
+      // Cancelar nunca deja el plan failed.
+      try { await markCancelled(planId); } catch (dbErr) { log.error({ err: dbErr, planId }, "No se pudo marcar el plan como cancelled"); }
+      return;
+    }
     const message = (err as Error)?.message ?? String(err);
     try {
       await setPlan(planId, { status: "failed", errorMessage: message.slice(0, 2000) });
@@ -253,8 +277,11 @@ export async function runSynthesis(planId: string, run?: ActiveRun): Promise<voi
     errorMessage = (err as Error).message;
   }
 
-  // Cancelado durante la síntesis: la ruta de cancelar es dueña del estado del plan.
-  if (run?.cancelled) return;
+  // Cancelado durante la síntesis: la ruta ya emitió plan:done; solo se reescribe el estado (idempotente).
+  if (run?.cancelled) {
+    await markCancelled(planId);
+    return;
+  }
 
   if (errorMessage) {
     await setPlan(planId, { status: "completed", synthesisStatus: "failed", synthesisError: errorMessage.slice(0, 2000) });

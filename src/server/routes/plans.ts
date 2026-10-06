@@ -3,7 +3,8 @@ import { randomUUID } from "node:crypto";
 import { eq, desc, asc, and, inArray } from "drizzle-orm";
 import { db, schema } from "../../db/index.js";
 import { generatePlan, type GeneratedPlan } from "../planner.js";
-import { defaultBudget, extendBudget, MAX_PARALLEL_LIMIT } from "../plan-dag.js";
+import { defaultBudget, extendBudget, MAX_PARALLEL_LIMIT, toDagSteps, pickRunnable } from "../plan-dag.js";
+import { ROUTABLE_ADAPTERS } from "../../config/models.js";
 import { runPlanDag, cancelPlanRun, isPlanRunning, retrySynthesis } from "../plan-scheduler.js";
 import { broadcast } from "../ws.js";
 
@@ -18,6 +19,19 @@ async function planCwd(plan: typeof schema.plans.$inferSelect): Promise<string> 
 const RUNNING = { error: "El plan ya se está ejecutando" };
 async function getPlan(id: string) {
   return db.select().from(schema.plans).where(eq(schema.plans.id, id)).then((r) => r[0]);
+}
+
+/** Pasos que no terminaron (fallidos, cancelados o running huérfanos) vuelven a pending. */
+async function resetUnfinishedSteps(planId: string) {
+  await db.update(schema.planSteps)
+    .set({ status: "pending", errorMessage: null, startedAt: null, finishedAt: null })
+    .where(and(eq(schema.planSteps.planId, planId), inArray(schema.planSteps.status, ["failed", "cancelled", "running"])));
+}
+/** Una respuesta final vieja no sobrevive a un reintento. */
+async function clearSynthesis(planId: string) {
+  await db.update(schema.plans)
+    .set({ synthesisStatus: null, synthesis: null, synthesisError: null, updatedAt: new Date().toISOString() })
+    .where(eq(schema.plans.id, planId));
 }
 
 // Active plan-generation kill functions
@@ -199,24 +213,38 @@ app.patch("/:id/settings", async (c) => {
   return c.json(await getPlan(id));
 });
 
-// Update plan metadata (e.g. assign to project)
+// Update plan metadata: solo projectId (asignar a proyecto). Cualquier otro campo se ignora en silencio.
 app.patch("/:id", async (c) => {
   const id = c.req.param("id");
-  const body = await c.req.json<{ projectId?: string | null }>();
+  const body = await c.req.json<Record<string, unknown>>().catch(() => ({} as Record<string, unknown>));
+  const set: { projectId?: string | null; updatedAt: string } = { updatedAt: new Date().toISOString() };
+  if (body.projectId === null || typeof body.projectId === "string") set.projectId = body.projectId;
   await db.update(schema.plans)
-    .set({ ...body, updatedAt: new Date().toISOString() })
+    .set(set)
     .where(eq(schema.plans.id, id));
   const plan = await db.select().from(schema.plans).where(eq(schema.plans.id, id)).then((r) => r[0]);
   return c.json(plan);
 });
 
-// Update a step's prompt (edit plan)
+// Edit a step: solo description, adapter, model y prompt (adapter validado). Otros campos se ignoran en silencio.
 app.patch("/:planId/steps/:stepId", async (c) => {
   const { stepId } = c.req.param();
-  const body = await c.req.json<{ prompt?: string; description?: string; adapter?: string; model?: string }>();
-  await db.update(schema.planSteps)
-    .set({ ...body })
-    .where(eq(schema.planSteps.id, stepId));
+  const body = await c.req.json<Record<string, unknown>>().catch(() => ({} as Record<string, unknown>));
+  const set: { description?: string; adapter?: string; model?: string | null; prompt?: string } = {};
+  if (typeof body.description === "string") set.description = body.description;
+  if (typeof body.prompt === "string") set.prompt = body.prompt;
+  if (typeof body.model === "string" || body.model === null) set.model = body.model;
+  if (body.adapter !== undefined) {
+    if (typeof body.adapter !== "string" || !(ROUTABLE_ADAPTERS as readonly string[]).includes(body.adapter)) {
+      return c.json({ error: `adapter debe ser uno de: ${ROUTABLE_ADAPTERS.join(", ")}` }, 400);
+    }
+    set.adapter = body.adapter;
+  }
+  if (Object.keys(set).length > 0) {
+    await db.update(schema.planSteps)
+      .set(set)
+      .where(eq(schema.planSteps.id, stepId));
+  }
   const step = await db.select().from(schema.planSteps).where(eq(schema.planSteps.id, stepId)).then((r) => r[0]);
   return c.json(step);
 });
@@ -227,6 +255,7 @@ app.post("/:id/run-all", async (c) => {
   const plan = await getPlan(id);
   if (!plan) return c.json({ error: "Not found" }, 404);
   if (isPlanRunning(id)) return c.json(RUNNING, 409);
+  if (plan.status === "cancelled" || plan.status === "failed") await resetUnfinishedSteps(id);
   runPlanDag(id, await planCwd(plan), { mode: "all" }).catch((err) => console.error("runPlanDag error:", err));
   return c.json({ ok: true, planId: id }, 202);
 });
@@ -241,23 +270,26 @@ app.post("/:id/run-next", async (c) => {
   const allSteps = await db.select().from(schema.planSteps)
     .where(eq(schema.planSteps.planId, id))
     .orderBy(asc(schema.planSteps.stepIndex));
-  const nextStep = allSteps.find((r) => r.status === "pending");
-  if (!nextStep) return c.json({ done: true }, 200);
+  if (!allSteps.some((r) => r.status === "pending")) return c.json({ done: true }, 200);
+  // El paso que el planificador realmente puede arrancar. Con el plan parado, un running es huérfano
+  // (el planificador lo regresa a pending). La cuota de agy no se mira aquí: si bloquea, el planificador pausa.
+  const dag = toDagSteps(allSteps).map((s) => (s.status === "running" ? { ...s, status: "pending" as const } : s));
+  const [nextStep] = pickRunnable(dag, { maxParallel: plan.maxParallel, agyBlocked: false, limit: 1 });
+  if (!nextStep) return c.json({ done: false, blocked: true }, 200);
 
   runPlanDag(id, await planCwd(plan), { mode: "next" }).catch((err) => console.error("runPlanDag next error:", err));
   return c.json({ ok: true, stepId: nextStep.id }, 202);
 });
 
-// Resume plan: reset failed steps to pending, then run all pending
+// Resume plan: failed/cancelled/running huérfanos → pending, borra la síntesis vieja y corre todo
 app.post("/:id/resume", async (c) => {
   const id = c.req.param("id");
   const plan = await getPlan(id);
   if (!plan) return c.json({ error: "Not found" }, 404);
   if (isPlanRunning(id)) return c.json(RUNNING, 409);
 
-  await db.update(schema.planSteps)
-    .set({ status: "pending", errorMessage: null, startedAt: null, finishedAt: null })
-    .where(and(eq(schema.planSteps.planId, id), eq(schema.planSteps.status, "failed")));
+  await resetUnfinishedSteps(id);
+  await clearSynthesis(id);
 
   runPlanDag(id, await planCwd(plan), { mode: "all" }).catch((err) => console.error("runPlanDag resume error:", err));
   return c.json({ ok: true, planId: id }, 202);
@@ -273,6 +305,7 @@ app.post("/:planId/steps/:stepId/retry", async (c) => {
   await db.update(schema.planSteps)
     .set({ status: "pending", errorMessage: null, result: null, startedAt: null, finishedAt: null })
     .where(eq(schema.planSteps.id, stepId));
+  await clearSynthesis(planId);
 
   runPlanDag(planId, await planCwd(plan), { mode: "all" }).catch((err) => console.error("runPlanDag retry error:", err));
   return c.json({ ok: true, stepId }, 202);
@@ -302,6 +335,9 @@ app.post("/:id/synthesis/retry", async (c) => {
   const plan = await getPlan(id);
   if (!plan) return c.json({ error: "Not found" }, 404);
   if (isPlanRunning(id)) return c.json(RUNNING, 409);
+  if (plan.status !== "completed" || plan.synthesisStatus !== "failed") {
+    return c.json({ error: "Solo se puede reintentar una síntesis fallida de un plan completado" }, 409);
+  }
   retrySynthesis(id).catch((err) => console.error("retrySynthesis error:", err));
   return c.json({ ok: true }, 202);
 });
@@ -380,6 +416,7 @@ app.delete("/:id", async (c) => {
   // Kill active generation if any
   const kill = generatingKills.get(id);
   if (kill) { kill(); generatingKills.delete(id); }
+  cancelPlanRun(id); // mata la corrida en curso antes de borrar
   await db.delete(schema.planSteps).where(eq(schema.planSteps.planId, id));
   await db.delete(schema.plans).where(eq(schema.plans.id, id));
   return c.json({ ok: true });

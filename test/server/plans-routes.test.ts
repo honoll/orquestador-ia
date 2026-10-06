@@ -21,6 +21,13 @@ async function mk(extra: Record<string, unknown> = {}) {
   await db.insert(schema.plans).values({ id, description: "d", status: "pending", ...extra } as any);
   return id;
 }
+async function mkStep(planId: string, extra: Record<string, unknown> = {}) {
+  const id = randomUUID();
+  await db.insert(schema.planSteps).values({ id, planId, stepIndex: 0, description: "x", adapter: "codex", prompt: "p", status: "pending", ...extra } as any);
+  return id;
+}
+const getPlanRow = (id: string) => db.select().from(schema.plans).where(eq(schema.plans.id, id)).then((x) => x[0]);
+const getStep = (id: string) => db.select().from(schema.planSteps).where(eq(schema.planSteps.id, id)).then((x) => x[0]);
 const req = (path: string, method = "POST", body?: unknown) =>
   plansRoute.request(path, { method, headers: { "Content-Type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) });
 
@@ -82,5 +89,95 @@ describe("rutas de planes (F2)", () => {
     expect(p.synthesisStatus).toBeNull();
     expect(p.synthesis).toBe("previa");
     expect(p.pauseReason).toBeNull();
+  });
+
+  it("resume pone en pending los pasos failed/cancelled/running y borra la síntesis vieja", async () => {
+    const id = await mk({ status: "failed", synthesisStatus: "failed", synthesis: "vieja", synthesisError: "x" });
+    const t = new Date().toISOString();
+    const ids = [
+      await mkStep(id, { stepIndex: 0, status: "succeeded" }),
+      await mkStep(id, { stepIndex: 1, status: "failed", errorMessage: "boom", startedAt: t, finishedAt: t }),
+      await mkStep(id, { stepIndex: 2, status: "cancelled", startedAt: t, finishedAt: t }),
+      await mkStep(id, { stepIndex: 3, status: "running", startedAt: t }),
+    ];
+    expect((await req(`/${id}/resume`)).status).toBe(202);
+    const rows = await Promise.all(ids.map(getStep));
+    expect(rows.map((r) => r.status)).toEqual(["succeeded", "pending", "pending", "pending"]);
+    for (const r of rows.slice(1)) expect(r).toMatchObject({ errorMessage: null, startedAt: null, finishedAt: null });
+    expect(await getPlanRow(id)).toMatchObject({ synthesisStatus: null, synthesis: null, synthesisError: null });
+  });
+
+  it("run-all de un plan cancelado o fallido reanuda los pasos que no terminaron; de un plan pending no", async () => {
+    const cancelled = await mk({ status: "cancelled" });
+    const s1 = await mkStep(cancelled, { status: "cancelled" });
+    await req(`/${cancelled}/run-all`);
+    expect((await getStep(s1)).status).toBe("pending");
+    const failed = await mk({ status: "failed" });
+    const s2 = await mkStep(failed, { status: "failed", errorMessage: "boom" });
+    await req(`/${failed}/run-all`);
+    expect(await getStep(s2)).toMatchObject({ status: "pending", errorMessage: null });
+    const pending = await mk({ status: "pending" });
+    const s3 = await mkStep(pending, { status: "failed" });
+    await req(`/${pending}/run-all`);
+    expect((await getStep(s3)).status).toBe("failed");
+  });
+
+  it("reintentar un paso borra la síntesis vieja", async () => {
+    const id = await mk({ status: "completed", synthesisStatus: "succeeded", synthesis: "vieja" });
+    const s = await mkStep(id, { status: "failed" });
+    expect((await req(`/${id}/steps/${s}/retry`)).status).toBe(202);
+    expect((await getStep(s)).status).toBe("pending");
+    expect(await getPlanRow(id)).toMatchObject({ synthesisStatus: null, synthesis: null, synthesisError: null });
+  });
+
+  it("run-next responde el paso que el planificador puede arrancar, o blocked sin lanzar", async () => {
+    const id = await mk();
+    await mkStep(id, { stepIndex: 0, stepKey: "s1", dependsOn: JSON.stringify(["s2"]) });
+    const s2 = await mkStep(id, { stepIndex: 1, stepKey: "s2", dependsOn: "[]" });
+    const r = await req(`/${id}/run-next`);
+    expect(r.status).toBe(202);
+    expect(await r.json()).toMatchObject({ ok: true, stepId: s2 });
+
+    const blocked = await mk();
+    await mkStep(blocked, { stepIndex: 0, stepKey: "s1", dependsOn: "[]", status: "cancelled" });
+    await mkStep(blocked, { stepIndex: 1, stepKey: "s2", dependsOn: JSON.stringify(["s1"]) });
+    h.runPlanDag.mockClear();
+    const b = await req(`/${blocked}/run-next`);
+    expect(b.status).toBe(200);
+    expect(await b.json()).toEqual({ done: false, blocked: true });
+    expect(h.runPlanDag).not.toHaveBeenCalled();
+  });
+
+  it("synthesis/retry solo para un plan completado con síntesis fallida", async () => {
+    for (const extra of [{ status: "pending", synthesisStatus: "failed" }, { status: "completed", synthesisStatus: "succeeded" }, { status: "completed" }]) {
+      const id = await mk(extra);
+      const r = await req(`/${id}/synthesis/retry`);
+      expect(r.status).toBe(409);
+      expect(await r.json()).toEqual({ error: "Solo se puede reintentar una síntesis fallida de un plan completado" });
+    }
+  });
+
+  it("DELETE cancela la corrida antes de borrar", async () => {
+    const id = await mk({ status: "running" });
+    h.cancelPlanRun.mockClear();
+    expect((await req(`/${id}`, "DELETE")).status).toBe(200);
+    expect(h.cancelPlanRun).toHaveBeenCalledWith(id);
+    expect(await getPlanRow(id)).toBeUndefined();
+  });
+
+  it("PATCH del plan solo acepta projectId; el resto se ignora", async () => {
+    const id = await mk();
+    const r = await req(`/${id}`, "PATCH", { projectId: null, status: "completed", usedTokens: 5 });
+    expect(r.status).toBe(200);
+    expect(await getPlanRow(id)).toMatchObject({ status: "pending", usedTokens: 0, projectId: null });
+  });
+
+  it("PATCH de un paso solo acepta description/adapter/model/prompt y valida el adapter", async () => {
+    const id = await mk();
+    const s = await mkStep(id);
+    expect((await req(`/${id}/steps/${s}`, "PATCH", { adapter: "gpt" })).status).toBe(400);
+    const r = await req(`/${id}/steps/${s}`, "PATCH", { prompt: "nuevo", adapter: "claude", model: "claude-opus-5-5", description: "d2", status: "succeeded", result: "falso" });
+    expect(r.status).toBe(200);
+    expect(await getStep(s)).toMatchObject({ prompt: "nuevo", adapter: "claude", model: "claude-opus-5-5", description: "d2", status: "pending", result: null });
   });
 });
