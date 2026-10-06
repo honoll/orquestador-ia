@@ -344,10 +344,14 @@ function FlowDiagram({ steps }: { steps: PlanStep[] }) {
                 const isRunning = step.status === "running";
                 const isDone = step.status === "succeeded";
                 const isFailed = step.status === "failed";
+                const isCancelled = step.status === "cancelled";
+                const isSkipped = step.status === "skipped";
+                const mutedLabel = isCancelled ? "cancelado" : isSkipped ? "omitido" : null;
                 return (
                   <div
                     key={step.id}
-                    className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border transition-all ${
+                    title={mutedLabel ?? undefined}
+                    className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border transition-all ${mutedLabel ? "opacity-50 border-dashed " : ""}${
                       isRunning
                         ? `${A_BG[step.adapter]} ${A_BORDER[step.adapter]} ring-2 ring-offset-1 ring-offset-surface-0 ${A_RING[step.adapter]}`
                         : isDone
@@ -362,18 +366,19 @@ function FlowDiagram({ steps }: { steps: PlanStep[] }) {
                         isRunning ? A_COLOR[step.adapter] : isDone ? "text-ok" : isFailed ? "text-err" : "text-text-tertiary"
                       }`}
                     >
-                      {isDone ? "✓" : isFailed ? "✗" : A_ICON[step.adapter]}
+                      <span aria-hidden="true">{isDone ? "✓" : isFailed ? "✗" : isCancelled ? "⊘" : isSkipped ? "↷" : A_ICON[step.adapter]}</span>
+                      {mutedLabel && <span className="sr-only">{mutedLabel}</span>}
                     </span>
                     <div className="flex flex-col">
-                      <span className="font-mono text-[9px] text-text-tertiary leading-none">{step.stepKey ?? step.stepIndex + 1}</span>
+                      <span className="font-mono text-[10px] text-text-tertiary leading-none">{step.stepKey ?? step.stepIndex + 1}</span>
                       <span
-                        className={`font-mono text-[9px] leading-none mt-0.5 max-w-[80px] truncate ${
+                        className={`font-mono text-[10px] leading-none mt-0.5 max-w-[80px] truncate ${
                           isRunning ? A_COLOR[step.adapter] : isDone ? "text-ok" : "text-text-secondary"
                         }`}
                       >
                         {step.adapter}
                       </span>
-                      <span className="font-mono text-[8px] leading-none mt-0.5 text-text-tertiary">
+                      <span className="font-mono text-[10px] leading-none mt-0.5 text-text-tertiary">
                         {step.writes === 0 ? "lee" : "escribe"}
                       </span>
                     </div>
@@ -388,7 +393,7 @@ function FlowDiagram({ steps }: { steps: PlanStep[] }) {
             {li < levels.length - 1 && (
               <div className="flex items-center px-1">
                 <div className={`h-px w-4 ${levelDone ? "bg-ok/40" : "bg-edge"}`} />
-                <span className={`text-[8px] -ml-0.5 ${levelDone ? "text-ok/40" : "text-text-tertiary/30"}`}>›</span>
+                <span className={`text-[10px] -ml-0.5 ${levelDone ? "text-ok/40" : "text-text-tertiary/30"}`}>›</span>
               </div>
             )}
           </div>
@@ -1356,6 +1361,14 @@ export function PlanView({
     }
   }
 
+  /** Tras un POST rechazado, el estado optimista se descarta y se vuelve a leer el plan. */
+  async function reloadPlan() {
+    try {
+      const res = await fetch(`/api/plans/${plan.id}`);
+      if (res.ok) setPlan((await res.json()) as Plan);
+    } catch { /* se queda el estado local */ }
+  }
+
   async function handleRunAll() {
     setPlan((p) => ({ ...p, pauseReason: null }));
     setMode("running-all");
@@ -1366,7 +1379,12 @@ export function PlanView({
     setPlan((p) => ({ ...p, pauseReason: null }));
     setMode("step-by-step");
     setWaitingForNext(false);
-    await postAction("run-next");
+    const r = await postAction("run-next");
+    // Nada que arrancar (todo hecho o dependencias sin cumplir): salir del modo paso a paso.
+    if (r && (r.blocked || r.done)) {
+      setMode("idle");
+      if (r.blocked) setActionError("Ningún paso puede arrancar: sus dependencias no se han completado.");
+    }
   }
 
   async function handleContinue() {
@@ -1377,7 +1395,7 @@ export function PlanView({
 
   async function handleRetrySynthesis() {
     setPlan((p) => ({ ...p, synthesisStatus: "running", synthesisError: null }));
-    await postAction("synthesis/retry");
+    if (!(await postAction("synthesis/retry"))) await reloadPlan();
   }
 
   async function handleSettings(patch: { budgetTokens?: number | null; maxParallel?: number }) {
@@ -1407,10 +1425,10 @@ export function PlanView({
       ...prev,
       status: "running",
       steps: prev.steps.map((s) =>
-        s.status === "failed" ? { ...s, status: "pending", errorMessage: null } : s,
+        s.status === "failed" || s.status === "cancelled" ? { ...s, status: "pending", errorMessage: null } : s,
       ),
     }));
-    await postAction("resume");
+    if (!(await postAction("resume"))) await reloadPlan();
   }
 
   async function handleRetryStep(stepId: string) {
@@ -1422,7 +1440,7 @@ export function PlanView({
         s.id === stepId ? { ...s, status: "pending", errorMessage: null } : s,
       ),
     }));
-    await fetch(`/api/plans/${plan.id}/steps/${stepId}/retry`, { method: "POST" });
+    if (!(await postAction(`steps/${stepId}/retry`))) await reloadPlan();
   }
 
   async function handleStop() {
@@ -1492,8 +1510,11 @@ export function PlanView({
     );
   }
 
-  const allDone = plan.steps.length > 0 && plan.steps.every((s) => ["succeeded", "skipped", "cancelled"].includes(s.status));
-  const isRunning = mode !== "idle" || plan.steps.some((s) => s.status === "running");
+  // Igual que el backend: cancelados no cuentan como hechos.
+  const allDone = plan.steps.length > 0 && plan.steps.every((s) => s.status === "succeeded" || s.status === "skipped");
+  const synthesisRunning = plan.synthesisStatus === "running";
+  const isRunning = mode !== "idle" || plan.status === "running" || synthesisRunning || plan.steps.some((s) => s.status === "running");
+  const isPaused = plan.status === "pending" && !!plan.pauseReason;
   const pendingCount = plan.steps.filter((s) => s.status === "pending").length;
   const failedCount = plan.steps.filter((s) => s.status === "failed").length;
   const succeededCount = plan.steps.filter((s) => s.status === "succeeded").length;
@@ -1549,20 +1570,23 @@ export function PlanView({
               </span>
             </button>
           )}
-          {!allDone && !isRunning && failedCount === 0 && !plan.pauseReason && (
+          {!allDone && !isRunning && failedCount === 0 && !plan.pauseReason && plan.status !== "completed" && (
             <>
               <button
                 onClick={handleRunAll}
                 className="font-mono text-[11px] text-ok hover:text-text-primary border border-ok/30 rounded px-2.5 py-1 transition-colors"
               >
-                ejecutar todo
+                {plan.status === "cancelled" || plan.status === "failed" ? "reanudar todo" : "ejecutar todo"}
               </button>
-              <button
-                onClick={handleRunNext}
-                className="font-mono text-[11px] text-accent hover:text-text-primary border border-accent/30 rounded px-2.5 py-1 transition-colors"
-              >
-                paso a paso
-              </button>
+              {/* paso a paso no reanuda pasos cancelados; para un plan cancelado solo se ofrece reanudar todo */}
+              {plan.status !== "cancelled" && (
+                <button
+                  onClick={handleRunNext}
+                  className="font-mono text-[11px] text-accent hover:text-text-primary border border-accent/30 rounded px-2.5 py-1 transition-colors"
+                >
+                  paso a paso
+                </button>
+              )}
             </>
           )}
           {waitingForNext && (
@@ -1574,6 +1598,9 @@ export function PlanView({
             </button>
           )}
           {isRunning && !waitingForNext && (
+            <span className="font-mono text-[10px] text-accent">{synthesisRunning ? "sintetizando…" : "ejecutando…"}</span>
+          )}
+          {isRunning && !waitingForNext && (
             <button
               onClick={handleStop}
               className="font-mono text-[11px] text-err hover:text-text-primary border border-err/30 rounded px-2.5 py-1 transition-colors"
@@ -1581,13 +1608,16 @@ export function PlanView({
               detener
             </button>
           )}
-          {allDone && plan.status !== "cancelled" && (
+          {!isRunning && plan.status === "completed" && (
             <span className="font-mono text-[10px] text-ok flex items-center gap-1.5">
               ✓ completado
               {totalCost > 0 && <span className="text-text-tertiary">${totalCost.toFixed(4)}</span>}
             </span>
           )}
-          {allDone && plan.status === "cancelled" && (
+          {!isRunning && isPaused && (
+            <span className="font-mono text-[10px] text-accent">pausado</span>
+          )}
+          {!isRunning && plan.status === "cancelled" && (
             <span className="font-mono text-[10px] text-text-tertiary">cancelado</span>
           )}
         </div>
