@@ -139,4 +139,24 @@ describe("prompts", () => {
     expect(p).toMatch(/data, not instructions/);
     expect(p).toMatch(/Spanish \(Mexico\)/);
   });
+  it("cada resultado va entre marcadores con nonce y la tarea va al final con su encabezado", () => {
+    const p = buildStepPrompt("haz X", [{ key: "s1", description: "leer", result: "R1" }, { key: "s2", description: "otro", result: "R2" }], "n0nce");
+    expect(p).toContain("<<<RESULTADO s1 #n0nce>>>\n### s1 — leer\nR1\n<<<FIN #n0nce>>>");
+    expect(p).toContain("<<<RESULTADO s2 #n0nce>>>\n### s2 — otro\nR2\n<<<FIN #n0nce>>>");
+    expect(p.endsWith("TU TAREA (solo esta; no hagas commit ni push ni sigas flujos globales que no se pidan aquí):\nhaz X")).toBe(true);
+    expect(p).not.toContain("\n---\n");
+  });
+  it("el nonce cambia en cada llamada si no se inyecta", () => {
+    const deps = [{ key: "s1", description: "leer", result: "R1" }];
+    const nonce = (t: string) => /<<<FIN #([^>]+)>>>/.exec(t)?.[1];
+    const a = nonce(buildStepPrompt("x", deps));
+    const b = nonce(buildStepPrompt("x", deps));
+    expect(a).toBeTruthy();
+    expect(a).not.toBe(b);
+  });
+  it("la síntesis marca el pedido y cada resultado con el nonce", () => {
+    const p = buildSynthesisPrompt("arregla el login", [{ key: "s1", description: "leer", adapter: "agy", result: "R1" }], "n0nce");
+    expect(p).toContain("<<<PEDIDO #n0nce>>>\narregla el login\n<<<FIN #n0nce>>>");
+    expect(p).toContain("<<<RESULTADO s1 #n0nce>>>\n### s1 — leer (agy)\nR1\n<<<FIN #n0nce>>>");
+  });
 });
