@@ -65,6 +65,14 @@ CREATE TABLE IF NOT EXISTS plans (
   description TEXT NOT NULL,
   status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('generating','pending','running','completed','failed','cancelled')),
   error_message TEXT,
+  estimated_tokens INTEGER,
+  budget_tokens INTEGER,
+  used_tokens INTEGER NOT NULL DEFAULT 0,
+  max_parallel INTEGER NOT NULL DEFAULT 3,
+  pause_reason TEXT,
+  synthesis TEXT,
+  synthesis_status TEXT,
+  synthesis_error TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -87,7 +95,11 @@ CREATE TABLE IF NOT EXISTS plan_steps (
   output_tokens INTEGER,
   session_id TEXT,
   started_at TEXT,
-  finished_at TEXT
+  finished_at TEXT,
+  step_key TEXT,
+  depends_on TEXT,
+  writes INTEGER,
+  estimated_tokens INTEGER
 );
 
 CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project_id);
@@ -171,7 +183,7 @@ async function migrate() {
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     )`);
-    await client.execute("INSERT OR IGNORE INTO plans_new SELECT * FROM plans");
+    await client.execute("INSERT OR IGNORE INTO plans_new (id, project_id, description, status, created_at, updated_at) SELECT id, project_id, description, status, created_at, updated_at FROM plans");
     await client.execute("DROP TABLE plans");
     await client.execute("ALTER TABLE plans_new RENAME TO plans");
     console.log("Migrated plans table to support 'generating' status");
@@ -205,7 +217,7 @@ async function migrate() {
       started_at TEXT,
       finished_at TEXT
     )`);
-    await client.execute("INSERT OR IGNORE INTO plan_steps SELECT * FROM plan_steps_old");
+    await client.execute("INSERT OR IGNORE INTO plan_steps (id, plan_id, step_index, description, adapter, model, reason, prompt, status, run_id, result, error_message, cost_usd, input_tokens, output_tokens, session_id, started_at, finished_at) SELECT id, plan_id, step_index, description, adapter, model, reason, prompt, status, run_id, result, error_message, cost_usd, input_tokens, output_tokens, session_id, started_at, finished_at FROM plan_steps_old");
     await client.execute("DROP TABLE plan_steps_old");
     console.log("Fixed plan_steps FK reference (was pointing to plans_old)");
   }
@@ -229,6 +241,30 @@ async function migrate() {
   } catch {
     // already exists
   }
+
+  for (const stmt of [
+    "ALTER TABLE plans ADD COLUMN estimated_tokens INTEGER",
+    "ALTER TABLE plans ADD COLUMN budget_tokens INTEGER",
+    "ALTER TABLE plans ADD COLUMN used_tokens INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE plans ADD COLUMN max_parallel INTEGER NOT NULL DEFAULT 3",
+    "ALTER TABLE plans ADD COLUMN pause_reason TEXT",
+    "ALTER TABLE plans ADD COLUMN synthesis TEXT",
+    "ALTER TABLE plans ADD COLUMN synthesis_status TEXT",
+    "ALTER TABLE plans ADD COLUMN synthesis_error TEXT",
+    "ALTER TABLE plan_steps ADD COLUMN step_key TEXT",
+    "ALTER TABLE plan_steps ADD COLUMN depends_on TEXT",
+    "ALTER TABLE plan_steps ADD COLUMN writes INTEGER",
+    "ALTER TABLE plan_steps ADD COLUMN estimated_tokens INTEGER",
+  ]) {
+    try { await client.execute(stmt); } catch { /* column already exists */ }
+  }
+
+  // Si una base vieja quedó con más de una cuenta activa, conservar la más antigua.
+  await client.execute(`UPDATE agy_accounts SET active = 0 WHERE active = 1 AND id NOT IN (
+    SELECT id FROM agy_accounts WHERE active = 1 ORDER BY created_at LIMIT 1)`);
+  try {
+    await client.execute("CREATE UNIQUE INDEX IF NOT EXISTS uq_agy_accounts_active ON agy_accounts(active) WHERE active = 1");
+  } catch { /* already exists */ }
 
   // Create plan_file_changes table if missing (migration for existing DBs)
   try {

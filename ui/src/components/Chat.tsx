@@ -7,7 +7,7 @@ import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
 import { useWs } from "../context/WebSocketProvider";
 import { useAppState } from "../context/AppStateContext";
 import { parseStreamingText } from "../lib/parse-stream";
-import { PlanView } from "./PlanView";
+import { PlanView, type Plan } from "./PlanView";
 import { GitHubCloneModal } from "./GitHubCloneModal";
 import { FileContextPicker, buildFileContext } from "./FileContextPicker";
 
@@ -29,15 +29,6 @@ const SLASH_COMMANDS: SlashCommand[] = [
   { name: "/agy", args: "<prompt>",         description: "Fuerza el uso de Antigravity (agy)",       icon: "◎" },
   { name: "/slides", args: "<descripción>", description: "Crea presentación HTML animada",           icon: "◫" },
 ];
-
-interface Plan {
-  id: string;
-  description: string;
-  status: string;
-  projectId: string | null;
-  createdAt: string;
-  steps: any[];
-}
 
 interface AdapterInfo {
   type: string;

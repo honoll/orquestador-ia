@@ -1,11 +1,10 @@
-import { eq, and, asc } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { db, schema } from "../db/index.js";
 import { getAdapter } from "../adapters/registry.js";
 import { broadcast } from "./ws.js";
 import { claudeProfileManager } from "../adapters/claude/profile-manager.js";
 import { getActiveAccount, recordAgyCall, NoActiveAccountError } from "./agy-accounts.js";
-import { startWatch, stopWatch } from "./file-watcher.js";
 import pino from "pino";
 
 const log = pino({ name: "plan-runner" });
@@ -15,21 +14,27 @@ const UNKNOWN_SESSION_RE = /unknown session|session.*not found|invalid.*session/
 const MAX_RETRIES = 2;
 export const QUOTA_PAUSE_PREFIX = "Pausado por cuota";
 
+export type StepOutcomeStatus = "succeeded" | "failed" | "paused_quota";
+export interface StepOutcome { status: StepOutcomeStatus; tokensUsed: number }
+
 export interface StepRunOptions {
   planId: string;
   stepId: string;
   cwd: string;
+  /** Reemplaza el prompt guardado del paso (p. ej. con contexto de pasos previos) */
+  promptOverride?: string;
   /** Kill handle set externally to allow cancellation */
   onKillRegistered?: (kill: () => void) => void;
 }
 
-/** Execute a single plan step with retry logic. Returns the stepId. */
-export async function runPlanStep(options: StepRunOptions): Promise<void> {
+/** Execute a single plan step with retry logic. Solo ejecuta: no toca el estado del plan. */
+export async function runPlanStep(options: StepRunOptions): Promise<StepOutcome> {
   const { planId, stepId, cwd } = options;
 
   const stepRows = await db.select().from(schema.planSteps).where(eq(schema.planSteps.id, stepId));
   if (stepRows.length === 0) throw new Error(`Step ${stepId} not found`);
   const step = stepRows[0];
+  const prompt = options.promptOverride ?? step.prompt;
 
   const adapter = getAdapter(step.adapter);
   if (!adapter) throw new Error(`Unknown adapter: ${step.adapter}`);
@@ -38,10 +43,6 @@ export async function runPlanStep(options: StepRunOptions): Promise<void> {
     .set({ status: "running", startedAt: new Date().toISOString(), errorMessage: null })
     .where(eq(schema.planSteps.id, stepId));
 
-  await db.update(schema.plans)
-    .set({ status: "running", updatedAt: new Date().toISOString() })
-    .where(eq(schema.plans.id, planId));
-
   broadcast({ type: "plan:step", planId, stepId, status: "running", timestamp: new Date().toISOString() } as any);
 
   const agyAccount = step.adapter === "agy" ? await getActiveAccount() : null;
@@ -49,11 +50,12 @@ export async function runPlanStep(options: StepRunOptions): Promise<void> {
     const msg = new NoActiveAccountError().message;
     await db.update(schema.planSteps).set({ status: "failed", errorMessage: msg, finishedAt: new Date().toISOString() }).where(eq(schema.planSteps.id, stepId));
     broadcast({ type: "plan:step", planId, stepId, status: "failed", error: msg, timestamp: new Date().toISOString() } as any);
-    return;
+    return { status: "failed", tokensUsed: 0 };
   }
 
   let sessionId = step.sessionId ?? undefined;
   let lastError: string | null = null;
+  let tokensUsed = 0;
   // For Claude steps: track which profile we're using across retries (only if API keys configured)
   let claudeProfile = step.adapter === "claude"
     ? claudeProfileManager.getBestProfile()
@@ -75,7 +77,7 @@ export async function runPlanStep(options: StepRunOptions): Promise<void> {
     await db.insert(schema.tasks).values({
       id: taskId,
       title: step.description.slice(0, 80),
-      prompt: step.prompt,
+      prompt,
       adapter: step.adapter,
       model: step.model ?? null,
       status: "running",
@@ -86,7 +88,7 @@ export async function runPlanStep(options: StepRunOptions): Promise<void> {
       adapter: step.adapter,
       model: step.model ?? null,
       status: "running",
-      prompt: step.prompt,
+      prompt,
       cwd,
     });
 
@@ -94,7 +96,7 @@ export async function runPlanStep(options: StepRunOptions): Promise<void> {
       const callStartedAt = Date.now();
       const result = await adapter.execute({
         runId,
-        prompt: step.prompt,
+        prompt,
         model: step.model ?? undefined,
         cwd,
         sessionId,
@@ -113,6 +115,8 @@ export async function runPlanStep(options: StepRunOptions): Promise<void> {
         onKill: (kill) => options.onKillRegistered?.(kill),
       });
 
+      tokensUsed += (result.inputTokens || 0) + (result.outputTokens || 0);
+
       if (agyAccount) {
         try { await recordAgyCall(agyAccount.id, result, "plan", Date.now(), callStartedAt); } catch (err) { log.error({ err, stepId }, "No se pudo registrar el consumo de agy"); }
       }
@@ -123,10 +127,7 @@ export async function runPlanStep(options: StepRunOptions): Promise<void> {
         await db.update(schema.tasks).set({ status: "failed", updatedAt: new Date().toISOString() }).where(eq(schema.tasks.id, taskId));
         await db.update(schema.planSteps).set({ status: "pending", errorMessage: msg, runId }).where(eq(schema.planSteps.id, stepId));
         broadcast({ type: "plan:step", planId, stepId, status: "pending", error: msg, timestamp: new Date().toISOString() } as any);
-        stopWatch(planId);
-        await db.update(schema.plans).set({ status: "pending", updatedAt: new Date().toISOString() }).where(eq(schema.plans.id, planId));
-        broadcast({ type: "plan:done", planId, status: "pending", paused: "quota", timestamp: new Date().toISOString() } as any);
-        return;
+        return { status: "paused_quota", tokensUsed };
       }
 
       const succeeded = result.exitCode === 0 && !result.timedOut;
@@ -172,7 +173,7 @@ export async function runPlanStep(options: StepRunOptions): Promise<void> {
           .where(eq(schema.planSteps.id, stepId));
 
         broadcast({ type: "plan:step", planId, stepId, status: "succeeded", timestamp: new Date().toISOString() } as any);
-        return;
+        return { status: "succeeded", tokensUsed };
       }
 
       lastError = result.errorMessage ?? `Exit code ${result.exitCode}`;
@@ -226,44 +227,5 @@ export async function runPlanStep(options: StepRunOptions): Promise<void> {
     .where(eq(schema.planSteps.id, stepId));
 
   broadcast({ type: "plan:step", planId, stepId, status: "failed", error: lastError, timestamp: new Date().toISOString() } as any);
-}
-
-/** Execute all pending steps of a plan sequentially */
-export async function runPlanAll(planId: string, cwd: string): Promise<void> {
-  // Start watching the project directory for live file preview
-  startWatch(planId, cwd);
-
-  const steps = await db.select().from(schema.planSteps)
-    .where(and(eq(schema.planSteps.planId, planId), eq(schema.planSteps.status, "pending")))
-    .orderBy(asc(schema.planSteps.stepIndex));
-
-  for (const step of steps) {
-    await runPlanStep({ planId, stepId: step.id, cwd });
-
-    // Re-fetch to check if it failed
-    const updated = await db.select().from(schema.planSteps).where(eq(schema.planSteps.id, step.id)).then((r) => r[0]);
-    if (updated?.status === "pending" && updated.errorMessage?.startsWith(QUOTA_PAUSE_PREFIX)) {
-      return; // runPlanStep ya pausó el plan y emitió plan:done
-    }
-    if (updated?.status === "failed") {
-      stopWatch(planId);
-      await db.update(schema.plans)
-        .set({ status: "failed", updatedAt: new Date().toISOString() })
-        .where(eq(schema.plans.id, planId));
-      broadcast({ type: "plan:done", planId, status: "failed", timestamp: new Date().toISOString() } as any);
-      return;
-    }
-  }
-
-  // Check if all steps are done
-  const allSteps = await db.select().from(schema.planSteps).where(eq(schema.planSteps.planId, planId));
-  const allDone = allSteps.every((s) => ["succeeded", "skipped", "cancelled"].includes(s.status));
-
-  const finalStatus = allDone ? "completed" : "failed";
-  stopWatch(planId);
-  await db.update(schema.plans)
-    .set({ status: finalStatus, updatedAt: new Date().toISOString() })
-    .where(eq(schema.plans.id, planId));
-
-  broadcast({ type: "plan:done", planId, status: finalStatus, timestamp: new Date().toISOString() } as any);
+  return { status: "failed", tokensUsed };
 }

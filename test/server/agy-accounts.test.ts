@@ -108,4 +108,10 @@ describe("cuentas agy", () => {
     expect(rows).toHaveLength(0);
     expect((await getActiveAccount())?.id).toBe(b.id);
   });
+
+  it("la base impide dos cuentas activas", async () => {
+    const a = await createAccount("A", NOW);
+    await expect(db.insert(schema.agyAccounts).values({ id: "dup", label: "B", active: 1 })).rejects.toThrow();
+    expect((await getActiveAccount())?.id).toBe(a.id);
+  });
 });
