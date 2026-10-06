@@ -270,7 +270,7 @@ function GeneratingView({
         <span className="font-mono text-xs text-text-secondary">/plan</span>
         {plan.tier && (
           <span className="font-mono text-[10px] text-text-secondary">
-            tier: {TIER_TEXT[plan.tier]} ({tierShort(plan)})
+            tier: {TIER_TEXT[plan.tier]} ({tierShort(plan)})<span className="sr-only"> ({tierDetail(plan)})</span>
           </span>
         )}
         <div className="ml-auto flex items-center gap-3">
@@ -1240,7 +1240,7 @@ function CriticalBanner({ plan, busy, onApprove }: { plan: Plan; busy: boolean; 
   return (
     <div role="status" className="mx-4 my-2 flex flex-wrap items-center gap-3 rounded-lg border border-err/40 bg-err/10 px-3 py-2 font-mono text-[11px] text-text-primary">
       <span>Plan crítico: revisa los pasos (incluye una revisión de Opus al final) y apruébalo para ejecutarlo.</span>
-      <button onClick={onApprove} className="ml-auto rounded border border-err/50 px-2 py-0.5 text-err hover:text-text-primary">aprobar y ejecutar</button>
+      <button onClick={onApprove} className="ml-auto rounded border border-err/50 min-h-6 px-2 py-0.5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent text-err hover:text-text-primary">aprobar y ejecutar</button>
     </div>
   );
 }
@@ -1253,7 +1253,7 @@ function GuardBanner({ plan, onApprove, onCancel, onContinue }: { plan: Plan; on
     return (
       <div role="status" className="mx-4 my-2 flex flex-wrap items-center gap-3 rounded-lg border border-accent/40 bg-accent-dim px-3 py-2 font-mono text-[11px] text-text-primary">
         <span>Plan pausado por la guardia, pero ya no hay pasos marcados. Continúa para volver a evaluarlos.</span>
-        <button onClick={onContinue} className="ml-auto rounded border border-ok/40 px-2 py-0.5 text-ok hover:text-text-primary">continuar</button>
+        <button onClick={onContinue} className="ml-auto rounded border border-ok/40 min-h-6 px-2 py-0.5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent text-ok hover:text-text-primary">continuar</button>
       </div>
     );
   }
@@ -1266,8 +1266,8 @@ function GuardBanner({ plan, onApprove, onCancel, onContinue }: { plan: Plan; on
         {flags.map((f, i) => <li key={i}>{f.label} · {f.source === "jev" ? `JEV ${Math.round(f.probability * 100)} %` : "regla local"}</li>)}
       </ul>
       <div className="flex gap-2">
-        <button onClick={() => onApprove(step.id)} className="rounded border border-ok/40 px-2 py-0.5 text-ok hover:text-text-primary">aprobar este paso</button>
-        <button onClick={onCancel} className="rounded border border-edge px-2 py-0.5 text-text-secondary hover:text-text-primary">cancelar</button>
+        <button onClick={() => onApprove(step.id)} className="rounded border border-ok/40 min-h-6 px-2 py-0.5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent text-ok hover:text-text-primary">aprobar este paso</button>
+        <button onClick={onCancel} className="rounded border border-edge min-h-6 px-2 py-0.5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent text-text-secondary hover:text-text-primary">cancelar</button>
       </div>
     </div>
   );
