@@ -1,7 +1,21 @@
 import { describe, it, expect, beforeAll, vi } from "vitest";
 import { randomUUID } from "node:crypto";
 
-const h = vi.hoisted(() => ({ runPlanDag: vi.fn(async () => {}), running: new Set<string>(), retrySynthesis: vi.fn(async () => true), cancelPlanRun: vi.fn(() => true) }));
+const h = vi.hoisted(() => ({ runPlanDag: vi.fn(async () => {}), running: new Set<string>(), retrySynthesis: vi.fn(async () => true), cancelPlanRun: vi.fn(() => true),
+  tier: { tier: "normal", confidence: null, source: "fallback" } as { tier: string; confidence: number | null; source: string },
+  generatePlan: vi.fn(async () => ({
+    steps: [{ stepIndex: 0, key: "s1", dependsOn: [], writes: false, estimatedTokens: 1000, description: "paso", adapter: "codex", model: "m", reason: "r", prompt: "p" }],
+    estimatedTokens: 1000,
+  })),
+}));
+vi.mock("../../src/server/plan-tier.js", async () => {
+  const actual = await vi.importActual<typeof import("../../src/server/plan-tier.js")>("../../src/server/plan-tier.js");
+  return { ...actual, classifyTier: vi.fn(async () => h.tier), trivialWrites: vi.fn(async () => false) };
+});
+vi.mock("../../src/server/planner.js", async () => {
+  const actual = await vi.importActual<typeof import("../../src/server/planner.js")>("../../src/server/planner.js");
+  return { ...actual, generatePlan: h.generatePlan };
+});
 vi.mock("../../src/server/plan-scheduler.js", () => ({
   runPlanDag: h.runPlanDag,
   isPlanRunning: (id: string) => h.running.has(id),
@@ -209,5 +223,32 @@ describe("rutas de planes (F2)", () => {
     await db.insert(schema.planSteps).values({ id: stepId, planId: id, stepIndex: 0, description: "x", adapter: "codex", prompt: "p", status: "pending", guardApproved: 1, guardFlags: "[]" });
     const r = await req(`/${id}/steps/${stepId}`, "PATCH", { prompt: "otro" });
     expect(await r.json()).toMatchObject({ prompt: "otro", guardApproved: 0, guardFlags: null });
+  });
+
+  it("trivial: un paso agy, sin Opus, y arranca solo", async () => {
+    h.tier = { tier: "trivial", confidence: 0.95, source: "jev" };
+    const r = await req("/", "POST", { description: "resume a.txt" });
+    const { id } = (await r.json()) as { id: string };
+    await vi.waitFor(async () => expect(h.runPlanDag).toHaveBeenCalledWith(id, expect.any(String), { mode: "all" }));
+    expect(h.generatePlan).not.toHaveBeenCalled();
+    const steps = await db.select().from(schema.planSteps).where(eq(schema.planSteps.planId, id));
+    expect(steps).toHaveLength(1);
+    expect(steps[0]).toMatchObject({ adapter: "agy", model: "gemini-3.8-flash-low", stepKey: "s1" });
+    const p = await db.select().from(schema.plans).where(eq(schema.plans.id, id)).then((x) => x[0]);
+    expect(p).toMatchObject({ tier: "trivial", tierSource: "jev", status: "pending" });
+  });
+
+  it("crítico: Opus planea, se agrega la revisión de solo lectura y NO arranca solo", async () => {
+    h.tier = { tier: "critical", confidence: 0.9, source: "jev" };
+    h.runPlanDag.mockClear();
+    const r = await req("/", "POST", { description: "migra producción" });
+    const { id } = (await r.json()) as { id: string };
+    await vi.waitFor(async () => {
+      const p = await db.select().from(schema.plans).where(eq(schema.plans.id, id)).then((x) => x[0]);
+      expect(p.status).toBe("pending");
+    });
+    const steps = (await db.select().from(schema.planSteps).where(eq(schema.planSteps.planId, id))).sort((a, b) => a.stepIndex - b.stepIndex);
+    expect(steps.at(-1)).toMatchObject({ stepKey: "review", adapter: "claude", readOnly: 1, writes: 0 });
+    expect(h.runPlanDag).not.toHaveBeenCalled();
   });
 });

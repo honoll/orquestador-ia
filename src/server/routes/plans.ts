@@ -7,6 +7,7 @@ import { defaultBudget, extendBudget, MAX_PARALLEL_LIMIT, toDagSteps, pickRunnab
 import { ROUTABLE_ADAPTERS } from "../../config/models.js";
 import { runPlanDag, cancelPlanRun, isPlanRunning, retrySynthesis } from "../plan-scheduler.js";
 import { broadcast } from "../ws.js";
+import { classifyTier, trivialWrites, makeTrivialStep, addReviewStep, TRIVIAL_ESTIMATED_TOKENS } from "../plan-tier.js";
 
 const app = new Hono();
 
@@ -87,8 +88,23 @@ app.post("/", async (c) => {
     const RATE_LIMIT_WAIT_MS = 60_000;
     let generated: GeneratedPlan | null = null;
     let lastErr: any = null;
+    let reviewKey: string | undefined;
 
-    for (let attempt = 0; attempt <= MAX_PLAN_GEN_RETRIES; attempt++) {
+    const tier = await classifyTier(body.description);
+    await db.update(schema.plans)
+      .set({ tier: tier.tier, tierConfidence: tier.confidence, tierSource: tier.source, updatedAt: new Date().toISOString() })
+      .where(eq(schema.plans.id, planId));
+    broadcast({ type: "plan:tier", planId, ...tier, timestamp: new Date().toISOString() } as any);
+    const trivial = tier.tier === "trivial";
+
+    if (trivial) {
+      generated = {
+        steps: [makeTrivialStep(body.description, await trivialWrites(body.description))],
+        estimatedTokens: TRIVIAL_ESTIMATED_TOKENS,
+      };
+    }
+
+    for (let attempt = 0; !trivial && attempt <= MAX_PLAN_GEN_RETRIES; attempt++) {
       try {
         generated = await generatePlan(
           body.description,
@@ -145,6 +161,12 @@ app.post("/", async (c) => {
       return;
     }
 
+    if (tier.tier === "critical") {
+      const withReview = addReviewStep(generated!, body.description);
+      reviewKey = withReview.reviewKey;
+      generated = withReview;
+    }
+
     for (const step of generated!.steps) {
       await db.insert(schema.planSteps).values({
         id: randomUUID(),
@@ -153,6 +175,7 @@ app.post("/", async (c) => {
         stepKey: step.key,
         dependsOn: JSON.stringify(step.dependsOn),
         writes: step.writes ? 1 : 0,
+        readOnly: step.key === reviewKey ? 1 : 0,
         estimatedTokens: step.estimatedTokens,
         description: step.description,
         adapter: step.adapter,
@@ -183,6 +206,10 @@ app.post("/", async (c) => {
       plan: { ...plan, steps: planSteps },
       timestamp: new Date().toISOString(),
     } as any);
+
+    if (trivial) {
+      runPlanDag(planId, cwd, { mode: "all" }).catch((err) => console.error("runPlanDag trivial error:", err));
+    }
   })();
 
   return c.json({ id: planId, status: "generating", description: body.description, steps: [] }, 202);
