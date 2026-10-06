@@ -3,6 +3,10 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useWs } from "../context/WebSocketProvider";
 import { useAppState } from "../context/AppStateContext";
 import { parseStreamingText } from "../lib/parse-stream";
+import { stepLevels } from "../lib/plan-levels";
+import { formatTokens } from "../lib/format";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { ResizableGroup, ResizableHandle, ResizablePanel } from "./ResizableDivider";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
@@ -168,9 +172,13 @@ interface PlanStep {
   outputTokens: number | null;
   startedAt: string | null;
   finishedAt: string | null;
+  stepKey: string | null;
+  dependsOn: string | null;
+  writes: number | null;
+  estimatedTokens: number | null;
 }
 
-interface Plan {
+export interface Plan {
   id: string;
   description: string;
   status: string;
@@ -179,6 +187,14 @@ interface Plan {
   chatHistory?: string | null;
   createdAt: string;
   steps: PlanStep[];
+  estimatedTokens: number | null;
+  budgetTokens: number | null;
+  usedTokens: number;
+  maxParallel: number;
+  pauseReason: "quota" | "budget" | null;
+  synthesis: string | null;
+  synthesisStatus: "running" | "succeeded" | "failed" | null;
+  synthesisError: string | null;
 }
 
 // ─── adapter styling ───────────────────────────────────────────────────────────
@@ -316,53 +332,63 @@ function GeneratingView({
 // ─── Flow diagram ──────────────────────────────────────────────────────────────
 
 function FlowDiagram({ steps }: { steps: PlanStep[] }) {
+  const levels = stepLevels(steps);
   return (
     <div className="flex items-center gap-0 overflow-x-auto pb-2 scrollbar-hide">
-      {steps.map((step, i) => {
-        const isRunning = step.status === "running";
-        const isDone = step.status === "succeeded";
-        const isFailed = step.status === "failed";
+      {levels.map((level, li) => {
+        const levelDone = level.every((st) => st.status === "succeeded");
         return (
-          <div key={step.id} className="flex items-center shrink-0">
-            {/* Node */}
-            <div
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border transition-all ${
-                isRunning
-                  ? `${A_BG[step.adapter]} ${A_BORDER[step.adapter]} ring-2 ring-offset-1 ring-offset-surface-0 ${A_RING[step.adapter]}`
-                  : isDone
-                    ? "bg-ok/10 border-ok/20"
-                    : isFailed
-                      ? "bg-err/10 border-err/20"
-                      : "bg-surface-1 border-edge"
-              }`}
-            >
-              <span
-                className={`text-[11px] ${
-                  isRunning ? A_COLOR[step.adapter] : isDone ? "text-ok" : isFailed ? "text-err" : "text-text-tertiary"
-                }`}
-              >
-                {isDone ? "✓" : isFailed ? "✗" : A_ICON[step.adapter]}
-              </span>
-              <div className="flex flex-col">
-                <span className="font-mono text-[9px] text-text-tertiary leading-none">{i + 1}</span>
-                <span
-                  className={`font-mono text-[9px] leading-none mt-0.5 max-w-[80px] truncate ${
-                    isRunning ? A_COLOR[step.adapter] : isDone ? "text-ok" : "text-text-secondary"
-                  }`}
-                >
-                  {step.adapter}
-                </span>
-              </div>
-              {isRunning && (
-                <span className="h-1 w-1 rounded-full bg-accent animate-pulse-dot shrink-0" />
-              )}
+          <div key={li} className="flex items-center shrink-0">
+            <div className="flex flex-col gap-1">
+              {level.map((step) => {
+                const isRunning = step.status === "running";
+                const isDone = step.status === "succeeded";
+                const isFailed = step.status === "failed";
+                return (
+                  <div
+                    key={step.id}
+                    className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border transition-all ${
+                      isRunning
+                        ? `${A_BG[step.adapter]} ${A_BORDER[step.adapter]} ring-2 ring-offset-1 ring-offset-surface-0 ${A_RING[step.adapter]}`
+                        : isDone
+                          ? "bg-ok/10 border-ok/20"
+                          : isFailed
+                            ? "bg-err/10 border-err/20"
+                            : "bg-surface-1 border-edge"
+                    }`}
+                  >
+                    <span
+                      className={`text-[11px] ${
+                        isRunning ? A_COLOR[step.adapter] : isDone ? "text-ok" : isFailed ? "text-err" : "text-text-tertiary"
+                      }`}
+                    >
+                      {isDone ? "✓" : isFailed ? "✗" : A_ICON[step.adapter]}
+                    </span>
+                    <div className="flex flex-col">
+                      <span className="font-mono text-[9px] text-text-tertiary leading-none">{step.stepKey ?? step.stepIndex + 1}</span>
+                      <span
+                        className={`font-mono text-[9px] leading-none mt-0.5 max-w-[80px] truncate ${
+                          isRunning ? A_COLOR[step.adapter] : isDone ? "text-ok" : "text-text-secondary"
+                        }`}
+                      >
+                        {step.adapter}
+                      </span>
+                      <span className="font-mono text-[8px] leading-none mt-0.5 text-text-tertiary">
+                        {step.writes === 0 ? "lee" : "escribe"}
+                      </span>
+                    </div>
+                    {isRunning && (
+                      <span className="h-1 w-1 rounded-full bg-accent animate-pulse-dot shrink-0" />
+                    )}
+                  </div>
+                );
+              })}
             </div>
 
-            {/* Arrow between steps */}
-            {i < steps.length - 1 && (
+            {li < levels.length - 1 && (
               <div className="flex items-center px-1">
-                <div className={`h-px w-4 ${isDone ? "bg-ok/40" : "bg-edge"}`} />
-                <span className={`text-[8px] -ml-0.5 ${isDone ? "text-ok/40" : "text-text-tertiary/30"}`}>›</span>
+                <div className={`h-px w-4 ${levelDone ? "bg-ok/40" : "bg-edge"}`} />
+                <span className={`text-[8px] -ml-0.5 ${levelDone ? "text-ok/40" : "text-text-tertiary/30"}`}>›</span>
               </div>
             )}
           </div>
@@ -394,6 +420,14 @@ function StepCard({
   const [editing, setEditing] = useState(false);
   const [editPrompt, setEditPrompt] = useState(step.prompt);
   const streamRef = useRef<HTMLPreElement>(null);
+  const stepDeps = (() => {
+    try {
+      const v = JSON.parse(step.dependsOn ?? "[]");
+      return Array.isArray(v) ? v.map(String) : [];
+    } catch {
+      return [];
+    }
+  })();
 
   useEffect(() => {
     if (step.status === "running" && streamRef.current) {
@@ -434,7 +468,25 @@ function StepCard({
                 <span className="text-text-tertiary ml-1">{step.model.split("-").slice(-1)[0]}</span>
               )}
             </span>
+            <span
+              className={`font-mono text-[9px] border rounded px-1 shrink-0 ${
+                step.writes === 0 ? "text-ok border-ok/30" : "text-accent border-accent/30"
+              }`}
+            >
+              {step.writes === 0 ? "lee" : "escribe"}
+            </span>
+            {((step.inputTokens ?? 0) + (step.outputTokens ?? 0) > 0) && (
+              <span className="font-mono text-[10px] text-text-tertiary shrink-0">
+                {formatTokens((step.inputTokens ?? 0) + (step.outputTokens ?? 0))}
+              </span>
+            )}
+            {step.estimatedTokens ? (
+              <span className="font-mono text-[10px] text-text-tertiary shrink-0">~{formatTokens(step.estimatedTokens)} est.</span>
+            ) : null}
           </div>
+          {stepDeps.length > 0 && (
+            <p className="font-mono text-[10px] text-text-tertiary mt-1">depende de: {stepDeps.join(", ")}</p>
+          )}
 
           {step.reason && (
             <p className="font-mono text-[10px] text-text-tertiary mt-1 leading-relaxed">
@@ -1090,6 +1142,87 @@ function PlanChat({ plan }: { plan: Plan }) {
   );
 }
 
+// ─── Presupuesto, pausa y síntesis ─────────────────────────────────────────────
+
+function BudgetBar({ plan, disabled, onSave }: { plan: Plan; disabled: boolean; onSave: (p: { budgetTokens?: number | null; maxParallel?: number }) => void }) {
+  const [draft, setDraft] = useState(plan.budgetTokens?.toString() ?? "");
+  useEffect(() => setDraft(plan.budgetTokens?.toString() ?? ""), [plan.budgetTokens]);
+  const pct = plan.budgetTokens ? Math.min(100, Math.round((plan.usedTokens * 100) / plan.budgetTokens)) : null;
+  return (
+    <div className="mx-4 my-2 flex flex-wrap items-center gap-3 font-mono text-[10px] text-text-tertiary">
+      <span>tokens: {formatTokens(plan.usedTokens)}{plan.budgetTokens ? ` / ${formatTokens(plan.budgetTokens)}` : " (sin tope)"}</span>
+      {pct !== null && (
+        <span className="relative h-1 w-32 overflow-hidden rounded-full bg-surface-2" aria-hidden="true">
+          <span className={`absolute inset-y-0 left-0 ${pct >= 100 ? "bg-err" : "bg-ok"}`} style={{ width: `${pct}%` }} />
+        </span>
+      )}
+      {plan.estimatedTokens ? <span>estimado por Opus: ~{formatTokens(plan.estimatedTokens)}</span> : null}
+      <label className="flex items-center gap-1">
+        tope
+        <input
+          aria-label="Tope de tokens del plan"
+          inputMode="numeric"
+          disabled={disabled}
+          className="w-24 rounded border border-edge bg-surface-0 px-1 py-0.5 text-text-primary disabled:opacity-50"
+          value={draft}
+          placeholder="sin tope"
+          onChange={(e) => setDraft(e.target.value.replace(/[^\d]/g, ""))}
+          onBlur={() => {
+            const next = draft ? Number(draft) : null;
+            if (next !== plan.budgetTokens) onSave({ budgetTokens: next });
+          }}
+        />
+      </label>
+      <label className="flex items-center gap-1">
+        en paralelo
+        <select
+          aria-label="Pasos en paralelo"
+          disabled={disabled}
+          className="rounded border border-edge bg-surface-0 px-1 py-0.5 text-text-primary disabled:opacity-50"
+          value={plan.maxParallel}
+          onChange={(e) => onSave({ maxParallel: Number(e.target.value) })}
+        >
+          {[1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>{n}</option>)}
+        </select>
+      </label>
+    </div>
+  );
+}
+
+function PauseBanner({ plan, onContinue }: { plan: Plan; onContinue: () => void }) {
+  if (plan.status !== "pending" || !plan.pauseReason) return null;
+  const text = plan.pauseReason === "budget"
+    ? `Plan pausado por presupuesto: llevas ${formatTokens(plan.usedTokens)} de ${formatTokens(plan.budgetTokens ?? 0)} tokens.`
+    : "Plan pausado por cuota de Antigravity. Cambia de cuenta en el panel de cuentas y continúa.";
+  return (
+    <div role="status" className="mx-4 my-2 flex flex-wrap items-center gap-3 rounded-lg border border-accent/40 bg-accent-dim px-3 py-2 font-mono text-[11px] text-text-primary">
+      <span>{text}</span>
+      <button onClick={onContinue} className="ml-auto rounded border border-ok/40 px-2 py-0.5 text-ok hover:text-text-primary">
+        {plan.pauseReason === "budget" ? "continuar (+50 %)" : "continuar"}
+      </button>
+    </div>
+  );
+}
+
+function SynthesisCard({ plan, onRetry }: { plan: Plan; onRetry: () => void }) {
+  if (!plan.synthesisStatus) return null;
+  return (
+    <section aria-label="Respuesta final" className="mb-5 rounded-lg border border-accent/30 bg-surface-1 p-4">
+      <h3 className="mb-2 font-mono text-xs text-accent">respuesta final · Opus 5.5</h3>
+      {plan.synthesisStatus === "running" && <p className="font-mono text-[11px] text-text-tertiary">Opus está juntando las respuestas…</p>}
+      {plan.synthesisStatus === "succeeded" && plan.synthesis && (
+        <div className="prose prose-invert prose-sm max-w-none text-text-primary/90 leading-relaxed [&_p]:my-2 [&_pre]:bg-surface-2 [&_pre]:border [&_pre]:border-edge [&_pre]:rounded-lg"><ReactMarkdown remarkPlugins={[remarkGfm]}>{plan.synthesis}</ReactMarkdown></div>
+      )}
+      {plan.synthesisStatus === "failed" && (
+        <div className="space-y-2 font-mono text-[11px]">
+          <p className="text-err">La síntesis falló: {plan.synthesisError}</p>
+          <button onClick={onRetry} className="rounded border border-accent/40 px-2 py-0.5 text-accent hover:text-text-primary">reintentar síntesis</button>
+        </div>
+      )}
+    </section>
+  );
+}
+
 // ─── Main PlanView ─────────────────────────────────────────────────────────────
 
 export function PlanView({
@@ -1107,7 +1240,7 @@ export function PlanView({
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [changedFiles, setChangedFiles] = useState<ChangedFile[]>([]);
   const [showFilePreview, setShowFilePreview] = useState(false);
-  const [quotaPaused, setQuotaPaused] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const isGenerating = plan.status === "generating";
   const genLog = logs.get(`gen:${plan.id}`) ?? "";
@@ -1145,7 +1278,7 @@ export function PlanView({
       return;
     }
 
-    if (!["plan:step", "plan:done"].includes(e.type)) return;
+    if (!["plan:step", "plan:done", "plan:budget", "plan:synthesis"].includes(e.type)) return;
     if (e.planId !== plan.id) return;
 
     if (e.type === "plan:step") {
@@ -1161,9 +1294,16 @@ export function PlanView({
       }
     }
 
+    if (e.type === "plan:budget") {
+      setPlan((p) => ({ ...p, usedTokens: e.usedTokens, budgetTokens: e.budgetTokens }));
+    }
+
+    if (e.type === "plan:synthesis") {
+      setPlan((p) => ({ ...p, synthesisStatus: e.status, synthesis: e.synthesis ?? p.synthesis, synthesisError: e.error ?? null }));
+    }
+
     if (e.type === "plan:done") {
-      setPlan((prev) => ({ ...prev, status: e.status }));
-      setQuotaPaused(e.status === "pending" && e.paused === "quota");
+      setPlan((p) => ({ ...p, status: e.status, pauseReason: e.paused ?? null }));
       setMode("idle");
       setWaitingForNext(false);
       queryClient.invalidateQueries({ queryKey: ["plans"] });
@@ -1177,7 +1317,6 @@ export function PlanView({
         .then((r) => r.json())
         .then((p: Plan) => {
           setPlan(p);
-          setQuotaPaused(p.status === "pending" && (p.steps ?? []).some((s) => s.errorMessage?.startsWith("Pausado por cuota")));
           fetch(`/api/plans/${p.id}/file-changes`)
             .then((r) => r.json())
             .then((rows: Array<{ filePath: string; content: string; changedAt: string }>) => {
@@ -1198,22 +1337,71 @@ export function PlanView({
     }
   }, [plan.id, isGenerating]);
 
+  /** POST que muestra el error 409 del backend junto a los controles en vez de un alert. */
+  async function postAction(path: string, fallbackMode: "idle" | "running-all" | "step-by-step" = "idle") {
+    setActionError(null);
+    try {
+      const res = await fetch(`/api/plans/${plan.id}/${path}`, { method: "POST" });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        setActionError(body.error ?? `Error ${res.status}`);
+        setMode(fallbackMode);
+        return null;
+      }
+      return (await res.json().catch(() => ({}))) as Record<string, unknown>;
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : String(err));
+      setMode(fallbackMode);
+      return null;
+    }
+  }
+
   async function handleRunAll() {
-    setQuotaPaused(false);
+    setPlan((p) => ({ ...p, pauseReason: null }));
     setMode("running-all");
-    await fetch(`/api/plans/${plan.id}/run-all`, { method: "POST" });
+    await postAction("run-all");
   }
 
   async function handleRunNext() {
-    setQuotaPaused(false);
+    setPlan((p) => ({ ...p, pauseReason: null }));
     setMode("step-by-step");
     setWaitingForNext(false);
-    await fetch(`/api/plans/${plan.id}/run-next`, { method: "POST" });
+    await postAction("run-next");
+  }
+
+  async function handleContinue() {
+    setMode("running-all");
+    const r = await postAction("continue");
+    if (r) setPlan((p) => ({ ...p, pauseReason: null, status: "running" }));
+  }
+
+  async function handleRetrySynthesis() {
+    setPlan((p) => ({ ...p, synthesisStatus: "running", synthesisError: null }));
+    await postAction("synthesis/retry");
+  }
+
+  async function handleSettings(patch: { budgetTokens?: number | null; maxParallel?: number }) {
+    setActionError(null);
+    try {
+      const res = await fetch(`/api/plans/${plan.id}/settings`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch),
+      });
+      const body = (await res.json().catch(() => ({}))) as Partial<Plan> & { error?: string };
+      if (!res.ok) {
+        setActionError(body.error ?? `Error ${res.status}`);
+        return;
+      }
+      setPlan((p) => ({ ...p, budgetTokens: body.budgetTokens ?? null, maxParallel: body.maxParallel ?? p.maxParallel }));
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : String(err));
+    }
   }
 
   async function handleResume() {
     // Reset failed steps to pending in local state immediately for responsive UI
-    setQuotaPaused(false);
+    setPlan((p) => ({ ...p, pauseReason: null }));
     setMode("running-all");
     setPlan((prev) => ({
       ...prev,
@@ -1222,7 +1410,7 @@ export function PlanView({
         s.status === "failed" ? { ...s, status: "pending", errorMessage: null } : s,
       ),
     }));
-    await fetch(`/api/plans/${plan.id}/resume`, { method: "POST" });
+    await postAction("resume");
   }
 
   async function handleRetryStep(stepId: string) {
@@ -1361,7 +1549,7 @@ export function PlanView({
               </span>
             </button>
           )}
-          {!allDone && !isRunning && failedCount === 0 && (
+          {!allDone && !isRunning && failedCount === 0 && !plan.pauseReason && (
             <>
               <button
                 onClick={handleRunAll}
@@ -1405,11 +1593,9 @@ export function PlanView({
         </div>
       </div>
 
-      {quotaPaused && (
-        <div role="status" className="mx-4 my-2 rounded-lg border border-accent/40 bg-accent-dim px-3 py-2 font-mono text-[11px] text-text-primary">
-          Plan pausado por cuota de Antigravity. Cambia de cuenta en el panel de cuentas y pulsa «ejecutar todo» o «paso a paso» para seguir desde el paso pendiente.
-        </div>
-      )}
+      <BudgetBar plan={plan} disabled={isRunning} onSave={handleSettings} />
+      {actionError && <p role="alert" className="mx-4 font-mono text-[10px] text-err">{actionError}</p>}
+      <PauseBanner plan={plan} onContinue={handleContinue} />
 
       {/* ── Resizable body: [plan+preview] / [chat] ── */}
       <ResizableGroup direction="vertical" className="flex-1 min-h-0">
@@ -1425,6 +1611,7 @@ export function PlanView({
                 {/* Plan description + diagram + stats */}
                 <p className="font-mono text-[10px] uppercase tracking-widest text-text-tertiary mb-1">plan</p>
                 <p className="text-sm text-text-primary leading-relaxed mb-4">{plan.description}</p>
+                <SynthesisCard plan={plan} onRetry={handleRetrySynthesis} />
                 <PlanSummary plan={plan} />
                 {plan.steps.length > 0 && (
                   <div className="mb-2">
