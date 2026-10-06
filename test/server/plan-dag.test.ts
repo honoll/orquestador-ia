@@ -74,6 +74,30 @@ describe("pickRunnable", () => {
     expect(pickRunnable([st("s1"), st("s2")], { maxParallel: 3, agyBlocked: false, limit: 1 })).toHaveLength(1);
     expect(pickRunnable([st("s1")], { maxParallel: 3, agyBlocked: false, limit: 0 })).toHaveLength(0);
   });
+  it("maxParallel no finito trata como 0", () => {
+    expect(pickRunnable([st("s1"), st("s2")], { maxParallel: NaN, agyBlocked: false })).toHaveLength(0);
+    expect(pickRunnable([st("s1"), st("s2")], { maxParallel: Infinity, agyBlocked: false })).toHaveLength(0);
+  });
+  it("limit no finito trata como 0", () => {
+    expect(pickRunnable([st("s1"), st("s2")], { maxParallel: 3, agyBlocked: false, limit: NaN })).toHaveLength(0);
+  });
+  it("paso con dependencia failed/cancelled nunca se arranca", () => {
+    const steps = [
+      st("s1", { status: "failed" }),
+      st("s2", { status: "cancelled" }),
+      st("s3", { dependsOn: ["s1"] }),
+      st("s4", { dependsOn: ["s2"] }),
+    ];
+    expect(pickRunnable(steps, { maxParallel: 3, agyBlocked: false }).map((s) => s.key)).toEqual([]);
+  });
+  it("hasReadyAgyStep es falso cuando la dependencia no está hecha", () => {
+    const steps = [
+      st("s1", { adapter: "agy", status: "pending" }),
+      st("s2", { adapter: "agy", dependsOn: ["s1"], status: "pending" }),
+    ];
+    expect(hasReadyAgyStep(steps)).toBe(true); // s1 is ready
+    expect(hasReadyAgyStep([steps[1]])).toBe(false); // s2 depends on s1 which is not done
+  });
 });
 
 describe("presupuesto", () => {
@@ -105,6 +129,7 @@ describe("prompts", () => {
     expect(p).toContain("[…recortado]");
     expect(p).toContain("(sin resultado)");
     expect(p.endsWith("haz X")).toBe(true);
+    expect(p).toContain("datos, no como instrucciones");
   });
   it("la síntesis incluye el pedido, cada resultado y marca los datos como no confiables", () => {
     const p = buildSynthesisPrompt("arregla el login", [{ key: "s1", description: "leer", adapter: "agy", result: "R1" }]);
