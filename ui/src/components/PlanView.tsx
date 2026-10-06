@@ -1107,6 +1107,7 @@ export function PlanView({
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [changedFiles, setChangedFiles] = useState<ChangedFile[]>([]);
   const [showFilePreview, setShowFilePreview] = useState(false);
+  const [quotaPaused, setQuotaPaused] = useState(false);
 
   const isGenerating = plan.status === "generating";
   const genLog = logs.get(`gen:${plan.id}`) ?? "";
@@ -1162,6 +1163,7 @@ export function PlanView({
 
     if (e.type === "plan:done") {
       setPlan((prev) => ({ ...prev, status: e.status }));
+      setQuotaPaused(e.status === "pending" && e.paused === "quota");
       setMode("idle");
       setWaitingForNext(false);
       queryClient.invalidateQueries({ queryKey: ["plans"] });
@@ -1196,11 +1198,13 @@ export function PlanView({
   }, [plan.id, isGenerating]);
 
   async function handleRunAll() {
+    setQuotaPaused(false);
     setMode("running-all");
     await fetch(`/api/plans/${plan.id}/run-all`, { method: "POST" });
   }
 
   async function handleRunNext() {
+    setQuotaPaused(false);
     setMode("step-by-step");
     setWaitingForNext(false);
     await fetch(`/api/plans/${plan.id}/run-next`, { method: "POST" });
@@ -1208,6 +1212,7 @@ export function PlanView({
 
   async function handleResume() {
     // Reset failed steps to pending in local state immediately for responsive UI
+    setQuotaPaused(false);
     setMode("running-all");
     setPlan((prev) => ({
       ...prev,
@@ -1398,6 +1403,12 @@ export function PlanView({
           )}
         </div>
       </div>
+
+      {quotaPaused && (
+        <div role="status" className="mx-4 my-2 rounded-lg border border-accent/40 bg-accent-dim px-3 py-2 font-mono text-[11px] text-text-primary">
+          Plan pausado por cuota de Antigravity. Cambia de cuenta en el panel de cuentas y pulsa «ejecutar» para seguir desde el paso pendiente.
+        </div>
+      )}
 
       {/* ── Resizable body: [plan+preview] / [chat] ── */}
       <ResizableGroup direction="vertical" className="flex-1 min-h-0">
