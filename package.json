@@ -11,7 +11,8 @@
     "db:migrate": "tsx src/db/migrate.ts",
     "test": "vitest run",
     "test:watch": "vitest",
-    "lint": "eslint src test",
+    "lint": "eslint src test scripts",
+    "smoke:models": "tsx scripts/smoke-models.ts",
     "typecheck": "tsc --noEmit && cd ui && npx tsc --noEmit -p ."
   },
   "dependencies": {

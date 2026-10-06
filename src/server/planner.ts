@@ -2,6 +2,7 @@ import { runProcess } from "../lib/process-runner.js";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
+import { MODEL_CATALOG, PLANNER_MODEL } from "../config/models.js";
 
 export interface PlanStep {
   stepIndex: number;
@@ -19,11 +20,9 @@ interface ClaudeStreamMessage {
   delta?: { text?: string };
 }
 
-const ADAPTER_DEFAULTS: Record<string, string> = {
-  claude: "claude-sonnet-4-6",
-  codex: "gpt-5.5",
-  gemini: "gemini-2.5-flash",
-};
+const ADAPTER_DEFAULTS: Record<string, string> = Object.fromEntries(
+  Object.entries(MODEL_CATALOG).map(([type, cat]) => [type, cat.defaultModel]),
+);
 
 const ROUTING_SYSTEM = `You are a planning agent for a local AI orchestrator that routes tasks to the best CLI tool.
 
@@ -129,7 +128,7 @@ export async function generatePlan(
     "--output-format", "stream-json",
     "--verbose",
     "--dangerously-skip-permissions",
-    "--model", "claude-sonnet-4-6",
+    "--model", PLANNER_MODEL,
     "--system-prompt-file", tmpSystemFile,
   ];
 
