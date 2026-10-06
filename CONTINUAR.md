@@ -1,7 +1,7 @@
 # Orquestador-IA — Memoria del Proyecto
 
 ## Que es
-Un orquestador local de CLIs de IA (Claude Code, Codex CLI, Gemini CLI) con interfaz web.
+Un orquestador local de CLIs de IA (Claude Code, Codex CLI, agy/Antigravity) con interfaz web.
 Inspirado en PaperClip (https://github.com/paperclipai/paperclip) pero simplificado para uso personal.
 El caso de uso principal es desarrollo Flutter + Firebase (POS de taqueria — proyecto COPPER).
 
@@ -13,7 +13,7 @@ Todo lo siguiente ya esta implementado y probado:
 
 ### Backend (src/)
 - **Server Hono** en puerto 3100 (localhost only, sin auth)
-- **3 adapters funcionales**: Claude Code, Codex CLI, Gemini CLI
+- **3 adapters funcionales**: Claude Code, Codex CLI, agy (Antigravity). Gemini CLI se retiró en F1 (UNSUPPORTED_CLIENT)
 - **SQLite** con Drizzle ORM + libsql en `~/.orquestador-ia/data/orquestador.db`
 - **WebSocket** para streaming de logs en tiempo real
 - **Sistema de conversaciones** — multiples mensajes se agrupan bajo un conversation_id
@@ -43,13 +43,13 @@ Todo lo siguiente ya esta implementado y probado:
 - **GitHub Clone modal** — clona repos (privadas via `gh`, publicas via `git`), streaming WS (github:log), crea proyecto opcional
 - **Terminal /run** — ejecuta comandos shell desde el chat, streaming stdout WS (shell:log), boton kill
 - **File context picker (📎)** — adjuntar archivos de proyecto, navegacion por directorios, multi-select
-- **Pipeline Gemini → adapter principal (nuevo)**:
-  - Cuando hay archivos adjuntos, SIEMPRE pasan primero por Gemini independientemente del adapter activo
-  - POST /api/gemini/analyze: corre Gemini sync, analiza archivos en contexto del prompt, retorna summary
-  - El summary de Gemini se inyecta como "[Gemini file analysis]..." antes del prompt al adapter principal
-  - Indicador visual "◎ Gemini analizando archivos…" (sky blue) durante la pre-procesamiento
-  - Fallback a raw file content si Gemini falla o no esta disponible
-  - Aplica en prompts normales Y en /claude /codex /gemini forzados
+- **Pipeline agy → adapter principal**:
+  - Cuando hay archivos adjuntos, SIEMPRE pasan primero por agy independientemente del adapter activo
+  - POST /api/analyze: corre agy sync, analiza archivos en contexto del prompt, retorna summary
+  - El summary de agy se inyecta como "[Análisis de archivos (agy)]..." antes del prompt al adapter principal
+  - Indicador visual "◎ agy analizando archivos…" (sky blue) durante la pre-procesamiento
+  - Fallback a raw file content si agy falla o no esta disponible
+  - Aplica en prompts normales Y en /claude /codex /agy forzados
 
 ## Estructura de archivos clave
 
@@ -77,11 +77,11 @@ src/
       detect.ts
       execute.ts               — codex exec --json -m <model> - (prompt por stdin)
       parse.ts                 — Parsea JSONL: item.completed, turn.completed, error/turn.failed
-    gemini/
-      index.ts                 — Meta: command "gemini", modelos: ver `src/config/models.ts`
+    agy/
+      index.ts                 — Meta: command "agy", modelos: ver `src/config/models.ts`
       detect.ts
-      execute.ts               — gemini --prompt <text> --output-format stream-json -y --model <model>
-      parse.ts                 — Parsea stream-json: init, message (role=assistant), result (stats)
+      execute.ts               — agy.exe directo (shell:false), prompt NDJSON por stdin, stream-json
+      parse.ts                 — Parsea stream-json: init, step_update (agent_response), resultado
   server/
     index.ts                   — Hono server, sirve UI desde ui/dist, monta rutas + WS
     runner.ts                  — Orquestador: crea run, spawns adapter, emite logs WS, cancelRun(), historyPrefix
@@ -96,7 +96,7 @@ src/
       plans.ts                 — CRUD /api/plans, POST /:id/run-all, POST /:id/run-next, PATCH /steps/:id
       shell.ts                 — POST /run (ejecuta cmd shell, streaming shell:log WS), POST /:jobId/kill
       github.ts                — POST /clone (gh repo clone o git clone, streaming github:log WS, crea proyecto)
-      gemini-analyze.ts        — POST /analyze (corre Gemini sync sobre archivos adjuntos, retorna analysis)
+      analyze.ts               — POST /api/analyze (corre agy sync sobre archivos adjuntos, retorna analysis)
   server/
     file-watcher.ts            — fs.watch sobre dir de proyecto durante plan execution; startWatch/stopWatch por planId; debounce 300ms; emite file:change WS events
 
@@ -131,7 +131,7 @@ npm start               # Arranca server en http://localhost:3100
 ## CLIs necesarios (deben estar en PATH)
 - `claude` — Claude Code CLI (autenticado)
 - `codex` — Codex CLI (autenticado con cuenta ChatGPT, NO API key)
-- `gemini` — Gemini CLI (autenticado con Google)
+- `agy` — Antigravity CLI (autenticado con Google)
 
 ## Bugs conocidos ya corregidos
 1. **spawn ENOENT en Windows** — `shell: process.platform === "win32"` en process-runner.ts
@@ -164,13 +164,13 @@ npm start               # Arranca server en http://localhost:3100
 - Single-user, sin auth, bind localhost only
 - SQLite en ~/.orquestador-ia/data/orquestador.db
 - Claude usa --dangerously-skip-permissions (headless)
-- Gemini usa -y (yolo mode, auto-approve)
+- agy corre sin shell (agy.exe directo), prompt NDJSON por stdin
 - Codex usa exec --json con prompt por stdin
-- Sesiones se persisten para --resume (Claude session_id, Codex thread_id, Gemini session_id)
+- Sesiones se persisten para --resume (Claude session_id, Codex thread_id, agy conversation_id)
 - WebSocket broadcast a todos los clientes
 - Cross-adapter context: se inyecta historial de conversacion como prefijo de texto (solo si no hay session_id nativo)
 - Cancel: kill() del proceso hijo, activeKills Map en runner.ts
-- Plan routing: claude/codex/gemini asignados por tipo de tarea (arquitectura/review vs impl/codegen vs analisis)
+- Plan routing: claude/codex/agy asignados por tipo de tarea (arquitectura/review vs impl/codegen vs analisis)
 - Plan retry: MAX_RETRIES=2, TRANSIENT_RE para 429/503/overloaded, unknown session fallback sin --resume
 
 ## Slash commands disponibles en chat
@@ -179,7 +179,7 @@ npm start               # Arranca server en http://localhost:3100
 - `/clear` — limpia historial visual
 - `/claude <prompt>` — fuerza adapter Claude para ese mensaje
 - `/codex <prompt>` — fuerza adapter Codex para ese mensaje
-- `/gemini <prompt>` — fuerza adapter Gemini para ese mensaje
+- `/agy <prompt>` — fuerza adapter agy (Antigravity) para ese mensaje
 - `/run <comando>` — ejecuta comando de terminal, muestra output en chat
 - `/clone <url>` — abre modal para clonar repositorio de GitHub
 
@@ -188,14 +188,14 @@ npm start               # Arranca server en http://localhost:3100
 - `shell:done` — fin del proceso shell con exitCode
 - `github:log` — chunks de stdout del clone, keyed `gh:${jobId}`
 - `github:done` — fin del clone con { succeeded, destination, projectId, error }
-- `gemini:analyze:log` — chunks internos del analisis Gemini (no consumido por UI, solo info)
+- `analyze:log` — chunks internos del analisis agy (no consumido por UI, solo info)
 - `plan:generating` — chunks de texto del plan generandose, keyed `gen:${planId}`
 - `file:change` — archivo modificado durante ejecucion de plan: `{ planId, filePath, content, timestamp }`
 
 ## Proximos pasos posibles
 - [ ] Mejorar display de errores en chat (mostrar error_message con estilo)
 - [ ] Agregar confirmacion antes de borrar conversacion
-- [x] Soporte para adjuntar archivos/contexto al prompt (con pipeline Gemini)
+- [x] Soporte para adjuntar archivos/contexto al prompt (con pipeline agy)
 - [ ] Persistir adapter/model seleccionado en localStorage
 - [ ] Exportar conversacion como markdown
 - [x] Boton cancelar plan en ejecucion (desde PlanView)

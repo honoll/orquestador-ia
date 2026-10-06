@@ -156,7 +156,7 @@ interface PlanStep {
   planId: string;
   stepIndex: number;
   description: string;
-  adapter: "claude" | "codex" | "gemini";
+  adapter: "claude" | "codex" | "agy";
   model: string | null;
   reason: string | null;
   prompt: string;
@@ -186,31 +186,31 @@ interface Plan {
 const A_COLOR: Record<string, string> = {
   claude: "text-violet-400",
   codex:  "text-emerald-400",
-  gemini: "text-sky-400",
+  agy: "text-sky-400",
 };
 
 const A_BORDER: Record<string, string> = {
   claude: "border-violet-400/30",
   codex:  "border-emerald-400/30",
-  gemini: "border-sky-400/30",
+  agy: "border-sky-400/30",
 };
 
 const A_BG: Record<string, string> = {
   claude: "bg-violet-400/10",
   codex:  "bg-emerald-400/10",
-  gemini: "bg-sky-400/10",
+  agy: "bg-sky-400/10",
 };
 
 const A_RING: Record<string, string> = {
   claude: "ring-violet-400/50",
   codex:  "ring-emerald-400/50",
-  gemini: "ring-sky-400/50",
+  agy: "ring-sky-400/50",
 };
 
 const A_ICON: Record<string, string> = {
   claude: "◆",
   codex:  "◇",
-  gemini: "◎",
+  agy: "◎",
 };
 
 const STATUS_DOT: Record<string, string> = {
@@ -268,7 +268,7 @@ function GeneratingView({
 
       {/* Animated adapter icons */}
       <div className="flex items-center justify-center gap-8 py-8">
-        {["claude", "codex", "gemini"].map((a, i) => (
+        {["claude", "codex", "agy"].map((a, i) => (
           <div
             key={a}
             className="flex flex-col items-center gap-2 animate-fade-in"

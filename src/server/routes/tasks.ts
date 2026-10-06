@@ -126,7 +126,7 @@ app.post("/:id/run", async (c) => {
   }
 
   // Auto-resolve sessionId from previous runs in the same conversation
-  // IMPORTANT: only resume with sessions from the SAME adapter (e.g. don't use a Codex thread_id for Gemini)
+  // IMPORTANT: only resume with sessions from the SAME adapter (e.g. don't use a Codex thread_id for agy)
   let sessionId = (body as any).sessionId;
   if (!sessionId && task.conversationId) {
     // Find previous tasks in this conversation that used the same adapter

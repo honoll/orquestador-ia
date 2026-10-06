@@ -1,4 +1,4 @@
-export type AdapterType = "claude" | "codex" | "gemini" | "agy"; // gemini se quita en Task 3
+export type AdapterType = "claude" | "codex" | "agy";
 
 export interface ModelEntry {
   id: string;
@@ -13,11 +13,6 @@ export const PLANNER_MODEL = "claude-opus-5-5";
  * `npm run smoke:models`; si un id falla por "no existe/no soportado" se quita.
  *
  * claude-* verificados 2026-10-06 con Claude Code 2.1.292 (Opus 5.5 requiere >= 2.1.280).
- *
- * Ids NO verificados a la fecha 2026-10-06 (se conservan; fallo ambiental, no del id):
- * - gemini-3-pro-preview, gemini-3-flash-preview, gemini-2.5-pro, gemini-2.5-flash:
- *   IneligibleTierError / UNSUPPORTED_CLIENT, cliente Gemini CLI ya no soportado
- *   para la cuenta actual.
  */
 export const MODEL_CATALOG = {
   claude: {
@@ -35,15 +30,6 @@ export const MODEL_CATALOG = {
       { id: "gpt-5.5", label: "GPT-5.5" },
     ],
   },
-  gemini: {
-    defaultModel: "gemini-3-flash-preview",
-    models: [
-      { id: "gemini-3-pro-preview", label: "Gemini 3 Pro" },
-      { id: "gemini-3-flash-preview", label: "Gemini 3 Flash" },
-      { id: "gemini-2.5-pro", label: "Gemini 2.5 Pro" },
-      { id: "gemini-2.5-flash", label: "Gemini 2.5 Flash" },
-    ],
-  },
   agy: {
     defaultModel: "gemini-3.8-flash-medium",
     models: [
@@ -57,11 +43,8 @@ export const MODEL_CATALOG = {
   },
 } as const satisfies Record<AdapterType, { defaultModel: string; models: readonly ModelEntry[] }>;
 
-/**
- * Adapters que el planner puede elegir. gemini queda fuera del ruteo porque la
- * cuenta da UNSUPPORTED_CLIENT (2026-10-06); agy (Antigravity) entrará en F1.
- */
-export const ROUTABLE_ADAPTERS: readonly AdapterType[] = ["claude", "codex"];
+/** Adapters que el planner puede elegir. Gemini CLI se retiró en F1 (UNSUPPORTED_CLIENT para la cuenta); agy lo reemplaza. */
+export const ROUTABLE_ADAPTERS: readonly AdapterType[] = ["claude", "codex", "agy"];
 
 /** Modelo barato para el pre-análisis de archivos adjuntos (vía agy). */
 export const AGY_ANALYSIS_MODEL = "gemini-3.8-flash-low";

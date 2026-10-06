@@ -71,7 +71,6 @@ function formatTimeLeft(ms: number): string {
 const TOKEN_BUDGETS: Record<string, number> = {
   claude: 1_230_000,
   codex:  300_000,
-  gemini: 500_000,
 };
 
 function AdapterUsage({ adapter }: { adapter: string }) {
@@ -387,7 +386,7 @@ export function AdapterPanel() {
                     })}
                   </div>
                   {a.type === "claude" && <ClaudeProfiles />}
-                  <AdapterUsage adapter={a.type} />
+                  {a.type !== "agy" && <AdapterUsage adapter={a.type} />}
                   {isActiveAdapter && cavemanStatus?.active && (
                     <div className="pl-3.5 mt-1">
                       <span className="font-mono text-[9px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 border border-amber-500/30">

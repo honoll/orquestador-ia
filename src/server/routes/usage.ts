@@ -121,7 +121,7 @@ function readClaudeLocalUsage(windowHours: number): {
  * GET /api/usage/summary?adapter=claude&windowHours=5
  *
  * For claude: reads real usage from ~/.claude/projects JSONL files.
- * For codex/gemini: falls back to orchestrator runs table.
+ * For codex/agy: falls back to orchestrator runs table.
  * Also returns rateLimitResetsAt from orchestrator runs table.
  */
 app.get("/summary", async (c) => {
@@ -172,7 +172,7 @@ app.get("/summary", async (c) => {
     });
   }
 
-  // Codex / Gemini — orchestrator runs table
+  // Codex / agy — orchestrator runs table
   const windowStart = new Date(Date.now() - windowHours * 60 * 60 * 1000).toISOString();
   const agg = await db.all<{
     inputTokens: number;

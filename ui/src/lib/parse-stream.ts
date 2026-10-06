@@ -5,7 +5,7 @@
  * Real formats confirmed from testing:
  * - Claude: stream-json with content_block_delta, result events
  * - Codex: JSONL with item.completed { item: { text: "..." } }
- * - Gemini: stream-json with message { role: "assistant", content: "..." }
+ * - agy: stream-json with step_update { step_type: "agent_response", text_delta: "..." }
  */
 
 export function parseStreamingText(raw: string, adapter: string): string {
@@ -37,8 +37,8 @@ function extractText(evt: Record<string, any>, adapter: string): string | null {
       return extractClaudeText(evt);
     case "codex":
       return extractCodexText(evt);
-    case "gemini":
-      return extractGeminiText(evt);
+    case "agy":
+      return extractAgyText(evt);
     default:
       return evt.text || evt.content || evt.result || null;
   }
@@ -77,11 +77,10 @@ function extractCodexText(evt: Record<string, any>): string | null {
   return null;
 }
 
-function extractGeminiText(evt: Record<string, any>): string | null {
-  // Real Gemini stream-json format:
-  // { type: "message", role: "assistant", content: "...", delta: true }
-  if (evt.type === "message" && evt.role === "assistant" && evt.content) {
-    return evt.content;
+function extractAgyText(evt: Record<string, any>): string | null {
+  // agy stream-json: { event: "step_update", step_update: { step_type: "agent_response", text_delta: "..." } }
+  if (evt.event === "step_update" && evt.step_update?.step_type === "agent_response" && evt.step_update.text_delta) {
+    return evt.step_update.text_delta;
   }
   return null;
 }

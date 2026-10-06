@@ -24,7 +24,7 @@ npm run smoke:models # smoke test of the model catalog against the real CLIs
 ```
 
 Notes:
-- The Gemini CLI currently fails for this account (IneligibleTierError / UNSUPPORTED_CLIENT: Google asks to migrate to Antigravity).
+- Gemini CLI was retired in F1 (Google: UNSUPPORTED_CLIENT); `agy` replaces it.
 - `claude-opus-5-5` requires Claude Code >= 2.1.280 (verified with 2.1.292 on 2026-10-06).
 
 Two separate `node_modules` exist: root (backend) and `ui/` (frontend). Run `npm install` in both when adding dependencies.
@@ -35,7 +35,7 @@ Three-tier local app: **Hono backend** (`:3100`) + **React 19 frontend** (`:5173
 
 ### Adapter System
 
-Each AI CLI (Claude Code, Codex, Gemini) lives in `src/adapters/{claude,codex,gemini}/` and has four files:
+Each AI CLI (Claude Code, Codex, agy/Antigravity) lives in `src/adapters/{claude,codex,agy}/` and has four files:
 - `index.ts` — metadata: command name, available models, defaults
 - `detect.ts` — checks if CLI binary exists in PATH
 - `execute.ts` — spawns the CLI, pipes the prompt via stdin or args
@@ -57,7 +57,7 @@ POST /api/tasks → POST /api/tasks/:id/run
 
 ### Plan System
 
-`POST /api/plans` → `planner.ts` calls Claude (`PLANNER_MODEL` from `src/config/models.ts`, Opus 5.5) with a routing system prompt generated from `ROUTABLE_ADAPTERS` + `MODEL_CATALOG` (gemini is not routed); `normalizeSteps` validates each step against the catalog (disallowed adapter throws, unknown model falls back to the adapter default) → Claude outputs JSON with steps `{ description, adapter, model, reason, prompt }` → stored as `plan_steps` → `plan-runner.ts` executes steps sequentially with up to 2 retries per step.
+`POST /api/plans` → `planner.ts` calls Claude (`PLANNER_MODEL` from `src/config/models.ts`, Opus 5.5) with a routing system prompt generated from `ROUTABLE_ADAPTERS` + `MODEL_CATALOG` (`claude`, `codex`, `agy` are routable); `normalizeSteps` validates each step against the catalog (disallowed adapter throws, unknown model falls back to the adapter default) → Claude outputs JSON with steps `{ description, adapter, model, reason, prompt }` → stored as `plan_steps` → `plan-runner.ts` executes steps sequentially with up to 2 retries per step.
 
 Retry logic: transient errors (429, 503, rate limit text) → retry; unknown session error → retry without `--resume`; other errors → fail step and stop plan.
 
@@ -71,7 +71,9 @@ Retry logic: transient errors (429, 503, rate limit text) → retry; unknown ses
 - **Session resume is adapter-scoped**: a conversation's `sessionId` is only passed as `--resume` if the new task uses the same adapter. Cross-adapter turns fall back to text prefix injection.
 - **Windows spawn**: `process-runner.ts` always uses `shell: true` on Windows to avoid `ENOENT`. Codex requires prompt via stdin (using `-` flag) because its args don't survive cmd.exe quoting.
 - **No prompts as cmd.exe arguments (F1 rule)**: `quoteWindowsArg` cannot make `&` or `%VAR%` safe under cmd.exe (see `it.fails` in `test/lib/quote-windows-arg.test.ts`). Send prompts via stdin or spawn with `shell:false`.
-- **Headless flags**: Claude uses `--dangerously-skip-permissions`, Codex uses `--json`, Gemini uses `-y`. These are required — interactive prompts break the runner.
+- **`agy` is spawned directly (`agy.exe`, `shell:false`) with the prompt as NDJSON on stdin.**
+- **Attachments pipeline**: attached files are pre-analyzed by agy via `POST /api/analyze` before reaching the main adapter.
+- **Headless flags**: Claude uses `--dangerously-skip-permissions`, Codex uses `--json`. These are required — interactive prompts break the runner.
 
 ### Database Schema (`src/db/schema.ts`)
 

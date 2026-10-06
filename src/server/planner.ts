@@ -23,7 +23,6 @@ interface ClaudeStreamMessage {
 const ADAPTER_STRENGTHS: Record<AdapterType, string> = {
   claude: "architecture decisions, code review, complex reasoning, validation, writing, explanations",
   codex: "code generation, debugging, refactoring, direct implementation, file editing",
-  gemini: "large codebase analysis (not routable)",
   agy: "fast and cheap analysis, reading and summarizing many files, routine implementation; Gemini 3.x and Claude models billed to the Antigravity quota (each call has ~11k tokens of fixed overhead, so prefer few dense steps)",
 };
 

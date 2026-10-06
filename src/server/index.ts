@@ -15,7 +15,7 @@ import plansRoute from "./routes/plans.js";
 import claudeProfilesRoute from "./routes/claude-profiles.js";
 import shellRoute from "./routes/shell.js";
 import githubRoute from "./routes/github.js";
-import geminiAnalyzeRoute from "./routes/gemini-analyze.js";
+import analyzeRoute from "./routes/analyze.js";
 import cavemanRoute from "./routes/caveman.js";
 import usageRoute from "./routes/usage.js";
 
@@ -39,7 +39,7 @@ app.route("/api/plans", plansRoute);
 app.route("/api/claude-profiles", claudeProfilesRoute);
 app.route("/api/shell", shellRoute);
 app.route("/api/github", githubRoute);
-app.route("/api/gemini", geminiAnalyzeRoute);
+app.route("/api/analyze", analyzeRoute);
 app.route("/api/caveman", cavemanRoute);
 app.route("/api/usage", usageRoute);
 

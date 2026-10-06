@@ -56,7 +56,7 @@ export function runProcess(options: RunProcessOptions): { promise: Promise<RunPr
   const mergedEnv = { ...process.env, ...env } as NodeJS.ProcessEnv;
 
   const promise = new Promise<RunProcessResult>((resolve) => {
-    // On Windows, shell:true is required to run .CMD/.BAT files (codex.CMD, gemini.CMD).
+    // On Windows, shell:true is required to run .CMD/.BAT files (codex.CMD, claude.cmd).
     // But when shell:true, Node joins args with spaces without quoting, so any arg with
     // spaces (like a prompt) gets split into tokens. Fix: build the quoted command string
     // ourselves and pass it as the sole argument so cmd.exe receives it verbatim.

@@ -29,7 +29,6 @@ const MAX_HISTORY_TURNS = 20;
 const DEFAULT_TIMEOUT: Record<string, number> = {
   claude: 300,  // 5 min — Claude headless is reliable
   codex: 180,   // 3 min
-  gemini: 120,  // 2 min — Gemini can loop with tool errors
   agy: 600,
 };
 
