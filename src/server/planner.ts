@@ -105,6 +105,26 @@ export function extractJsonFromOutput(stdout: string): any {
   return JSON.parse(match[0]);
 }
 
+/** Mensaje para el usuario cuando el planner termina con código distinto de cero. */
+export function classifyPlannerFailure(stdout: string, stderr: string, exitCode: number | null): string {
+  for (const line of stdout.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    try {
+      const msg = JSON.parse(trimmed);
+      if (msg?.type === "result" && msg.is_error === true) {
+        return `Planner failed: ${String(msg.result ?? "").slice(0, 500)}`;
+      }
+    } catch {
+      // not a JSON line
+    }
+  }
+  if (/rate.?limit|429|too many requests/i.test(`${stdout}\n${stderr}`)) {
+    return "Rate limit de Claude alcanzado. Intenta en unos minutos.";
+  }
+  return `Planner failed (exit ${exitCode}): ${stderr.slice(0, 500)}`;
+}
+
 export interface GeneratePlanOptions {
   onStream?: (text: string) => void;
   onKillRegistered?: (kill: () => void) => void;
@@ -170,11 +190,7 @@ export async function generatePlan(
   try { fs.unlinkSync(tmpSystemFile); } catch { /* ignore */ }
 
   if (proc.exitCode !== 0 && !proc.timedOut) {
-    const isRateLimit = !proc.stderr.trim() || /rate/i.test(proc.stderr);
-    if (isRateLimit) {
-      throw new Error("Rate limit de Claude alcanzado. Intenta en unos minutos.");
-    }
-    throw new Error(`Planner failed (exit ${proc.exitCode}): ${proc.stderr.slice(0, 500)}`);
+    throw new Error(classifyPlannerFailure(proc.stdout, proc.stderr, proc.exitCode));
   }
 
   if (proc.signal === "SIGTERM" || proc.signal === "SIGKILL") {
