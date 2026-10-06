@@ -133,8 +133,10 @@ export function budgetExceeded(used: number, budget: number | null): boolean {
   return budget !== null && used >= budget;
 }
 
-function clip(text: string, max: number): string {
-  return text.length > max ? `${text.slice(0, max)}\n[…recortado]` : text;
+export const CLIP_MARK = "\n[…recortado]";
+
+export function clip(text: string, max: number): string {
+  return text.length > max ? `${text.slice(0, max)}${CLIP_MARK}` : text;
 }
 
 /** Nonce por llamada: un resultado no puede cerrar su marcador porque no conoce el nonce. */

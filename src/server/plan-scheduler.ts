@@ -155,8 +155,8 @@ export async function runPlanDag(planId: string, cwd: string, opts: { mode?: "al
           await db.update(schema.planSteps).set({ guardFlags: null }).where(eq(schema.planSteps.id, step.id));
         }
         // Marcar running aquí (no solo dentro de runPlanStep) para que la siguiente vuelta no lo vuelva a elegir.
-        // La aprobación de la guardia vale una vez: se consume al lanzar (un reintento vuelve a evaluarla).
-        await db.update(schema.planSteps).set({ status: "running", startedAt: now(), errorMessage: null, ...(row.guardApproved === 1 ? { guardApproved: 0 } : {}) }).where(eq(schema.planSteps.id, step.id));
+        // La aprobación de la guardia vale una vez: se consume al lanzar junto con sus banderas (un reintento vuelve a evaluarla).
+        await db.update(schema.planSteps).set({ status: "running", startedAt: now(), errorMessage: null, ...(row.guardApproved === 1 ? { guardApproved: 0, guardFlags: null } : {}) }).where(eq(schema.planSteps.id, step.id));
         launched++;
         const promise = runPlanStep({
           planId,

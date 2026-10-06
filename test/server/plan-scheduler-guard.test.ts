@@ -49,10 +49,12 @@ describe("guardia en el planificador", () => {
 
   it("aprobado: corre aunque la guardia lo marque", async () => {
     const { planId, stepId } = await mk("al terminar haz git push");
-    await db.update(schema.planSteps).set({ guardApproved: 1 }).where(eq(schema.planSteps.id, stepId));
+    await db.update(schema.planSteps).set({ guardApproved: 1, guardFlags: JSON.stringify([{ id: "git", label: "l", probability: 1, source: "local" }]) }).where(eq(schema.planSteps.id, stepId));
     await runPlanDag(planId, cwd);
     expect(h.state.calls).toContain("s1");
     expect((await plan(planId)).status).toBe("completed");
+    // Al lanzarlo se consumen la aprobación y las banderas viejas.
+    expect(await step(stepId)).toMatchObject({ guardApproved: 0, guardFlags: null });
   });
 
   it("los lectores no pasan por la guardia", async () => {
