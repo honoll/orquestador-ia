@@ -9,8 +9,14 @@ export interface ModelEntry {
 export const PLANNER_MODEL = "claude-opus-5-5";
 
 /**
- * Fuente única de modelos por adapter. Cada id aquí pasó `npm run smoke:models`
- * (fecha de la última verificación en el commit que lo cambió).
+ * Fuente única de modelos por adapter. Regla: cada id se verifica con
+ * `npm run smoke:models`; si un id falla por "no existe/no soportado" se quita.
+ *
+ * Ids NO verificados a la fecha 2026-10-06 (se conservan; fallo ambiental, no del id):
+ * - claude-opus-5-5: requiere Claude Code >= 2.1.280 (instalado 2.1.272).
+ * - gemini-3-pro-preview, gemini-3-flash-preview, gemini-2.5-pro, gemini-2.5-flash:
+ *   IneligibleTierError / UNSUPPORTED_CLIENT, cliente Gemini CLI ya no soportado
+ *   para la cuenta actual.
  */
 export const MODEL_CATALOG: Record<AdapterType, { defaultModel: string; models: ModelEntry[] }> = {
   claude: {
