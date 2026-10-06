@@ -18,7 +18,7 @@ export const PLANNER_MODEL = "claude-opus-5-5";
  *   IneligibleTierError / UNSUPPORTED_CLIENT, cliente Gemini CLI ya no soportado
  *   para la cuenta actual.
  */
-export const MODEL_CATALOG: Record<AdapterType, { defaultModel: string; models: ModelEntry[] }> = {
+export const MODEL_CATALOG = {
   claude: {
     defaultModel: "claude-opus-5-5",
     models: [
@@ -43,4 +43,10 @@ export const MODEL_CATALOG: Record<AdapterType, { defaultModel: string; models: 
       { id: "gemini-2.5-flash", label: "Gemini 2.5 Flash" },
     ],
   },
-};
+} as const satisfies Record<AdapterType, { defaultModel: string; models: readonly ModelEntry[] }>;
+
+/**
+ * Adapters que el planner puede elegir. gemini queda fuera del ruteo porque la
+ * cuenta da UNSUPPORTED_CLIENT (2026-10-06); agy (Antigravity) entrará en F1.
+ */
+export const ROUTABLE_ADAPTERS: readonly AdapterType[] = ["claude", "codex"];
