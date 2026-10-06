@@ -19,6 +19,10 @@ import analyzeRoute from "./routes/analyze.js";
 import cavemanRoute from "./routes/caveman.js";
 import usageRoute from "./routes/usage.js";
 import accountsRoute from "./routes/accounts.js";
+import jevRoute from "./routes/jev.js";
+
+// Llaves locales (p. ej. TYPESAFE_API_KEY) en .env, que está en .gitignore.
+try { process.loadEnvFile(path.resolve(import.meta.dirname, "../../.env")); } catch { /* sin .env */ }
 
 // Run migration on startup and wait for it to finish before accepting connections
 import { migrationDone } from "../db/migrate.js";
@@ -44,6 +48,7 @@ app.route("/api/analyze", analyzeRoute);
 app.route("/api/caveman", cavemanRoute);
 app.route("/api/usage", usageRoute);
 app.route("/api/accounts", accountsRoute);
+app.route("/api/jev", jevRoute);
 
 app.get(
   "/ws",
