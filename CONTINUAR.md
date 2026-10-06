@@ -44,6 +44,45 @@ Cómo usar:
 
 ---
 
+## F4 — JEV para tiers y guardia · completado 2026-10-06
+
+**Rama:** `f4-jev-tiers-guardia`
+
+Lo que se agregó:
+- **Cliente JEV propio** (`src/lib/jev.ts`): TypeSafe AI "System One" API, timeout 10 s, reintentos en 429/529, nunca lanza (devuelve `null` → fallback a reglas locales)
+- **Tiers del pedido** en `POST /api/plans` (antes de Opus): Choice trivial|normal|critical; confianza < 0.7 o JEV no disponible → normal (source "fallback"); se guardan tier, confianza y fuente
+  - **trivial:** sin Opus; un paso `agy` + `gemini-3.8-flash-low`; Noul decide si escribe; arranca automáticamente
+  - **normal:** como hoy (Opus planea; espera ejecutar)
+  - **critical:** Opus planea + paso final `review` de solo lectura (Opus 5.5) que depende de todos los pasos hoja; UI muestra insignia y botón "aprobar y ejecutar"; nunca auto-arranca
+- **Guardia** (`src/server/plan-guard.ts`): antes de lanzar cada paso escritor no aprobado; evalúa prompt original + resultados recortados (4000 c/u) + carpeta del proyecto con tres Noul:
+  1. ¿Involucra git (commit/push/historial/remotos)?
+  2. ¿Es destructivo (borrar/sobrescribir en masa)?
+  3. ¿Toca archivos fuera del proyecto o config sistema/usuario?
+  - Cualquiera ≥ 0.5 → paso no se lanza; plan `pending` con `pause_reason: guard`; banderas en `plan_steps.guard_flags`; UI "aprobar este paso"/"cancelar"; WS `plan:guard`
+  - Aprobación: `POST /api/plans/:planId/steps/:stepId/approve` pone `guard_approved` (solo si plan está guard-paused y paso pending); se consume al lanzar; reintento re-evalúa
+  - Editar el prompt anula la aprobación y borra banderas
+  - Lectores nunca pasan por la guardia
+  - Sin JEV: reglas locales regex conservadoras (solo de respaldo)
+- **Status JEV:** `GET /api/jev/status` → `{ configured }`. Llave en `.env` (gitignored), `.env.example` la documenta, `process.loadEnvFile` la carga en servidor
+- **Privacidad:** prompts de pasos y resultados recortados viajan a TypeSafe; retención no documentada → no usar con proyectos de clientes hasta revisar
+
+Verificación en vivo (2026-10-06):
+- Suite verde: `npm test && npm run lint && npm run typecheck && npm run build:ui`
+- Sin llave: status `configured: false`; plan trivial creo tier normal (fallback), Opus planea como siempre
+- Guard fallback (sin llave): paso con "haz git push" fue bloqueado por reglas locales antes de lanzar, banner mostró razón, "cancelar" funcionó
+- Plan crítico seeded: mostró insignia y paso `review` de solo lectura con botón "aprobar y ejecutar"
+- PENDIENTE: verificación con llave real de TypeSafe (no `.env` configurado aún) — tiers JEV y respuestas de guardia cubiertas por tests con JEV mockeado
+
+Cómo usar (con llave TypeSafe):
+1. `copy .env.example .env`
+2. Pegar llave desde https://console.typesafe.ai/keys en `TYPESAFE_API_KEY`
+3. Reiniciar servidor
+4. `GET /api/jev/status` → `{ configured: true }`
+5. Pedido trivial ("Resume a.txt en una oración") → `tier: trivial`, un paso, arranca solo
+6. Pedido crítico ("Borra tabla users") → `tier: critical`, paso `review` de solo lectura, requiere aprobación
+
+---
+
 ## F1 — Antigravity (agy), cuentas y medidor · completado 2026-10-06
 
 **Rama:** `f1-antigravity-cuentas`

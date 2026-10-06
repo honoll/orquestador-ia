@@ -133,6 +133,41 @@ Tables: `projects`, `tasks`, `runs`, `plans`, `plan_steps`, `agy_accounts`, `agy
 - 3-column layout: `AdapterPanel` | `Chat` | `ProjectPanel`
 - `PlanView` renders inside `Chat` when a plan is active
 
+## JEV (TypeSafe)
+
+Introduced in F4 (2026-10-06). Decision making for request tiers and writer-step approval.
+
+**JEV Client** (`src/lib/jev.ts`):
+- TypeSafe AI's "System One" model: returns typed decisions instead of text.
+- API: `POST https://api.typesafe.ai/v1/systemone`, `Authorization: Bearer $TYPESAFE_API_KEY`, model `jev-latest`.
+- Configuration: `TYPESAFE_API_KEY` in `.env` (git-ignored; `.env.example` documents it). Loaded server-side with `process.loadEnvFile`.
+- Status: `GET /api/jev/status` returns `{ configured: true|false }`.
+- Behavior: never throws. 10 s timeout, one retry on 429/529, returns `null` on any failure → orchestrator falls back to conservative local rules.
+
+**Tier System** (`src/server/plan-tier.ts`):
+- Run-time: `POST /api/plans`, before Opus planning.
+- **Question:** Choice: trivial | normal | critical?
+- **Fallback:** confidence < 0.7 or JEV unavailable → normal (source: "fallback").
+- **Stored:** plan.tier, plan.tier_confidence, plan.tier_source (`jev` | `fallback`).
+- **Tiers:**
+  - **trivial** — no Opus; single-step plan with `agy` (Antigravity) + `gemini-3.8-flash-low`. One Noul question: "will this step write?" (unknown → writes). Runs immediately (auto-approved).
+  - **normal** — today's behavior: Opus plans, waits for "run".
+  - **critical** — Opus plans a full DAG, then adds a final read-only `review` step (Opus 5.5, `claude` adapter, depends on all leaf steps) that the user must approve and execute. UI shows "Plan crítico" badge and "aprobar y ejecutar" button.
+
+**Guard** (`src/server/plan-guard.ts` + scheduler):
+- Run-time: before launching each unapproved writer step.
+- **Input:** original step prompt + clipped dependency results (4000 chars each) + project folder contents.
+- **Questions:** three Noul (probability of "yes"):
+  1. Does the step involve git commit, push, history, or remotes?
+  2. Does it do destructive writes (delete / overwrite in bulk)?
+  3. Does it touch files outside the project or system/user config?
+- **Decision:** any ≥ 0.5 → step not launched; plan paused (`pending` + `pause_reason: "guard"`); flags saved in plan_steps.guard_flags; UI shows "aprobar este paso" or "cancelar"; WS broadcasts `plan:guard`.
+- **Approval:** `POST /api/plans/:planId/steps/:stepId/approve` (409 unless paused + step pending with flags) sets `guard_approved`. Consumed on launch; a retry re-evaluates. **Editing the step prompt clears approval and flags.**
+- **Readers:** never gated by guard. Steps with `read_only=1` run the claude adapter without write tools.
+- **Fallback (no JEV):** conservative local regex rules (do NOT understand negations; guard only works well with JEV).
+
+**Privacy:** step prompts and clipped results are sent to TypeSafe; data retention is undocumented → do not use JEV with client projects until retention policy is reviewed.
+
 ## Antigravity Accounts
 
 Introduced in F1 (2026-10-06). Support for multiple agy accounts with usage tracking and quota management.
