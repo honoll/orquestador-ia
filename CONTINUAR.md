@@ -1,4 +1,32 @@
-# Orquestador-IA — Memoria del Proyecto
+# Orquestador-IA — Continuación y Estado
+
+## F1 — Antigravity (agy), cuentas y medidor · completado 2026-10-06
+
+**Rama:** `f1-antigravity-cuentas`
+
+Lo que se agregó:
+- **Adapter agy** (Antigravity) con 4 archivos: meta, detect, execute (NDJSON stdin), parse (stream-json)
+- **Tablas** `agy_accounts` (etiqueta, activo, topes manuales 5h/7d, tope calibrado 5h, bloqueo por cuota, notas) y `agy_usage` (account_id, timestamp, tokens, origen: chat|plan|analysis)
+- **API** `/api/accounts` (CRUD), `/api/accounts/active` (activa actual + uso), `/api/accounts/switch-terminal` (terminal interactiva agy), `/api/usage/session` (tokens de sesión actual)
+- **Medidor estimado:** ventanas de 5h y 7d; límite efectivo = manual si existe, si no calibrado (5h); calibración al primer error de cuota (uso de la ventana 5h se vuelve tope calibrado); bloqueo hasta hora del error + 5h; un éxito posterior limpia el bloqueo
+- **Panel de cuentas** (izquierda): listar cuentas, uso por ventana, agregar/cambiar/eliminar/editar topes/cambiar cuenta
+- **HUD** (arriba): cuenta activa, uso 5h "~70 % · estimado · reinicia en 2h", aviso si >85% o bloqueado, tokens de sesión
+- **Pausa por cuota en planes:** paso agy con error cuota vuelve a `pending` ("Pausado por cuota…"), plan queda `pending`, UI ofrece reintentar tras cambiar de cuenta
+
+Cómo usar:
+1. Crear una cuenta en el panel → etiqueta, topes opcionales (manual 5h/7d)
+2. Una cuenta debe estar activa (se marca automáticamente la primera)
+3. Hacer una tarea agy → se registra su uso en esa cuenta
+4. Si se alcanza 85% o hay bloqueo, aparece aviso en HUD y banner en UI
+5. "Cambiar cuenta" abre terminal con `agy` interactivo; cerrar sesión, entrar con otra, marcar activa en orquestador
+6. Los planes que usan agy se pausan si toca cuota; reintentar tras cambiar de cuenta
+
+Pruebas:
+- Suite completa verde: `npm test && npm run lint && npm run typecheck && npm run build:ui`
+- API verificada en vivo: llamada agy de 11.6k tokens registrada correctamente en cuenta activa
+- UI sin errores en consola
+
+---
 
 ## Que es
 Un orquestador local de CLIs de IA (Claude Code, Codex CLI, agy/Antigravity) con interfaz web.

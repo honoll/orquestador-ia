@@ -85,3 +85,34 @@ Tables: `projects`, `tasks`, `runs`, `plans`, `plan_steps`. Tasks belong to a pr
 - `WebSocketProvider` — single WS connection, event routing, log accumulation
 - 3-column layout: `AdapterPanel` | `Chat` | `ProjectPanel`
 - `PlanView` renders inside `Chat` when a plan is active
+
+## Antigravity Accounts
+
+Introduced in F1 (2026-10-06). Support for multiple agy accounts with usage tracking and quota management.
+
+### Tables
+- **`agy_accounts`** — `label` (free text), `active` (single active per session), `manual_limit_5h`, `manual_limit_7d`, `calibrated_limit_5h`, `quota_blocked_until` (ISO timestamp), `notes`
+- **`agy_usage`** — `account_id`, `at` (ISO timestamp), `input_tokens`, `output_tokens`, `source` (enum: chat | plan | analysis)
+
+### Routes
+- `GET /api/accounts` — list all accounts with usage summary
+- `GET /api/accounts/active` — fetch active account + usage in 5h/7d windows
+- `POST /api/accounts` — create account (sets `active: true` if first)
+- `POST /api/accounts/:id/activate` — mark as active, deactivate others
+- `PATCH /api/accounts/:id` — edit label, manual limits, notes
+- `DELETE /api/accounts/:id` — delete account and its usage records
+- `POST /api/accounts/switch-terminal` — open visible terminal with interactive `agy` to log in / switch accounts
+- `GET /api/usage/session` — session-scoped tokens (from current run's WebSocket broadcasts)
+
+### Meter (Estimated)
+Tracks tokens per account in 5-hour and 7-day rolling windows. Effective limit = manual (if set), else calibrated (5h only).
+- **Calibration:** on first quota error in an account, tokens spent in the 5h window become the calibrated limit (7d window only has manual limit since we cannot determine which window was exhausted).
+- **Block until:** if error message includes reset time, store it; else estimate now + 5h. A later successful call clears the block.
+- **UI warning:** at 85% usage or while blocked. Orchestrator never auto-switches accounts; user must open "cambiar cuenta" terminal to interact with `agy` and mark the new active account in the orchestrator panel.
+
+### Plans & Quota
+If an `agy` step returns `quota_exhausted`, the step does not retry and does not fail. Instead: step reverts to `pending` with message "Pausado por cuota…", plan status becomes `pending`, and UI shows a banner offering to retry after account switch. No SQLite CHECK changes.
+
+### UI Components
+- **HUD bar** (`ui/src/components/HudBar.tsx`) — shows active account label, 5h usage "~N % · estimated · resets in Xh", warning/block indicator, session token count
+- **Accounts panel** (`ui/src/components/AccountsPanel.tsx`) in left sidebar — list accounts, usage per window, add / use this / delete / edit limits / switch-terminal buttons
