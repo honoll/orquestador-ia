@@ -1,4 +1,4 @@
-export type AdapterType = "claude" | "codex" | "gemini";
+export type AdapterType = "claude" | "codex" | "gemini" | "agy"; // gemini se quita en Task 3
 
 export interface ModelEntry {
   id: string;
@@ -44,6 +44,17 @@ export const MODEL_CATALOG = {
       { id: "gemini-2.5-flash", label: "Gemini 2.5 Flash" },
     ],
   },
+  agy: {
+    defaultModel: "gemini-3.8-flash-medium",
+    models: [
+      { id: "gemini-3.8-flash-low", label: "Gemini 3.8 Flash (Low)" },
+      { id: "gemini-3.8-flash-medium", label: "Gemini 3.8 Flash (Medium)" },
+      { id: "gemini-3.8-flash-high", label: "Gemini 3.8 Flash (High)" },
+      { id: "gemini-3.1-pro-high", label: "Gemini 3.1 Pro (High)" },
+      { id: "claude-sonnet-5-5-medium", label: "Claude Sonnet 5.5 vía Antigravity (Medium)" },
+      { id: "claude-opus-5-5-high", label: "Claude Opus 5.5 vía Antigravity (High)" },
+    ],
+  },
 } as const satisfies Record<AdapterType, { defaultModel: string; models: readonly ModelEntry[] }>;
 
 /**
@@ -51,3 +62,6 @@ export const MODEL_CATALOG = {
  * cuenta da UNSUPPORTED_CLIENT (2026-10-06); agy (Antigravity) entrará en F1.
  */
 export const ROUTABLE_ADAPTERS: readonly AdapterType[] = ["claude", "codex"];
+
+/** Modelo barato para el pre-análisis de archivos adjuntos (vía agy). */
+export const AGY_ANALYSIS_MODEL = "gemini-3.8-flash-low";

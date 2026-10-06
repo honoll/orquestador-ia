@@ -30,6 +30,7 @@ const DEFAULT_TIMEOUT: Record<string, number> = {
   claude: 300,  // 5 min — Claude headless is reliable
   codex: 180,   // 3 min
   gemini: 120,  // 2 min — Gemini can loop with tool errors
+  agy: 600,
 };
 
 const RATE_LIMIT_RE = /429|503|529|overloaded|rate.limit|capacity|too many requests/i;
