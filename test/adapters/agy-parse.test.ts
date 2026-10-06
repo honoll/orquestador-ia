@@ -42,6 +42,15 @@ describe("agy parse", () => {
     expect(r.retryNotBefore).toBe("2026-10-06T15:30:00.000Z");
   });
 
+  it("\"1429ms\" no es cuota; \"HTTP 429\" sí", () => {
+    const mk = (error: string) => parse(makeProc({
+      exitCode: 1,
+      stdout: jsonl({ event: "result", result: { status: "ERROR", error, usage: { input_tokens: 0, output_tokens: 0 } } }),
+    }), NOW);
+    expect(mk("tardó 1429ms").errorFamily).not.toBe("quota_exhausted");
+    expect(mk("HTTP 429").errorFamily).toBe("quota_exhausted");
+  });
+
   it("sin evento result y exit distinto de 0 usa stderr sin el prefijo 'error:'", () => {
     const r = parse(makeProc({ exitCode: 2, stderr: "error: stream input message is missing the \"event\" field\n" }));
     expect(r.errorMessage).toBe('stream input message is missing the "event" field');

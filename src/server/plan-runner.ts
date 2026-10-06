@@ -91,6 +91,7 @@ export async function runPlanStep(options: StepRunOptions): Promise<void> {
     });
 
     try {
+      const callStartedAt = Date.now();
       const result = await adapter.execute({
         runId,
         prompt: step.prompt,
@@ -113,7 +114,7 @@ export async function runPlanStep(options: StepRunOptions): Promise<void> {
       });
 
       if (agyAccount) {
-        try { await recordAgyCall(agyAccount.id, result, "plan"); } catch (err) { log.error({ err, stepId }, "No se pudo registrar el consumo de agy"); }
+        try { await recordAgyCall(agyAccount.id, result, "plan", Date.now(), callStartedAt); } catch (err) { log.error({ err, stepId }, "No se pudo registrar el consumo de agy"); }
       }
 
       if (step.adapter === "agy" && result.errorFamily === "quota_exhausted") {

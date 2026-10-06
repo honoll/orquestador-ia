@@ -12,5 +12,7 @@ describe("formato", () => {
     expect(formatIn(35 * 60_000)).toBe("35 min");
     expect(formatIn(2 * 3_600_000 + 10 * 60_000)).toBe("2 h 10 min");
     expect(formatIn(3 * 3_600_000)).toBe("3 h");
+    expect(formatIn(167 * 3_600_000 + 59 * 60_000)).toBe("6 d 23 h");
+    expect(formatIn(168 * 3_600_000)).toBe("7 d");
   });
 });

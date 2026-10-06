@@ -106,6 +106,7 @@ export const agyAccounts = sqliteTable("agy_accounts", {
   manualLimit7d: integer("manual_limit_7d"),
   calibratedLimit5h: integer("calibrated_limit_5h"),
   quotaBlockedUntil: text("quota_blocked_until"),
+  quotaBlockedAt: text("quota_blocked_at"),
   notes: text("notes"),
   createdAt: text("created_at").notNull().default(sql`(datetime('now'))`),
 });

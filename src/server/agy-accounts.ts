@@ -18,6 +18,7 @@ export interface AccountView {
   manualLimit7d: number | null;
   calibratedLimit5h: number | null;
   quotaBlockedUntil: string | null;
+  quotaBlockedAt: string | null;
   notes: string | null;
   usage: { short: WindowUsage; long: WindowUsage };
   warn: WarnState;
@@ -65,6 +66,7 @@ async function toView(row: AgyAccountRow, now: number): Promise<AccountView> {
     manualLimit7d: row.manualLimit7d,
     calibratedLimit5h: row.calibratedLimit5h,
     quotaBlockedUntil: row.quotaBlockedUntil,
+    quotaBlockedAt: row.quotaBlockedAt,
     notes: row.notes,
     usage: { short, long },
     warn: warnState([short, long], blocked, now),
@@ -145,6 +147,7 @@ export async function recordAgyCall(
   result: AdapterExecutionResult,
   source: "chat" | "plan" | "analysis",
   now: number = Date.now(),
+  startedAt: number = now,
 ): Promise<void> {
   const row = await getRow(accountId);
   await db.insert(schema.agyUsage).values({
@@ -161,9 +164,14 @@ export async function recordAgyCall(
     await db.update(schema.agyAccounts).set({
       calibratedLimit5h: calibrateOnQuota(points, now, row.calibratedLimit5h),
       quotaBlockedUntil: new Date(blockUntil(result.retryNotBefore, now)).toISOString(),
+      quotaBlockedAt: new Date(now).toISOString(),
     }).where(eq(schema.agyAccounts.id, accountId));
-  } else if (result.exitCode === 0 && row.quotaBlockedUntil) {
-    await db.update(schema.agyAccounts).set({ quotaBlockedUntil: null }).where(eq(schema.agyAccounts.id, accountId));
+  } else if (
+    result.exitCode === 0 && row.quotaBlockedUntil &&
+    // Un éxito de una llamada que empezó antes del bloqueo no lo desmiente.
+    (!row.quotaBlockedAt || startedAt > Date.parse(row.quotaBlockedAt))
+  ) {
+    await db.update(schema.agyAccounts).set({ quotaBlockedUntil: null, quotaBlockedAt: null }).where(eq(schema.agyAccounts.id, accountId));
   }
   notify();
 }

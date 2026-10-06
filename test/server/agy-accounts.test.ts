@@ -62,6 +62,20 @@ describe("cuentas agy", () => {
     expect(v.warn.warn).toBe(false);
   });
 
+  it("un éxito de una llamada que empezó antes del bloqueo no lo limpia; uno posterior sí", async () => {
+    const a = await createAccount("A", NOW);
+    const t0 = NOW, t1 = NOW + 1000, t2 = NOW + 2000;
+    await recordAgyCall(a.id, quota("2026-10-06T14:00:00Z"), "chat", t1, t1);
+    await recordAgyCall(a.id, ok(10), "chat", t2, t0);
+    let [v] = await listAccounts(t2);
+    expect(v.quotaBlockedUntil).not.toBeNull();
+    expect(v.quotaBlockedAt).toBe(new Date(t1).toISOString());
+    await recordAgyCall(a.id, ok(10), "chat", t2 + 1000, t1 + 500);
+    [v] = await listAccounts(t2 + 1000);
+    expect(v.quotaBlockedUntil).toBeNull();
+    expect(v.quotaBlockedAt).toBeNull();
+  });
+
   it("error de cuota calibra el tope de 5 h y bloquea; un éxito posterior limpia el bloqueo", async () => {
     const a = await createAccount("A", NOW);
     await recordAgyCall(a.id, ok(5000), "chat", NOW - 1 * HOUR_MS);

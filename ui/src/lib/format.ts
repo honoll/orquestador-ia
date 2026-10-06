@@ -9,6 +9,11 @@ export function formatIn(ms: number): string {
   const totalMin = Math.round(ms / 60_000);
   const h = Math.floor(totalMin / 60);
   const m = totalMin % 60;
+  if (h >= 24) {
+    const d = Math.floor(h / 24);
+    const rh = h % 24;
+    return rh === 0 ? `${d} d` : `${d} d ${rh} h`;
+  }
   if (h === 0) return `${m} min`;
   return m === 0 ? `${h} h` : `${h} h ${m} min`;
 }

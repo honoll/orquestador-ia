@@ -4,7 +4,9 @@ import { execute } from "../../adapters/agy/execute.js";
 import { AGY_ANALYSIS_MODEL } from "../../config/models.js";
 import { broadcast } from "../ws.js";
 import { getActiveAccount, recordAgyCall } from "../agy-accounts.js";
+import pino from "pino";
 
+const log = pino({ name: "analyze" });
 const app = new Hono();
 
 /**
@@ -44,12 +46,14 @@ app.post("/", async (c) => {
   const jobId = randomUUID();
 
   try {
+    const callStartedAt = Date.now();
     const result = await execute({
       runId: jobId,
       prompt: analysisPrompt,
       cwd: body.cwd || process.cwd(),
       model: AGY_ANALYSIS_MODEL,
       timeoutSec: 180,
+      readOnly: true,
       onLog: (stream, chunk) => {
         broadcast({
           type: "analyze:log",
@@ -61,7 +65,11 @@ app.post("/", async (c) => {
       },
     });
 
-    await recordAgyCall(account.id, result, "analysis");
+    try {
+      await recordAgyCall(account.id, result, "analysis", Date.now(), callStartedAt);
+    } catch (err) {
+      log.error({ err }, "No se pudo registrar el consumo de agy");
+    }
 
     const analysis = result.summary || result.stdout;
     if (!analysis?.trim()) {

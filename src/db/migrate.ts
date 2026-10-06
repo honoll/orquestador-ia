@@ -116,6 +116,7 @@ CREATE TABLE IF NOT EXISTS agy_accounts (
   manual_limit_7d INTEGER,
   calibrated_limit_5h INTEGER,
   quota_blocked_until TEXT,
+  quota_blocked_at TEXT,
   notes TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -221,6 +222,12 @@ async function migrate() {
     await client.execute("ALTER TABLE plans ADD COLUMN chat_history TEXT");
   } catch {
     // column already exists
+  }
+
+  try {
+    await client.execute("ALTER TABLE agy_accounts ADD COLUMN quota_blocked_at TEXT");
+  } catch {
+    // already exists
   }
 
   // Create plan_file_changes table if missing (migration for existing DBs)

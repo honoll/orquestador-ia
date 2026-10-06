@@ -15,6 +15,7 @@ export interface AccountView {
   manualLimit7d: number | null;
   calibratedLimit5h: number | null;
   quotaBlockedUntil: string | null;
+  quotaBlockedAt: string | null;
   notes: string | null;
   usage: { short: WindowUsage; long: WindowUsage };
   warn: { warn: boolean; reason: string | null };

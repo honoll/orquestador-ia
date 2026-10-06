@@ -1,8 +1,8 @@
 import type { AdapterExecutionResult } from "../../lib/types.js";
 import type { RunProcessResult } from "../../lib/process-runner.js";
 
-const QUOTA_RE = /quota|resource[_ ]?exhausted|rate.?limit|429|too many requests|usage limit/i;
-const TRANSIENT_RE = /503|529|overloaded|unavailable|capacity/i;
+const QUOTA_RE = /quota|resource[_ ]?exhausted|rate.?limit|\b429\b|too many requests|usage limit/i;
+const TRANSIENT_RE = /\b503\b|\b529\b|overloaded|unavailable|capacity/i;
 
 interface AgyResult {
   conversation_id?: string;

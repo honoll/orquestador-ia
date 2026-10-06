@@ -7,6 +7,11 @@ describe("agy execute helpers", () => {
     expect(a).toEqual(["--input-format", "stream-json", "--output-format", "stream-json", "--print=", "--dangerously-skip-permissions"]);
     expect(a).not.toContain("-p");
   });
+  it("readOnly omite --dangerously-skip-permissions", () => {
+    const a = buildAgyArgs("m", undefined, { readOnly: true });
+    expect(a).not.toContain("--dangerously-skip-permissions");
+    expect(a).toEqual(["--input-format", "stream-json", "--output-format", "stream-json", "--print=", "--model", "m"]);
+  });
   it("agrega modelo y conversación", () => {
     expect(buildAgyArgs("gemini-3.8-flash-low", "c-1")).toEqual([
       "--input-format", "stream-json", "--output-format", "stream-json", "--print=", "--dangerously-skip-permissions",

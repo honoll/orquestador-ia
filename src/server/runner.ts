@@ -156,6 +156,7 @@ async function executeInBackground(
 ) {
   let result: AdapterExecutionResult;
   let agyAccountId: string | null = null;
+  let callStartedAt = Date.now();
   try {
     const historyPrefix = await buildHistoryPrefix(input.taskId, input.sessionId);
     const cavemanPrefix = await buildCavemanPrefix();
@@ -186,6 +187,7 @@ async function executeInBackground(
     });
 
     if (input.adapter === "agy") agyAccountId = (await requireActiveAccount()).id;
+    callStartedAt = Date.now();
     result = await adapter.execute(makeCtx(claudeProfileEnv));
 
     // Claude: if rate-limited and has multiple profiles with API keys, rotate and retry
@@ -226,7 +228,7 @@ async function executeInBackground(
   }
 
   if (agyAccountId) {
-    try { await recordAgyCall(agyAccountId, result, "chat"); } catch (err) { log.error({ err, runId }, "No se pudo registrar el consumo de agy"); }
+    try { await recordAgyCall(agyAccountId, result, "chat", Date.now(), callStartedAt); } catch (err) { log.error({ err, runId }, "No se pudo registrar el consumo de agy"); }
   }
 
   const status = result.timedOut
