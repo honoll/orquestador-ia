@@ -208,4 +208,19 @@ app.get("/summary", async (c) => {
   });
 });
 
+const SERVER_STARTED_AT = new Date().toISOString();
+
+/** GET /api/usage/session — tokens de todos los adapters desde que arrancó el servidor. */
+app.get("/session", async (c) => {
+  const runsRows = await db.all<{ tokens: number }>(sql`
+    SELECT COALESCE(SUM(COALESCE(input_tokens, 0) + COALESCE(output_tokens, 0)), 0) AS tokens
+    FROM runs WHERE datetime(started_at) >= datetime(${SERVER_STARTED_AT})
+  `);
+  const analysisRows = await db.all<{ tokens: number }>(sql`
+    SELECT COALESCE(SUM(input_tokens + output_tokens), 0) AS tokens
+    FROM agy_usage WHERE source = 'analysis' AND at >= ${SERVER_STARTED_AT}
+  `);
+  return c.json({ since: SERVER_STARTED_AT, tokens: Number(runsRows[0]?.tokens ?? 0) + Number(analysisRows[0]?.tokens ?? 0) });
+});
+
 export default app;
