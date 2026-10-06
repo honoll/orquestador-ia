@@ -35,6 +35,15 @@ export const plans = sqliteTable("plans", {
     .default("pending"),
   errorMessage: text("error_message"),
   chatHistory: text("chat_history"),
+  estimatedTokens: integer("estimated_tokens"),
+  budgetTokens: integer("budget_tokens"),
+  usedTokens: integer("used_tokens").notNull().default(0),
+  maxParallel: integer("max_parallel").notNull().default(3),
+  // Por qué está pausado el plan: cuota agotada o presupuesto de tokens.
+  pauseReason: text("pause_reason", { enum: ["quota", "budget"] }),
+  synthesis: text("synthesis"),
+  synthesisStatus: text("synthesis_status", { enum: ["running", "succeeded", "failed"] }),
+  synthesisError: text("synthesis_error"),
   createdAt: text("created_at").notNull().default(sql`(datetime('now'))`),
   updatedAt: text("updated_at").notNull().default(sql`(datetime('now'))`),
 });
@@ -60,6 +69,12 @@ export const planSteps = sqliteTable("plan_steps", {
   sessionId: text("session_id"),
   startedAt: text("started_at"),
   finishedAt: text("finished_at"),
+  stepKey: text("step_key"),
+  // JSON: arreglo con las claves (stepKey) de los pasos de los que depende.
+  dependsOn: text("depends_on"),
+  // 1 si el paso escribe en el proyecto, 0 si es solo lectura.
+  writes: integer("writes"),
+  estimatedTokens: integer("estimated_tokens"),
 });
 
 export const runs = sqliteTable("runs", {

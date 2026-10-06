@@ -109,8 +109,11 @@ export async function createAccount(label: string, now: number = Date.now()): Pr
 
 export async function activateAccount(id: string): Promise<void> {
   await getRow(id);
-  await db.update(schema.agyAccounts).set({ active: 0 }).where(ne(schema.agyAccounts.id, id));
-  await db.update(schema.agyAccounts).set({ active: 1 }).where(eq(schema.agyAccounts.id, id));
+  await db.transaction(async (tx) => {
+    // Primero desactivar, luego activar: respeta el índice único de cuenta activa.
+    await tx.update(schema.agyAccounts).set({ active: 0 }).where(ne(schema.agyAccounts.id, id));
+    await tx.update(schema.agyAccounts).set({ active: 1 }).where(eq(schema.agyAccounts.id, id));
+  });
   notify();
 }
 
@@ -132,12 +135,14 @@ export async function updateAccount(
 
 export async function deleteAccount(id: string): Promise<void> {
   const row = await getRow(id);
-  await db.delete(schema.agyUsage).where(eq(schema.agyUsage.accountId, id));
-  await db.delete(schema.agyAccounts).where(eq(schema.agyAccounts.id, id));
-  if (row.active === 1) {
-    const next = await db.select().from(schema.agyAccounts).orderBy(schema.agyAccounts.createdAt).then((r) => r[0]);
-    if (next) await db.update(schema.agyAccounts).set({ active: 1 }).where(eq(schema.agyAccounts.id, next.id));
-  }
+  await db.transaction(async (tx) => {
+    await tx.delete(schema.agyUsage).where(eq(schema.agyUsage.accountId, id));
+    await tx.delete(schema.agyAccounts).where(eq(schema.agyAccounts.id, id));
+    if (row.active === 1) {
+      const next = await tx.select().from(schema.agyAccounts).orderBy(schema.agyAccounts.createdAt).then((r) => r[0]);
+      if (next) await tx.update(schema.agyAccounts).set({ active: 1 }).where(eq(schema.agyAccounts.id, next.id));
+    }
+  });
   notify();
 }
 
