@@ -15,9 +15,17 @@ npm run build:ui     # Build frontend to ui/dist/
 
 # Database
 npm run db:migrate   # Apply schema migrations manually
+
+# Quality
+npm test             # vitest
+npm run lint         # eslint src test scripts
+npm run typecheck    # tsc --noEmit
+npm run smoke:models # smoke test of the model catalog against the real CLIs
 ```
 
-There is no test suite. There is no linter configured.
+Notas:
+- The Gemini CLI currently fails for this account (IneligibleTierError / UNSUPPORTED_CLIENT: Google asks to migrate to Antigravity).
+- `claude-opus-5-5` requires Claude Code >= 2.1.280.
 
 Two separate `node_modules` exist: root (backend) and `ui/` (frontend). Run `npm install` in both when adding dependencies.
 
@@ -33,7 +41,7 @@ Each AI CLI (Claude Code, Codex, Gemini) lives in `src/adapters/{claude,codex,ge
 - `execute.ts` — spawns the CLI, pipes the prompt via stdin or args
 - `parse.ts` — extracts session IDs, cost, tokens from adapter-specific output format
 
-Adding a new adapter means creating these four files and registering it in the adapter registry.
+Models live in `src/config/models.ts`. Adding a new adapter means creating these four files and registering it in the adapter registry.
 
 ### Execution Flow
 
@@ -49,7 +57,7 @@ POST /api/tasks → POST /api/tasks/:id/run
 
 ### Plan System
 
-`POST /api/plans` → `planner.ts` calls Claude (claude-sonnet-4-6) with a routing system prompt → Claude outputs JSON with steps `{ description, adapter, model, reason, prompt }` → stored as `plan_steps` → `plan-runner.ts` executes steps sequentially with up to 2 retries per step.
+`POST /api/plans` → `planner.ts` calls Claude (`PLANNER_MODEL` from `src/config/models.ts`, Opus 5.5) with a routing system prompt → Claude outputs JSON with steps `{ description, adapter, model, reason, prompt }` → stored as `plan_steps` → `plan-runner.ts` executes steps sequentially with up to 2 retries per step.
 
 Retry logic: transient errors (429, 503, rate limit text) → retry; unknown session error → retry without `--resume`; other errors → fail step and stop plan.
 
