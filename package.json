@@ -13,7 +13,7 @@
     "test:watch": "vitest",
     "lint": "eslint src test scripts",
     "smoke:models": "tsx scripts/smoke-models.ts",
-    "typecheck": "tsc --noEmit && cd ui && npx tsc --noEmit -p ."
+    "typecheck": "tsc -p tsconfig.check.json && cd ui && npx tsc --noEmit -p ."
   },
   "dependencies": {
     "@hono/node-server": "^1.13.8",

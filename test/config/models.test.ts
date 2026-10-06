@@ -18,14 +18,14 @@ describe("catálogo de modelos", () => {
 
   it("los adapters leen del catálogo", () => {
     for (const type of Object.keys(MODEL_CATALOG) as (keyof typeof MODEL_CATALOG)[]) {
-      expect(adapters[type].meta.models).toEqual(MODEL_CATALOG[type].models);
+      expect(adapters[type].meta.models).toBe(MODEL_CATALOG[type].models);
       expect(adapters[type].meta.defaultModel).toBe(MODEL_CATALOG[type].defaultModel);
     }
   });
 
   it("no quedan modelos retirados", () => {
     const all = Object.values(MODEL_CATALOG).flatMap((c) => c.models.map((m) => m.id));
-    for (const old of ["claude-opus-4-7", "claude-opus-4-6", "claude-sonnet-4-6", "claude-haiku-4-6", "claude-sonnet-4-5-20250929", "o3"]) {
+    for (const old of ["claude-opus-4-7", "claude-opus-4-6", "claude-sonnet-4-6", "claude-haiku-4-6", "claude-sonnet-4-5-20250929", "o3", "gpt-5.4"]) {
       expect(all).not.toContain(old);
     }
   });

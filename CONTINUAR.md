@@ -136,7 +136,7 @@ npm start               # Arranca server en http://localhost:3100
 ## Bugs conocidos ya corregidos
 1. **spawn ENOENT en Windows** — `shell: process.platform === "win32"` en process-runner.ts
 2. **Codex args con espacios** — prompt por stdin con `-` flag, no como argumento CLI
-3. **o3 no soportado con ChatGPT** — modelos actualizados (ver `src/config/models.ts`; o3 puede fallar)
+3. **o3 no soportado con ChatGPT** — modelos actualizados (ver `src/config/models.ts`; gpt-5.4 se quito: no soportado con cuenta ChatGPT)
 4. **Cross-adapter session resume** — solo resume sesiones del MISMO adapter
 5. **NULL conversation_id** — backfill automatico en migracion
 6. **Raw JSON en streaming** — parser no hace fallback a raw JSONL
