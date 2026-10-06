@@ -8,12 +8,24 @@ Lo que se agregó:
 - **Plans como grafo (DAG):** cada paso tiene `step_key`, `depends_on` (array de claves), `writes` (0=lector, 1=escritor), `estimated_tokens`; el plan tiene `estimated_tokens`, `budget_tokens`, `used_tokens`, `max_parallel` (default 3), `pause_reason` (cuota|presupuesto), `synthesis`, `synthesis_status`, `synthesis_error`. Planes viejos sin claves corren como cadena lineal.
 - **Paralelismo "A":** lectores en paralelo (hasta `max_parallel`), escritores en fila (nunca dos escritores simultáneamente, un lector puede correr junto a un escritor)
 - **Contexto mínimo:** cada paso recibe solo los resultados de sus dependencias directas, recortados a 4000 caracteres cada uno
-- **Planificador dueño del estado:** `src/server/plan-scheduler.ts` es el único que maneja estado, lanza pasos listos, verifica cuota antes de lanzar agy, detiene en falla y espera a tareas en vuelo
-- **Presupuesto "A":** tope por defecto = 1.5 × estimación de Opus (editable); se cuentan tokens de todos los intentos y síntesis; al alcanzarlo pausa sin lanzar más; "continuar" sube tope +50%
-- **Síntesis final:** Opus 5.5 vía adapter claude en modo solo lectura recibe pedido original + resultados (recortados a 6000 c/u) y escribe respuesta final en español. Si falla, plan queda `completed` con `synthesis_status = failed` y botón "reintentar síntesis"
-- **Rutas nuevas:** run-all, run-next (mode next), resume, steps/:id/retry, settings (PATCH), continue (budget pause), synthesis/retry, cancel
-- **Eventos WS nuevos:** plan:budget, plan:synthesis, plan:synthesis:log, plan:done {paused}
-- **UI:** diagrama por niveles, insignias lee/escribe, tokens por paso, barra presupuesto (tope editable, paralelismo), aviso pausa con "continuar", tarjeta respuesta final con markdown
+- **Planificador dueño del estado:** `src/server/plan-scheduler.ts` es el único que maneja el estado del plan mientras corre; lanza pasos listos, verifica la cuota de agy antes de lanzar, y si un paso falla deja de lanzar pero **espera a los que ya corren** (solo cancelar mata procesos). Cualquier paso fallido deja el plan `failed`, sin síntesis
+- **Presupuesto "A":** tope por defecto = 1.5 × estimación de Opus (editable); se cuentan tokens de todos los intentos y de la síntesis; al alcanzarlo deja de lanzar, **deja terminar lo que corre** y pausa (`pause_reason: budget`); "continuar" **fija** el tope en `ceil(1.5 × max(tope, usado))`
+- **Síntesis final:** Opus 5.5 vía adapter claude en modo solo lectura (sin `--dangerously-skip-permissions`, con `--disallowedTools "Bash Edit Write NotebookEdit WebFetch WebSearch"` y `--strict-mcp-config`) recibe pedido original + resultados (recortados a 6000 c/u) y escribe respuesta final en español. Si falla, plan queda `completed` con `synthesis_status = failed` y botón "reintentar síntesis"
+- **Rutas:** ya existían (ahora usan el planificador) run-all, run-next, resume, steps/:id/retry; nuevas: settings (PATCH), continue (pausa), synthesis/retry. Cancelar es `POST /:id/cancel`; `DELETE /:id` también cancela
+- **Eventos WS:** `plan:step {stepId, status, error?}`, `plan:budget {usedTokens, budgetTokens}`, `plan:synthesis {status, synthesis?, error?}`, `plan:synthesis:log {stream, data}`, `plan:done {status, paused?: "quota"|"budget", error?}`
+- **UI:** diagrama por niveles (`ui/src/lib/plan-levels.ts`; `toDagSteps` no calcula niveles), insignias lee/escribe (mín. 10 px), tokens por paso, barra presupuesto (tope editable y paralelismo con un select), aviso de pausa con "continuar", tarjeta de respuesta final con markdown
+
+Correcciones de la revisión final (2026-10-06):
+- **A1** Cancelados no cuentan como hechos: solo `succeeded`/`skipped`. Si quedan pasos cancelados/pendientes sin pausa, el plan queda `pending` sin síntesis
+- **A2** `resume` (y `run-all` si el plan está `cancelled`/`failed`) regresa a `pending` los pasos `failed`, `cancelled` y `running` huérfanos; `resume` y reintentar paso borran la síntesis vieja
+- **A3** Al arrancar `runPlanDag`, los pasos `running` huérfanos (reinicio del servidor) vuelven a `pending` y una síntesis `running` a `null`
+- **A4** Modo paso a paso sin nada que lanzar emite `plan:done pending`; `run-next` responde el paso que de verdad puede arrancar, o `{ done: false, blocked: true }` sin lanzar
+- **A5** Toda salida cancelada del planificador reescribe `status: cancelled` (idempotente, sin emitir `plan:done`)
+- **A6** `synthesis/retry` responde 409 salvo plan `completed` con síntesis `failed`
+- **A7** `DELETE /api/plans/:id` cancela la corrida antes de borrar
+- **A8** `PATCH /:id` solo acepta `projectId`; `PATCH /:planId/steps/:stepId` solo `description`, `adapter` (validado, 400 si no es claude/codex/agy), `model`, `prompt`. Lo demás se ignora en silencio
+- **C** Los prompts envuelven cada resultado (y el pedido, en la síntesis) entre `<<<RESULTADO sN #nonce>>>` … `<<<FIN #nonce>>>` con un nonce aleatorio por llamada, y la tarea del paso va al final tras `TU TAREA (solo esta; no hagas commit ni push…):`
+- **D** El encabezado de PlanView se basa en `plan.status` (completado / ejecutando o sintetizando + detener / pausado / cancelado + reanudar todo / failed con reanudar); los pasos cancelados/omitidos se ven atenuados con ícono y texto accesible; los 409 se muestran junto a los controles
 
 Verificación en vivo (2026-10-06):
 - Suite verde: `npm test && npm run lint && npm run typecheck && npm run build:ui`
@@ -26,7 +38,7 @@ Cómo usar:
 1. POST /api/plans con descripción → Opus planifica pasos con dependencias
 2. GET /api/plans/:id verifica: pasos con stepKey, dependencias, estimatedTokens, budgetTokens
 3. POST /api/plans/:id/run-all lanza todos en paralelo hasta maxParallel; PATCH settings si necesitas ajustar presupuesto o paralelismo
-4. Si presupuesto toca cuota antes de síntesis: pausa y muestra banner "continuar"; POST /api/plans/:id/continue (+50 %) para seguir
+4. Si se agota el presupuesto (o la cuota de agy): el plan se pausa y muestra el banner "continuar"; `POST /api/plans/:id/continue` fija el tope en `ceil(1.5 × max(tope, usado))` (solo si la pausa fue por presupuesto) y sigue
 5. POST /api/plans/:id/synthesis/retry si síntesis falló
 6. WebSocket escucha plan:budget, plan:synthesis, plan:done para actualizar UI
 
