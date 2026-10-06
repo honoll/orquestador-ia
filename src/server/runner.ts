@@ -7,10 +7,9 @@ import { claudeProfileManager } from "../adapters/claude/profile-manager.js";
 import type { AdapterExecutionResult } from "../lib/types.js";
 import pino from "pino";
 import fs from "node:fs";
-import nodePath from "node:path";
 
-const CAVEMAN_FLAG_FILE = nodePath.join(process.env.HOME || process.env.USERPROFILE || "", ".claude", ".caveman-active");
-const SKILL_MD_PATH = nodePath.join(process.env.HOME || process.env.USERPROFILE || "", ".claude", "plugins", "cache", "caveman", "caveman", "ef6050c5e184", "caveman", "SKILL.md");
+import { cavemanFlagFile, findCavemanSkill } from "../lib/caveman.js";
+const HOME = process.env.HOME || process.env.USERPROFILE || "";
 const log = pino({ name: "runner" });
 
 // Active kill functions keyed by runId
@@ -106,9 +105,10 @@ async function buildHistoryPrefix(taskId: string, sessionId: string | undefined)
 
 async function buildCavemanPrefix(): Promise<string> {
   try {
-    if (!fs.existsSync(CAVEMAN_FLAG_FILE)) return "";
-    if (!fs.existsSync(SKILL_MD_PATH)) return "";
-    const skillMd = fs.readFileSync(SKILL_MD_PATH, "utf-8");
+    if (!fs.existsSync(cavemanFlagFile(HOME))) return "";
+    const skillPath = findCavemanSkill(HOME);
+    if (!skillPath) return "";
+    const skillMd = fs.readFileSync(skillPath, "utf-8");
     return skillMd.trim() + "\n\n";
   } catch {
     return "";
@@ -161,10 +161,10 @@ async function executeInBackground(
     const timeoutSec = input.timeoutSec ?? DEFAULT_TIMEOUT[input.adapter] ?? 180;
 
     // For Claude: pick best available profile (failover on rate-limit requires API keys)
-    let claudeProfile = input.adapter === "claude"
+    const claudeProfile = input.adapter === "claude"
       ? claudeProfileManager.getBestProfile()
       : null;
-    let claudeProfileEnv = claudeProfile
+    const claudeProfileEnv = claudeProfile
       ? claudeProfileManager.getEnvForProfile(claudeProfile.id)
       : undefined;
 

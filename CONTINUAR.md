@@ -6,7 +6,7 @@ Inspirado en PaperClip (https://github.com/paperclipai/paperclip) pero simplific
 El caso de uso principal es desarrollo Flutter + Firebase (POS de taqueria — proyecto COPPER).
 
 ## Ubicacion
-`C:\Users\sidel\orquestador-ia\`
+`C:\estudio\orquestador-ia\`
 
 ## Estado actual: FUNCIONAL
 Todo lo siguiente ya esta implementado y probado:
@@ -68,17 +68,17 @@ src/
     resolve-command.ts          — Busca comandos en PATH + PATHEXT
   adapters/
     claude/
-      index.ts                 — Meta: command "claude", modelos [opus-4.7, opus-4.6, sonnet-4.6, haiku-4.6, sonnet-4.5]
+      index.ts                 — Meta: command "claude", modelos: ver `src/config/models.ts`
       detect.ts                — isCommandAvailable("claude")
       execute.ts               — claude --print - --output-format stream-json --verbose --dangerously-skip-permissions
       parse.ts                 — Parsea stream-json: content_block_delta, result (cost, tokens, session_id)
     codex/
-      index.ts                 — Meta: command "codex", modelos [gpt-5.5, gpt-5.4, o3]
+      index.ts                 — Meta: command "codex", modelos: ver `src/config/models.ts`
       detect.ts
       execute.ts               — codex exec --json -m <model> - (prompt por stdin)
       parse.ts                 — Parsea JSONL: item.completed, turn.completed, error/turn.failed
     gemini/
-      index.ts                 — Meta: command "gemini", modelos [gemini-2.5-pro, gemini-2.5-flash, gemini-3-flash]
+      index.ts                 — Meta: command "gemini", modelos: ver `src/config/models.ts`
       detect.ts
       execute.ts               — gemini --prompt <text> --output-format stream-json -y --model <model>
       parse.ts                 — Parsea stream-json: init, message (role=assistant), result (stats)
@@ -122,7 +122,7 @@ ui/
 
 ## Como correr
 ```bash
-cd C:\Users\sidel\orquestador-ia
+cd C:\estudio\orquestador-ia
 npm install
 npm run build:ui        # Compila el frontend
 npm start               # Arranca server en http://localhost:3100
@@ -136,7 +136,7 @@ npm start               # Arranca server en http://localhost:3100
 ## Bugs conocidos ya corregidos
 1. **spawn ENOENT en Windows** — `shell: process.platform === "win32"` en process-runner.ts
 2. **Codex args con espacios** — prompt por stdin con `-` flag, no como argumento CLI
-3. **o3 no soportado con ChatGPT** — modelos actualizados a gpt-5.5, gpt-5.4, o3 (o3 puede fallar)
+3. **o3 no soportado con ChatGPT** — modelos actualizados (ver `src/config/models.ts`; gpt-5.4 se quito: no soportado con cuenta ChatGPT)
 4. **Cross-adapter session resume** — solo resume sesiones del MISMO adapter
 5. **NULL conversation_id** — backfill automatico en migracion
 6. **Raw JSON en streaming** — parser no hace fallback a raw JSONL

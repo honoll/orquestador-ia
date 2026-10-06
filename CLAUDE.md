@@ -15,9 +15,17 @@ npm run build:ui     # Build frontend to ui/dist/
 
 # Database
 npm run db:migrate   # Apply schema migrations manually
+
+# Quality
+npm test             # vitest
+npm run lint         # eslint src test scripts
+npm run typecheck    # tsc (src+test+scripts) + ui tsc
+npm run smoke:models # smoke test of the model catalog against the real CLIs
 ```
 
-There is no test suite. There is no linter configured.
+Notes:
+- The Gemini CLI currently fails for this account (IneligibleTierError / UNSUPPORTED_CLIENT: Google asks to migrate to Antigravity).
+- `claude-opus-5-5` requires Claude Code >= 2.1.280 (verified with 2.1.292 on 2026-10-06).
 
 Two separate `node_modules` exist: root (backend) and `ui/` (frontend). Run `npm install` in both when adding dependencies.
 
@@ -33,7 +41,7 @@ Each AI CLI (Claude Code, Codex, Gemini) lives in `src/adapters/{claude,codex,ge
 - `execute.ts` — spawns the CLI, pipes the prompt via stdin or args
 - `parse.ts` — extracts session IDs, cost, tokens from adapter-specific output format
 
-Adding a new adapter means creating these four files and registering it in the adapter registry.
+Models live in `src/config/models.ts`. Adding a new adapter means creating these four files and registering it in the adapter registry.
 
 ### Execution Flow
 
@@ -49,7 +57,7 @@ POST /api/tasks → POST /api/tasks/:id/run
 
 ### Plan System
 
-`POST /api/plans` → `planner.ts` calls Claude (claude-sonnet-4-6) with a routing system prompt → Claude outputs JSON with steps `{ description, adapter, model, reason, prompt }` → stored as `plan_steps` → `plan-runner.ts` executes steps sequentially with up to 2 retries per step.
+`POST /api/plans` → `planner.ts` calls Claude (`PLANNER_MODEL` from `src/config/models.ts`, Opus 5.5) with a routing system prompt generated from `ROUTABLE_ADAPTERS` + `MODEL_CATALOG` (gemini is not routed); `normalizeSteps` validates each step against the catalog (disallowed adapter throws, unknown model falls back to the adapter default) → Claude outputs JSON with steps `{ description, adapter, model, reason, prompt }` → stored as `plan_steps` → `plan-runner.ts` executes steps sequentially with up to 2 retries per step.
 
 Retry logic: transient errors (429, 503, rate limit text) → retry; unknown session error → retry without `--resume`; other errors → fail step and stop plan.
 
@@ -62,6 +70,7 @@ Retry logic: transient errors (429, 503, rate limit text) → retry; unknown ses
 - **Single-user, local-only**: backend binds `127.0.0.1:3100`, no auth.
 - **Session resume is adapter-scoped**: a conversation's `sessionId` is only passed as `--resume` if the new task uses the same adapter. Cross-adapter turns fall back to text prefix injection.
 - **Windows spawn**: `process-runner.ts` always uses `shell: true` on Windows to avoid `ENOENT`. Codex requires prompt via stdin (using `-` flag) because its args don't survive cmd.exe quoting.
+- **No prompts as cmd.exe arguments (F1 rule)**: `quoteWindowsArg` cannot make `&` or `%VAR%` safe under cmd.exe (see `it.fails` in `test/lib/quote-windows-arg.test.ts`). Send prompts via stdin or spawn with `shell:false`.
 - **Headless flags**: Claude uses `--dangerously-skip-permissions`, Codex uses `--json`, Gemini uses `-y`. These are required — interactive prompts break the runner.
 
 ### Database Schema (`src/db/schema.ts`)

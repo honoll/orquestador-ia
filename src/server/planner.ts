@@ -2,11 +2,12 @@ import { runProcess } from "../lib/process-runner.js";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
+import { MODEL_CATALOG, PLANNER_MODEL, ROUTABLE_ADAPTERS, type AdapterType } from "../config/models.js";
 
 export interface PlanStep {
   stepIndex: number;
   description: string;
-  adapter: "claude" | "codex" | "gemini";
+  adapter: AdapterType;
   model: string;
   reason: string;
   prompt: string;
@@ -19,18 +20,23 @@ interface ClaudeStreamMessage {
   delta?: { text?: string };
 }
 
-const ADAPTER_DEFAULTS: Record<string, string> = {
-  claude: "claude-sonnet-4-6",
-  codex: "gpt-5.5",
-  gemini: "gemini-2.5-flash",
+const ADAPTER_STRENGTHS: Record<AdapterType, string> = {
+  claude: "architecture decisions, code review, complex reasoning, validation, writing, explanations",
+  codex: "code generation, debugging, refactoring, direct implementation, file editing",
+  gemini: "large codebase analysis (not routable)",
 };
+
+function buildAdaptersSection(): string {
+  return ROUTABLE_ADAPTERS.map((type) => {
+    const ids = MODEL_CATALOG[type].models.map((m) => m.id).join(", ");
+    return `- ${type}: ${ADAPTER_STRENGTHS[type]}. Valid models: ${ids} (default: ${MODEL_CATALOG[type].defaultModel})`;
+  }).join("\n");
+}
 
 const ROUTING_SYSTEM = `You are a planning agent for a local AI orchestrator that routes tasks to the best CLI tool.
 
 Available adapters and their strengths:
-- claude: architecture decisions, code review, complex reasoning, validation, writing, explanations
-- codex: code generation, debugging, refactoring, direct implementation, file editing
-- gemini: large codebase analysis, reading many files at once (huge context window), summarizing big codebases
+${buildAdaptersSection()}
 
 Rules:
 - Break the feature into 2-8 concrete subtasks
@@ -44,8 +50,8 @@ Respond ONLY with valid JSON, no markdown fences:
   "steps": [
     {
       "description": "Short label (< 60 chars)",
-      "adapter": "claude|codex|gemini",
-      "model": "model-id or empty string for default",
+      "adapter": "${ROUTABLE_ADAPTERS.join("|")}",
+      "model": "one of the valid model ids for that adapter, or empty string for default",
       "reason": "One sentence explaining why this adapter",
       "prompt": "Full prompt for the CLI to execute"
     }
@@ -83,7 +89,7 @@ function buildPlanningPrompt(description: string, projectInfo?: { name: string; 
   return prompt;
 }
 
-function extractJsonFromOutput(stdout: string): any {
+export function extractJsonFromOutput(stdout: string): any {
   const lines = stdout.split("\n").filter((l) => l.trim());
   let resultText = "";
 
@@ -104,6 +110,48 @@ function extractJsonFromOutput(stdout: string): any {
   const match = resultText.match(/\{[\s\S]*\}/);
   if (!match) throw new Error("No JSON found in planner output");
   return JSON.parse(match[0]);
+}
+
+/** Valida y normaliza los steps crudos del planner contra el catálogo. */
+export function normalizeSteps(raw: unknown[]): PlanStep[] {
+  return raw.map((item, i) => {
+    const s = (item ?? {}) as Record<string, unknown>;
+    const adapter = String(s.adapter ?? "");
+    if (!(ROUTABLE_ADAPTERS as readonly string[]).includes(adapter)) {
+      throw new Error(`El planner eligió un adapter no permitido: ${adapter}`);
+    }
+    const cat = MODEL_CATALOG[adapter as AdapterType];
+    const model = String(s.model ?? "");
+    const validModel = (cat.models as readonly { id: string }[]).some((m) => m.id === model);
+    return {
+      stepIndex: i,
+      description: String(s.description ?? `Paso ${i + 1}`),
+      adapter: adapter as AdapterType,
+      model: validModel ? model : cat.defaultModel,
+      reason: String(s.reason ?? ""),
+      prompt: String(s.prompt ?? s.description ?? ""),
+    };
+  });
+}
+
+/** Mensaje para el usuario cuando el planner termina con código distinto de cero. */
+export function classifyPlannerFailure(stdout: string, stderr: string, exitCode: number | null): string {
+  for (const line of stdout.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    try {
+      const msg = JSON.parse(trimmed);
+      if (msg?.type === "result" && msg.is_error === true) {
+        return `Planner failed: ${String(msg.result ?? "").slice(0, 500)}`;
+      }
+    } catch {
+      // not a JSON line
+    }
+  }
+  if (/rate.?limit|429|too many requests/i.test(`${stdout}\n${stderr}`)) {
+    return "Rate limit de Claude alcanzado. Intenta en unos minutos.";
+  }
+  return `Planner failed (exit ${exitCode}): ${stderr.slice(0, 500)}`;
 }
 
 export interface GeneratePlanOptions {
@@ -129,7 +177,7 @@ export async function generatePlan(
     "--output-format", "stream-json",
     "--verbose",
     "--dangerously-skip-permissions",
-    "--model", "claude-sonnet-4-6",
+    "--model", PLANNER_MODEL,
     "--system-prompt-file", tmpSystemFile,
   ];
 
@@ -139,7 +187,6 @@ export async function generatePlan(
   const plannerCwd = os.tmpdir();
 
   // Stream stdout chunks, extracting text deltas for the UI
-  let textBuffer = "";
   const { promise, kill } = runProcess({
     command: "claude",
     args,
@@ -155,7 +202,6 @@ export async function generatePlan(
         try {
           const msg: ClaudeStreamMessage = JSON.parse(trimmed);
           if (msg.type === "content_block_delta" && msg.delta?.text) {
-            textBuffer += msg.delta.text;
             options.onStream(msg.delta.text);
           }
         } catch {
@@ -173,11 +219,7 @@ export async function generatePlan(
   try { fs.unlinkSync(tmpSystemFile); } catch { /* ignore */ }
 
   if (proc.exitCode !== 0 && !proc.timedOut) {
-    const isRateLimit = !proc.stderr.trim() || /rate/i.test(proc.stderr);
-    if (isRateLimit) {
-      throw new Error("Rate limit de Claude alcanzado. Intenta en unos minutos.");
-    }
-    throw new Error(`Planner failed (exit ${proc.exitCode}): ${proc.stderr.slice(0, 500)}`);
+    throw new Error(classifyPlannerFailure(proc.stdout, proc.stderr, proc.exitCode));
   }
 
   if (proc.signal === "SIGTERM" || proc.signal === "SIGKILL") {
@@ -190,12 +232,5 @@ export async function generatePlan(
     throw new Error("Planner response missing 'steps' array");
   }
 
-  return parsed.steps.map((s: any, i: number) => ({
-    stepIndex: i,
-    description: String(s.description ?? `Paso ${i + 1}`),
-    adapter: (["claude", "codex", "gemini"].includes(s.adapter) ? s.adapter : "claude") as PlanStep["adapter"],
-    model: String(s.model || ADAPTER_DEFAULTS[s.adapter] || ""),
-    reason: String(s.reason ?? ""),
-    prompt: String(s.prompt ?? s.description ?? ""),
-  }));
+  return normalizeSteps(parsed.steps);
 }

@@ -2,7 +2,7 @@ export interface AdapterMeta {
   type: string;
   label: string;
   command: string;
-  models: { id: string; label: string }[];
+  models: readonly { id: string; label: string }[];
   defaultModel: string;
 }
 

@@ -5,7 +5,7 @@ import { spawn, type ChildProcess } from "node:child_process";
  * Without this, spawn() with shell:true joins args with spaces and any arg
  * containing spaces gets split into separate tokens — breaking --flag "value with spaces".
  */
-function quoteWindowsArg(arg: string): string {
+export function quoteWindowsArg(arg: string): string {
   if (arg.length === 0) return '""';
   // No quoting needed for simple args with no shell-special chars
   if (!/[\s"&|<>^%!();,]/.test(arg)) return arg;

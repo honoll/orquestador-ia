@@ -1,9 +1,9 @@
 import { Hono } from "hono";
 import fs from "node:fs";
-import nodePath from "node:path";
 
-const CAVEMAN_FLAG_FILE = nodePath.join(process.env.HOME || process.env.USERPROFILE || "", ".claude", ".caveman-active");
-const SKILL_MD_PATH = nodePath.join(process.env.HOME || process.env.USERPROFILE || "", ".claude", "plugins", "cache", "caveman", "caveman", "ef6050c5e184", "caveman", "SKILL.md");
+import { cavemanFlagFile } from "../../lib/caveman.js";
+const HOME = process.env.HOME || process.env.USERPROFILE || "";
+const CAVEMAN_FLAG_FILE = cavemanFlagFile(HOME);
 
 const app = new Hono();
 

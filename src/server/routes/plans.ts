@@ -167,7 +167,7 @@ app.patch("/:id", async (c) => {
 
 // Update a step's prompt (edit plan)
 app.patch("/:planId/steps/:stepId", async (c) => {
-  const { planId, stepId } = c.req.param();
+  const { stepId } = c.req.param();
   const body = await c.req.json<{ prompt?: string; description?: string; adapter?: string; model?: string }>();
   await db.update(schema.planSteps)
     .set({ ...body })
