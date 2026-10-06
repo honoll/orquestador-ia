@@ -46,29 +46,36 @@ Cómo usar:
 
 ## F4 — JEV para tiers y guardia · completado 2026-10-06
 
-**Rama:** `f4-jev-tiers-guardia`
+**Rama:** `f4-jev`
 
 Lo que se agregó:
-- **Cliente JEV propio** (`src/lib/jev.ts`): TypeSafe AI "System One" API, timeout 10 s, reintentos en 429/529, nunca lanza (devuelve `null` → fallback a reglas locales)
+- **Cliente JEV propio** (`src/lib/jev.ts`): TypeSafe AI "System One" API, timeout 10 s, **un solo reintento** en 429/529, nunca lanza (devuelve `null`). Si JEV falla: tier → normal; guardia → reglas locales
+- **La llave no llega a los trabajadores:** `runProcess` quita `ORCHESTRATOR_SECRET_ENV` (`TYPESAFE_API_KEY`) del entorno de los CLIs (también si viene en `options.env`); solo el servidor la lee
 - **Tiers del pedido** en `POST /api/plans` (antes de Opus): Choice trivial|normal|critical; confianza < 0.7 o JEV no disponible → normal (source "fallback"); se guardan tier, confianza y fuente
-  - **trivial:** sin Opus; un paso `agy` + `gemini-3.8-flash-low`; Noul decide si escribe; arranca automáticamente
+  - **trivial:** sin Opus; un paso `agy` + `gemini-3.8-flash-low`; Noul decide si escribe (si no se sabe → escribe); si solo lee, el paso se guarda con `read_only = 1` y agy corre sin `--dangerously-skip-permissions`; arranca automáticamente
   - **normal:** como hoy (Opus planea; espera ejecutar)
   - **critical:** Opus planea + paso final `review` de solo lectura (Opus 5.5) que depende de todos los pasos hoja; UI muestra insignia y botón "aprobar y ejecutar"; nunca auto-arranca
-- **Guardia** (`src/server/plan-guard.ts`): antes de lanzar cada paso escritor no aprobado; evalúa prompt original + resultados recortados (4000 c/u) + carpeta del proyecto con tres Noul:
+- **Guardia** (`src/server/plan-guard.ts`): antes de lanzar cada paso escritor no aprobado. Ve lo mismo que el trabajador: el prompt original primero y completo, cada resultado de dependencia recortado igual que en `buildStepPrompt` (4000 c/u) y, si el total pasa 8000 (`JEV_STATE_MAX_CHARS`), se recortan las dependencias de forma pareja (no el prompt); se envía la **ruta** de la carpeta del proyecto, no su contenido. Tres Noul:
   1. ¿Involucra git (commit/push/historial/remotos)?
   2. ¿Es destructivo (borrar/sobrescribir en masa)?
   3. ¿Toca archivos fuera del proyecto o config sistema/usuario?
   - Cualquiera ≥ 0.5 → paso no se lanza; plan `pending` con `pause_reason: guard`; banderas en `plan_steps.guard_flags`; UI "aprobar este paso"/"cancelar"; WS `plan:guard`
-  - Aprobación: `POST /api/plans/:planId/steps/:stepId/approve` pone `guard_approved` (solo si plan está guard-paused y paso pending); se consume al lanzar; reintento re-evalúa
-  - Editar el prompt anula la aprobación y borra banderas
+  - Además, **siempre** corren las reglas locales sobre los resultados de las dependencias (texto de agentes, no confiable) y sus banderas (fuente `local`) se unen a las de JEV; el prompt lo juzga solo JEV cuando responde (las reglas no entienden "no hagas push")
+  - Reglas locales: git push/commit/rebase/reset --hard/remotos, `git branch -D`; `rm -r`/`-rf`, `git clean -f*`, `Remove-Item -Recurse`, `rmdir /s`/`rd /s`, `del /s`, DROP/TRUNCATE; rutas fuera del proyecto, carpetas sensibles y `/etc/`
+  - Aprobación: `POST /api/plans/:planId/steps/:stepId/approve` pone `guard_approved` (solo si plan está guard-paused y paso pending); se consume al lanzar junto con las banderas; reintento re-evalúa
+  - Editar el prompt anula la aprobación, borra banderas y, si el plan estaba en pausa `guard`, quita la pausa; si la pausa queda sin paso marcado, el aviso ofrece "continuar"
   - Lectores nunca pasan por la guardia
-  - Sin JEV: reglas locales regex conservadoras (solo de respaldo)
+  - Sin JEV: reglas locales regex conservadoras sobre prompt + dependencias
+  - La guardia es un **tope de velocidad, no un sandbox**: reduce sorpresas, no impide que un agente escritor haga algo que no se detectó
+- **Solo lectura:** pasos `read_only = 1` (revisión crítica, trivial que solo lee) corren claude sin herramientas de escritura, agy sin `--dangerously-skip-permissions` y codex con `--sandbox read-only` (en vez de `--full-auto`). Los tres adapters ruteables lo respetan, así que cambiar el adapter de un paso de solo lectura es seguro
+- **Aprobación del plan crítico:** se impone en la UI (botón "aprobar y ejecutar"); las rutas (`run-all`, etc.) no la verifican
 - **Status JEV:** `GET /api/jev/status` → `{ configured }`. Llave en `.env` (gitignored), `.env.example` la documenta, `process.loadEnvFile` la carga en servidor
 - **Privacidad:** prompts de pasos y resultados recortados viajan a TypeSafe; retención no documentada → no usar con proyectos de clientes hasta revisar
 
 Verificación en vivo (2026-10-06):
 - Suite verde: `npm test && npm run lint && npm run typecheck && npm run build:ui`
-- Sin llave: status `configured: false`; plan trivial creo tier normal (fallback), Opus planea como siempre
+- Sin llave: status `configured: false`
+- Tier normal por alternativa (sin JEV → normal, Opus planea como siempre): verificado **por tests**, no en vivo
 - Guard fallback (sin llave): paso con "haz git push" fue bloqueado por reglas locales antes de lanzar, banner mostró razón, "cancelar" funcionó
 - Plan crítico seeded: mostró insignia y paso `review` de solo lectura con botón "aprobar y ejecutar"
 - PENDIENTE: verificación con llave real de TypeSafe (no `.env` configurado aún) — tiers JEV y respuestas de guardia cubiertas por tests con JEV mockeado
