@@ -83,7 +83,7 @@ function buildPlanningPrompt(description: string, projectInfo?: { name: string; 
   return prompt;
 }
 
-function extractJsonFromOutput(stdout: string): any {
+export function extractJsonFromOutput(stdout: string): any {
   const lines = stdout.split("\n").filter((l) => l.trim());
   let resultText = "";
 
