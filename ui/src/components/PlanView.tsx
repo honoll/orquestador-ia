@@ -1177,6 +1177,7 @@ export function PlanView({
         .then((r) => r.json())
         .then((p: Plan) => {
           setPlan(p);
+          setQuotaPaused(p.status === "pending" && (p.steps ?? []).some((s) => s.errorMessage?.startsWith("Pausado por cuota")));
           fetch(`/api/plans/${p.id}/file-changes`)
             .then((r) => r.json())
             .then((rows: Array<{ filePath: string; content: string; changedAt: string }>) => {
@@ -1406,7 +1407,7 @@ export function PlanView({
 
       {quotaPaused && (
         <div role="status" className="mx-4 my-2 rounded-lg border border-accent/40 bg-accent-dim px-3 py-2 font-mono text-[11px] text-text-primary">
-          Plan pausado por cuota de Antigravity. Cambia de cuenta en el panel de cuentas y pulsa «ejecutar» para seguir desde el paso pendiente.
+          Plan pausado por cuota de Antigravity. Cambia de cuenta en el panel de cuentas y pulsa «ejecutar todo» o «paso a paso» para seguir desde el paso pendiente.
         </div>
       )}
 

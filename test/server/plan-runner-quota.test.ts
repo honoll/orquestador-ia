@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, vi } from "vitest";
+import { describe, it, expect, beforeAll, beforeEach, vi } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -18,15 +18,15 @@ vi.mock("../../src/adapters/registry.js", () => ({
 
 const { migrationDone } = await import("../../src/db/migrate.js");
 const { db, schema } = await import("../../src/db/index.js");
-const { runPlanAll, QUOTA_PAUSE_PREFIX } = await import("../../src/server/plan-runner.js");
+const { runPlanAll, runPlanStep, QUOTA_PAUSE_PREFIX } = await import("../../src/server/plan-runner.js");
 const { createAccount } = await import("../../src/server/agy-accounts.js");
 const { eq } = await import("drizzle-orm");
 
-beforeAll(async () => { await migrationDone; });
+beforeAll(async () => { await migrationDone; await createAccount("Prueba"); });
+beforeEach(() => { execute.mockClear(); });
 
 describe("pausa por cuota", () => {
   it("un paso agy con quota_exhausted no reintenta, vuelve a pending y el plan queda pending", async () => {
-    await createAccount("Prueba");
     const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "plan-"));
     const planId = randomUUID();
     const stepId = randomUUID();
@@ -42,6 +42,23 @@ describe("pausa por cuota", () => {
     const plan = await db.select().from(schema.plans).where(eq(schema.plans.id, planId)).then((r) => r[0]);
     expect(plan.status).toBe("pending");
     const usage = await db.select().from(schema.agyUsage);
-    expect(usage).toHaveLength(1);
+    expect(usage.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("paso a paso (runPlanStep directo): pausa el plan en pending", async () => {
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "plan-"));
+    const planId = randomUUID();
+    const stepId = randomUUID();
+    await db.insert(schema.plans).values({ id: planId, description: "p", status: "pending" });
+    await db.insert(schema.planSteps).values({ id: stepId, planId, stepIndex: 0, description: "d", adapter: "agy", prompt: "x", status: "pending" });
+
+    await runPlanStep({ planId, stepId, cwd });
+
+    expect(execute).toHaveBeenCalledTimes(1);
+    const step = await db.select().from(schema.planSteps).where(eq(schema.planSteps.id, stepId)).then((r) => r[0]);
+    expect(step.status).toBe("pending");
+    expect(step.errorMessage?.startsWith(QUOTA_PAUSE_PREFIX)).toBe(true);
+    const plan = await db.select().from(schema.plans).where(eq(schema.plans.id, planId)).then((r) => r[0]);
+    expect(plan.status).toBe("pending");
   });
 });

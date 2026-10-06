@@ -118,10 +118,13 @@ export async function runPlanStep(options: StepRunOptions): Promise<void> {
 
       if (step.adapter === "agy" && result.errorFamily === "quota_exhausted") {
         const msg = `${QUOTA_PAUSE_PREFIX} en la cuenta "${agyAccount?.label ?? "?"}": cambia de cuenta en el panel y vuelve a ejecutar el plan.`;
-        await db.update(schema.runs).set({ status: "failed", errorMessage: result.errorMessage, errorFamily: result.errorFamily, finishedAt: new Date().toISOString() }).where(eq(schema.runs.id, runId));
+        await db.update(schema.runs).set({ status: "failed", errorMessage: result.errorMessage, errorFamily: result.errorFamily, result: result.stdout, finishedAt: new Date().toISOString() }).where(eq(schema.runs.id, runId));
         await db.update(schema.tasks).set({ status: "failed", updatedAt: new Date().toISOString() }).where(eq(schema.tasks.id, taskId));
         await db.update(schema.planSteps).set({ status: "pending", errorMessage: msg, runId }).where(eq(schema.planSteps.id, stepId));
         broadcast({ type: "plan:step", planId, stepId, status: "pending", error: msg, timestamp: new Date().toISOString() } as any);
+        stopWatch(planId);
+        await db.update(schema.plans).set({ status: "pending", updatedAt: new Date().toISOString() }).where(eq(schema.plans.id, planId));
+        broadcast({ type: "plan:done", planId, status: "pending", paused: "quota", timestamp: new Date().toISOString() } as any);
         return;
       }
 
@@ -239,10 +242,7 @@ export async function runPlanAll(planId: string, cwd: string): Promise<void> {
     // Re-fetch to check if it failed
     const updated = await db.select().from(schema.planSteps).where(eq(schema.planSteps.id, step.id)).then((r) => r[0]);
     if (updated?.status === "pending" && updated.errorMessage?.startsWith(QUOTA_PAUSE_PREFIX)) {
-      stopWatch(planId);
-      await db.update(schema.plans).set({ status: "pending", updatedAt: new Date().toISOString() }).where(eq(schema.plans.id, planId));
-      broadcast({ type: "plan:done", planId, status: "pending", paused: "quota", timestamp: new Date().toISOString() } as any);
-      return;
+      return; // runPlanStep ya pausó el plan y emitió plan:done
     }
     if (updated?.status === "failed") {
       stopWatch(planId);
