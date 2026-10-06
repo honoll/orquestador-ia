@@ -25,7 +25,7 @@ npm run smoke:models # smoke test of the model catalog against the real CLIs
 
 Notes:
 - The Gemini CLI currently fails for this account (IneligibleTierError / UNSUPPORTED_CLIENT: Google asks to migrate to Antigravity).
-- `claude-opus-5-5` requires Claude Code >= 2.1.280.
+- `claude-opus-5-5` requires Claude Code >= 2.1.280 (verified with 2.1.292 on 2026-10-06).
 
 Two separate `node_modules` exist: root (backend) and `ui/` (frontend). Run `npm install` in both when adding dependencies.
 
