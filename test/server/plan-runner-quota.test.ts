@@ -26,11 +26,11 @@ const { eq } = await import("drizzle-orm");
 beforeAll(async () => { await migrationDone; await createAccount("Prueba"); });
 beforeEach(() => h.execute.mockClear());
 
-async function mk() {
+async function mk(extra: Record<string, unknown> = {}) {
   const planId = randomUUID();
   const stepId = randomUUID();
   await db.insert(schema.plans).values({ id: planId, description: "p", status: "running" });
-  await db.insert(schema.planSteps).values({ id: stepId, planId, stepIndex: 0, description: "d", adapter: "agy", prompt: "original", status: "pending" });
+  await db.insert(schema.planSteps).values({ id: stepId, planId, stepIndex: 0, description: "d", adapter: "agy", prompt: "original", status: "pending", ...extra });
   return { planId, stepId, cwd: fs.mkdtempSync(path.join(os.tmpdir(), "plan-")) };
 }
 
@@ -51,5 +51,17 @@ describe("runPlanStep", () => {
     const { planId, stepId, cwd } = await mk();
     await runPlanStep({ planId, stepId, cwd, promptOverride: "con contexto" });
     expect(h.execute.mock.calls[0][0].prompt).toBe("con contexto");
+  });
+
+  it("F4: un paso readOnly llega al adapter como readOnly: true", async () => {
+    const { planId, stepId, cwd } = await mk({ readOnly: 1 });
+    await runPlanStep({ planId, stepId, cwd });
+    expect(h.execute.mock.calls[0][0].readOnly).toBe(true);
+  });
+
+  it("F4: un paso sin readOnly llega como readOnly: false", async () => {
+    const { planId, stepId, cwd } = await mk({ readOnly: 0 });
+    await runPlanStep({ planId, stepId, cwd });
+    expect(h.execute.mock.calls[0][0].readOnly).toBe(false);
   });
 });

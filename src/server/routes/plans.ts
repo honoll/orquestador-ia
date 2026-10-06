@@ -230,9 +230,14 @@ app.patch("/:id", async (c) => {
 app.patch("/:planId/steps/:stepId", async (c) => {
   const { stepId } = c.req.param();
   const body = await c.req.json<Record<string, unknown>>().catch(() => ({} as Record<string, unknown>));
-  const set: { description?: string; adapter?: string; model?: string | null; prompt?: string } = {};
+  const set: { description?: string; adapter?: string; model?: string | null; prompt?: string; guardApproved?: number; guardFlags?: string | null } = {};
   if (typeof body.description === "string") set.description = body.description;
-  if (typeof body.prompt === "string") set.prompt = body.prompt;
+  if (typeof body.prompt === "string") {
+    set.prompt = body.prompt;
+    // Un prompt nuevo invalida la aprobación y las banderas de la guardia.
+    set.guardApproved = 0;
+    set.guardFlags = null;
+  }
   if (typeof body.model === "string" || body.model === null) set.model = body.model;
   if (body.adapter !== undefined) {
     if (typeof body.adapter !== "string" || !(ROUTABLE_ADAPTERS as readonly string[]).includes(body.adapter)) {

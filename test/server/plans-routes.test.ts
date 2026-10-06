@@ -202,4 +202,12 @@ describe("rutas de planes (F2)", () => {
     expect(r.status).toBe(200);
     expect(await getStep(s)).toMatchObject({ prompt: "nuevo", adapter: "claude", model: "claude-opus-5-5", description: "d2", status: "pending", result: null });
   });
+
+  it("PATCH de paso: cambiar el prompt anula la aprobación de la guardia", async () => {
+    const id = await mk();
+    const stepId = randomUUID();
+    await db.insert(schema.planSteps).values({ id: stepId, planId: id, stepIndex: 0, description: "x", adapter: "codex", prompt: "p", status: "pending", guardApproved: 1, guardFlags: "[]" });
+    const r = await req(`/${id}/steps/${stepId}`, "PATCH", { prompt: "otro" });
+    expect(await r.json()).toMatchObject({ prompt: "otro", guardApproved: 0, guardFlags: null });
+  });
 });
