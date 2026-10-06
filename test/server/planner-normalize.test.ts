@@ -37,3 +37,33 @@ describe("normalizeSteps", () => {
     expect(() => normalizeSteps([{ description: "x", adapter: "gemini", model: "", reason: "", prompt: "p" }])).toThrow("no permitido");
   });
 });
+
+import { normalizePlan } from "../../src/server/planner.js";
+
+describe("normalizePlan (grafo)", () => {
+  const base = { description: "d", adapter: "codex", model: "", reason: "r", prompt: "p" };
+  it("lee id, dependsOn, writes y estimaciones", () => {
+    const g = normalizePlan({ estimatedTokens: 50000, steps: [
+      { ...base, id: "s1", dependsOn: [], writes: false, estimatedTokens: 12000 },
+      { ...base, id: "s2", dependsOn: ["s1"], writes: true, estimatedTokens: 20000 },
+    ] });
+    expect(g.estimatedTokens).toBe(50000);
+    expect(g.steps.map((s) => [s.key, s.dependsOn, s.writes, s.estimatedTokens])).toEqual([["s1", [], false, 12000], ["s2", ["s1"], true, 20000]]);
+  });
+  it("defaults: id = s<n>, dependsOn = [], writes = true, estimación null", () => {
+    const g = normalizePlan({ steps: [base] });
+    expect(g.steps[0]).toMatchObject({ key: "s1", dependsOn: [], writes: true, estimatedTokens: null });
+    expect(g.estimatedTokens).toBeNull();
+  });
+  it("si falta la estimación del plan, suma la de los pasos", () => {
+    const g = normalizePlan({ steps: [{ ...base, estimatedTokens: 1000 }, { ...base, id: "s2", estimatedTokens: 2000 }] });
+    expect(g.estimatedTokens).toBe(3000);
+  });
+  it("rechaza ciclos y dependencias inexistentes", () => {
+    expect(() => normalizePlan({ steps: [{ ...base, id: "a", dependsOn: ["b"] }, { ...base, id: "b", dependsOn: ["a"] }] })).toThrow("circulares");
+    expect(() => normalizePlan({ steps: [{ ...base, id: "a", dependsOn: ["zz"] }] })).toThrow("inexistente");
+  });
+  it("rechaza un plan sin pasos", () => {
+    expect(() => normalizePlan({ steps: [] })).toThrow("sin pasos");
+  });
+});

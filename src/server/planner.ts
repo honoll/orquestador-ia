@@ -2,15 +2,25 @@ import { runProcess } from "../lib/process-runner.js";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
+import { validateDag } from "./plan-dag.js";
 import { MODEL_CATALOG, PLANNER_MODEL, ROUTABLE_ADAPTERS, type AdapterType } from "../config/models.js";
 
 export interface PlanStep {
   stepIndex: number;
+  key: string;
+  dependsOn: string[];
+  writes: boolean;
+  estimatedTokens: number | null;
   description: string;
   adapter: AdapterType;
   model: string;
   reason: string;
   prompt: string;
+}
+
+export interface GeneratedPlan {
+  steps: PlanStep[];
+  estimatedTokens: number | null;
 }
 
 interface ClaudeStreamMessage {
@@ -39,16 +49,22 @@ Available adapters and their strengths:
 ${buildAdaptersSection()}
 
 Rules:
-- Break the feature into 2-8 concrete subtasks
-- Each subtask must have a self-contained prompt that the assigned CLI can execute headlessly (no user interaction)
-- The prompt must include ALL context needed — assume the CLI has no prior knowledge
-- Be specific: reference actual files, functions, patterns from the project if provided
-- Sequence steps logically (analysis → design → implement → review)
+- Break the request into 2-8 concrete steps that form a dependency graph (DAG).
+- Give each step a short unique "id" (s1, s2, ...). "dependsOn" lists ONLY the ids whose output this step needs; steps that do not need each other must not depend on each other, so they can run in parallel.
+- "writes": false for steps that only read, analyze, research or review; true for steps that create or edit files or run commands that change the project. Writing steps run one at a time; reading steps run in parallel.
+- Each step's prompt must be self-contained and executable headlessly; the outputs of its direct dependencies are prepended automatically, so do not repeat them.
+- "estimatedTokens": your estimate of input+output tokens for the step, counting ~11000 tokens of fixed overhead for every agy call. Also give the plan total.
+- Prefer few dense steps over many small ones: every call has fixed overhead.
 
 Respond ONLY with valid JSON, no markdown fences:
 {
+  "estimatedTokens": 0,
   "steps": [
     {
+      "id": "s1",
+      "dependsOn": [],
+      "writes": false,
+      "estimatedTokens": 0,
       "description": "Short label (< 60 chars)",
       "adapter": "${ROUTABLE_ADAPTERS.join("|")}",
       "model": "one of the valid model ids for that adapter, or empty string for default",
@@ -125,6 +141,10 @@ export function normalizeSteps(raw: unknown[]): PlanStep[] {
     const validModel = (cat.models as readonly { id: string }[]).some((m) => m.id === model);
     return {
       stepIndex: i,
+      key: String(s.id ?? "").trim() || `s${i + 1}`,
+      dependsOn: Array.isArray(s.dependsOn) ? s.dependsOn.map(String) : [],
+      writes: s.writes !== false,
+      estimatedTokens: Number.isFinite(Number(s.estimatedTokens)) && Number(s.estimatedTokens) > 0 ? Math.round(Number(s.estimatedTokens)) : null,
       description: String(s.description ?? `Paso ${i + 1}`),
       adapter: adapter as AdapterType,
       model: validModel ? model : cat.defaultModel,
@@ -132,6 +152,18 @@ export function normalizeSteps(raw: unknown[]): PlanStep[] {
       prompt: String(s.prompt ?? s.description ?? ""),
     };
   });
+}
+
+export function normalizePlan(raw: unknown): GeneratedPlan {
+  const obj = (raw ?? {}) as Record<string, unknown>;
+  if (!Array.isArray(obj.steps)) throw new Error("Planner response missing 'steps' array");
+  if (obj.steps.length === 0) throw new Error("El planner devolvió un plan sin pasos");
+  const steps = normalizeSteps(obj.steps);
+  validateDag(steps);
+  const declared = Number(obj.estimatedTokens);
+  const sum = steps.reduce((acc, s) => acc + (s.estimatedTokens ?? 0), 0);
+  const estimatedTokens = Number.isFinite(declared) && declared > 0 ? Math.round(declared) : sum > 0 ? sum : null;
+  return { steps, estimatedTokens };
 }
 
 /** Mensaje para el usuario cuando el planner termina con código distinto de cero. */
@@ -164,7 +196,7 @@ export async function generatePlan(
   cwd: string,
   projectInfo?: { name: string; path: string; projectDescription?: string | null },
   options?: GeneratePlanOptions,
-): Promise<PlanStep[]> {
+): Promise<GeneratedPlan> {
   const userPrompt = buildPlanningPrompt(description, projectInfo);
 
   // Write system prompt to a temp file to avoid Windows cmd.exe quoting issues with multi-line/JSON strings.
@@ -226,11 +258,5 @@ export async function generatePlan(
     throw new Error("cancelled");
   }
 
-  const parsed = extractJsonFromOutput(proc.stdout);
-
-  if (!Array.isArray(parsed.steps)) {
-    throw new Error("Planner response missing 'steps' array");
-  }
-
-  return normalizeSteps(parsed.steps);
+  return normalizePlan(extractJsonFromOutput(proc.stdout));
 }

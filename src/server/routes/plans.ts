@@ -2,7 +2,8 @@ import { Hono } from "hono";
 import { randomUUID } from "node:crypto";
 import { eq, desc, asc, and } from "drizzle-orm";
 import { db, schema } from "../../db/index.js";
-import { generatePlan } from "../planner.js";
+import { generatePlan, type GeneratedPlan } from "../planner.js";
+import { defaultBudget } from "../plan-dag.js";
 import { runPlanAll, runPlanStep } from "../plan-runner.js";
 import { broadcast } from "../ws.js";
 import { startWatch, stopWatch } from "../file-watcher.js";
@@ -37,7 +38,7 @@ app.get("/:id", async (c) => {
   return c.json({ ...plan, steps });
 });
 
-// Create plan â€” immediately returns plan ID, generates steps in background with streaming
+// Create plan — immediately returns plan ID, generates steps in background with streaming
 app.post("/", async (c) => {
   const body = await c.req.json<{ description: string; projectId?: string; cwd?: string }>();
   if (!body.description?.trim()) return c.json({ error: "description required" }, 400);
@@ -60,12 +61,12 @@ app.post("/", async (c) => {
   (async () => {
     const MAX_PLAN_GEN_RETRIES = 2;
     const RATE_LIMIT_WAIT_MS = 60_000;
-    let steps: any[] | null = null;
+    let generated: GeneratedPlan | null = null;
     let lastErr: any = null;
 
     for (let attempt = 0; attempt <= MAX_PLAN_GEN_RETRIES; attempt++) {
       try {
-        steps = await generatePlan(
+        generated = await generatePlan(
           body.description,
           cwd,
           project ? { name: project.name, path: project.path, projectDescription: project.description } : undefined,
@@ -120,11 +121,15 @@ app.post("/", async (c) => {
       return;
     }
 
-    for (const step of steps!) {
+    for (const step of generated!.steps) {
       await db.insert(schema.planSteps).values({
         id: randomUUID(),
         planId,
         stepIndex: step.stepIndex,
+        stepKey: step.key,
+        dependsOn: JSON.stringify(step.dependsOn),
+        writes: step.writes ? 1 : 0,
+        estimatedTokens: step.estimatedTokens,
         description: step.description,
         adapter: step.adapter,
         model: step.model || null,
@@ -135,7 +140,12 @@ app.post("/", async (c) => {
     }
 
     await db.update(schema.plans)
-      .set({ status: "pending", updatedAt: new Date().toISOString() })
+      .set({
+        status: "pending",
+        estimatedTokens: generated!.estimatedTokens,
+        budgetTokens: defaultBudget(generated!.estimatedTokens),
+        updatedAt: new Date().toISOString(),
+      })
       .where(eq(schema.plans.id, planId));
 
     const plan = await db.select().from(schema.plans).where(eq(schema.plans.id, planId)).then((r) => r[0]);
@@ -287,7 +297,7 @@ app.post("/:id/cancel-generation", async (c) => {
   await db.update(schema.plans)
     .set({ status: "cancelled", updatedAt: new Date().toISOString() })
     .where(eq(schema.plans.id, id));
-  broadcast({ type: "plan:error", planId: id, error: "GeneraciÃ³n cancelada", timestamp: new Date().toISOString() } as any);
+  broadcast({ type: "plan:error", planId: id, error: "Generación cancelada", timestamp: new Date().toISOString() } as any);
   return c.json({ ok: true });
 });
 
