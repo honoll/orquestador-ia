@@ -97,3 +97,25 @@ export const planFileChanges = sqliteTable("plan_file_changes", {
 }, (t) => ({
   uniqPlanFile: uniqueIndex("uq_plan_file_changes").on(t.planId, t.filePath),
 }));
+
+export const agyAccounts = sqliteTable("agy_accounts", {
+  id: text("id").primaryKey(),
+  label: text("label").notNull(),
+  active: integer("active").notNull().default(0),
+  manualLimit5h: integer("manual_limit_5h"),
+  manualLimit7d: integer("manual_limit_7d"),
+  calibratedLimit5h: integer("calibrated_limit_5h"),
+  quotaBlockedUntil: text("quota_blocked_until"),
+  notes: text("notes"),
+  createdAt: text("created_at").notNull().default(sql`(datetime('now'))`),
+});
+
+/** Consumo de cada llamada a agy (chat, plan o análisis), ligado a la cuenta activa. `at` en ISO. */
+export const agyUsage = sqliteTable("agy_usage", {
+  id: text("id").primaryKey(),
+  accountId: text("account_id").notNull().references(() => agyAccounts.id),
+  at: text("at").notNull(),
+  inputTokens: integer("input_tokens").notNull().default(0),
+  outputTokens: integer("output_tokens").notNull().default(0),
+  source: text("source").notNull(),
+});

@@ -8,6 +8,7 @@ import type { AdapterExecutionResult } from "../lib/types.js";
 import pino from "pino";
 import fs from "node:fs";
 
+import { requireActiveAccount, recordAgyCall } from "./agy-accounts.js";
 import { cavemanFlagFile, findCavemanSkill } from "../lib/caveman.js";
 const HOME = process.env.HOME || process.env.USERPROFILE || "";
 const log = pino({ name: "runner" });
@@ -154,6 +155,7 @@ async function executeInBackground(
   adapter: { execute: (ctx: any) => Promise<AdapterExecutionResult> },
 ) {
   let result: AdapterExecutionResult;
+  let agyAccountId: string | null = null;
   try {
     const historyPrefix = await buildHistoryPrefix(input.taskId, input.sessionId);
     const cavemanPrefix = await buildCavemanPrefix();
@@ -183,6 +185,7 @@ async function executeInBackground(
       onKill: (kill: () => void) => { activeKills.set(runId, kill); },
     });
 
+    if (input.adapter === "agy") agyAccountId = (await requireActiveAccount()).id;
     result = await adapter.execute(makeCtx(claudeProfileEnv));
 
     // Claude: if rate-limited and has multiple profiles with API keys, rotate and retry
@@ -220,6 +223,10 @@ async function executeInBackground(
       errorFamily: "internal",
       retryNotBefore: null,
     };
+  }
+
+  if (agyAccountId) {
+    try { await recordAgyCall(agyAccountId, result, "chat"); } catch (err) { log.error({ err, runId }, "No se pudo registrar el consumo de agy"); }
   }
 
   const status = result.timedOut

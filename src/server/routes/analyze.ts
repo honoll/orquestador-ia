@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { execute } from "../../adapters/agy/execute.js";
 import { AGY_ANALYSIS_MODEL } from "../../config/models.js";
 import { broadcast } from "../ws.js";
+import { getActiveAccount, recordAgyCall } from "../agy-accounts.js";
 
 const app = new Hono();
 
@@ -21,6 +22,9 @@ app.post("/", async (c) => {
   if (!body.files || body.files.length === 0) {
     return c.json({ error: "No files provided" }, 400);
   }
+
+  const account = await getActiveAccount();
+  if (!account) return c.json({ error: "Sin cuenta activa de Antigravity", fallback: true }, 200);
 
   const fileSection = body.files
     .map((f) => `--- File: ${f.path} ---\n${f.content}${f.truncated ? "\n[...truncated]" : ""}`)
@@ -56,6 +60,8 @@ app.post("/", async (c) => {
         } as any);
       },
     });
+
+    await recordAgyCall(account.id, result, "analysis");
 
     const analysis = result.summary || result.stdout;
     if (!analysis?.trim()) {

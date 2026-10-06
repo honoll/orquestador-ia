@@ -107,6 +107,29 @@ CREATE TABLE IF NOT EXISTS plan_file_changes (
 );
 
 CREATE INDEX IF NOT EXISTS idx_plan_file_changes_plan ON plan_file_changes(plan_id);
+
+CREATE TABLE IF NOT EXISTS agy_accounts (
+  id TEXT PRIMARY KEY,
+  label TEXT NOT NULL,
+  active INTEGER NOT NULL DEFAULT 0,
+  manual_limit_5h INTEGER,
+  manual_limit_7d INTEGER,
+  calibrated_limit_5h INTEGER,
+  quota_blocked_until TEXT,
+  notes TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS agy_usage (
+  id TEXT PRIMARY KEY,
+  account_id TEXT NOT NULL REFERENCES agy_accounts(id),
+  at TEXT NOT NULL,
+  input_tokens INTEGER NOT NULL DEFAULT 0,
+  output_tokens INTEGER NOT NULL DEFAULT 0,
+  source TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_agy_usage_account_at ON agy_usage(account_id, at);
 `;
 
 const statements = SCHEMA_SQL.split(";").map((s) => s.trim()).filter(Boolean);

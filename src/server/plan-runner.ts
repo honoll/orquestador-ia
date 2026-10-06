@@ -4,6 +4,7 @@ import { db, schema } from "../db/index.js";
 import { getAdapter } from "../adapters/registry.js";
 import { broadcast } from "./ws.js";
 import { claudeProfileManager } from "../adapters/claude/profile-manager.js";
+import { getActiveAccount, recordAgyCall, NoActiveAccountError } from "./agy-accounts.js";
 import { startWatch, stopWatch } from "./file-watcher.js";
 import pino from "pino";
 
@@ -41,6 +42,14 @@ export async function runPlanStep(options: StepRunOptions): Promise<void> {
     .where(eq(schema.plans.id, planId));
 
   broadcast({ type: "plan:step", planId, stepId, status: "running", timestamp: new Date().toISOString() } as any);
+
+  const agyAccount = step.adapter === "agy" ? await getActiveAccount() : null;
+  if (step.adapter === "agy" && !agyAccount) {
+    const msg = new NoActiveAccountError().message;
+    await db.update(schema.planSteps).set({ status: "failed", errorMessage: msg, finishedAt: new Date().toISOString() }).where(eq(schema.planSteps.id, stepId));
+    broadcast({ type: "plan:step", planId, stepId, status: "failed", error: msg, timestamp: new Date().toISOString() } as any);
+    return;
+  }
 
   let sessionId = step.sessionId ?? undefined;
   let lastError: string | null = null;
@@ -101,6 +110,10 @@ export async function runPlanStep(options: StepRunOptions): Promise<void> {
         },
         onKill: (kill) => options.onKillRegistered?.(kill),
       });
+
+      if (agyAccount) {
+        try { await recordAgyCall(agyAccount.id, result, "plan"); } catch (err) { log.error({ err, stepId }, "No se pudo registrar el consumo de agy"); }
+      }
 
       const succeeded = result.exitCode === 0 && !result.timedOut;
       const isSilentRateLimit = step.adapter === "claude" && result.exitCode === 1 && !(result.stderr ?? "").trim();
