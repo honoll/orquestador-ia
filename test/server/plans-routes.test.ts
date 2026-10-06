@@ -228,6 +228,19 @@ describe("rutas de planes (F2)", () => {
     expect(await r.json()).toMatchObject({ prompt: "otro", guardApproved: 0, guardFlags: null });
   });
 
+  it("PATCH de paso: cambiar el prompt de un plan en pausa de guardia quita la pausa", async () => {
+    const id = await mk({ pauseReason: "guard" });
+    const s = await mkStep(id, { guardFlags: "[]" });
+    await req(`/${id}/steps/${s}`, "PATCH", { description: "solo descripción" });
+    expect((await getPlanRow(id)).pauseReason).toBe("guard");
+    await req(`/${id}/steps/${s}`, "PATCH", { prompt: "otro" });
+    expect((await getPlanRow(id)).pauseReason).toBeNull();
+    const budget = await mk({ pauseReason: "budget" });
+    const s2 = await mkStep(budget);
+    await req(`/${budget}/steps/${s2}`, "PATCH", { prompt: "otro" });
+    expect((await getPlanRow(budget)).pauseReason).toBe("budget");
+  });
+
   it("trivial: un paso agy, sin Opus, y arranca solo", async () => {
     h.generatePlan.mockClear();
     h.tier = { tier: "trivial", confidence: 0.95, source: "jev" };

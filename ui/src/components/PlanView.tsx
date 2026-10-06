@@ -1245,10 +1245,18 @@ function CriticalBanner({ plan, busy, onApprove }: { plan: Plan; busy: boolean; 
   );
 }
 
-function GuardBanner({ plan, onApprove, onCancel }: { plan: Plan; onApprove: (stepId: string) => void; onCancel: () => void }) {
+function GuardBanner({ plan, onApprove, onCancel, onContinue }: { plan: Plan; onApprove: (stepId: string) => void; onCancel: () => void; onContinue: () => void }) {
   if (plan.status !== "pending" || plan.pauseReason !== "guard") return null;
   const step = plan.steps.find((s) => s.guardFlags && s.guardApproved !== 1 && s.status === "pending");
-  if (!step) return null;
+  if (!step) {
+    // Pausa de guardia sin paso marcado (p. ej. se editó su prompt): no dejar el plan sin salida.
+    return (
+      <div role="status" className="mx-4 my-2 flex flex-wrap items-center gap-3 rounded-lg border border-accent/40 bg-accent-dim px-3 py-2 font-mono text-[11px] text-text-primary">
+        <span>Plan pausado por la guardia, pero ya no hay pasos marcados. Continúa para volver a evaluarlos.</span>
+        <button onClick={onContinue} className="ml-auto rounded border border-ok/40 px-2 py-0.5 text-ok hover:text-text-primary">continuar</button>
+      </div>
+    );
+  }
   let flags: { label: string; probability: number; source: string }[] = [];
   try { flags = JSON.parse(step.guardFlags!); } catch { /* sin detalle */ }
   return (
@@ -1561,9 +1569,11 @@ export function PlanView({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ prompt: newPrompt }),
     });
+    // Igual que el servidor: el prompt nuevo borra banderas/aprobación de la guardia y quita su pausa.
     setPlan((prev) => ({
       ...prev,
-      steps: prev.steps.map((s) => (s.id === step.id ? { ...s, prompt: newPrompt } : s)),
+      pauseReason: prev.pauseReason === "guard" ? null : prev.pauseReason,
+      steps: prev.steps.map((s) => (s.id === step.id ? { ...s, prompt: newPrompt, guardFlags: null, guardApproved: 0 } : s)),
     }));
   }
 
@@ -1733,7 +1743,7 @@ export function PlanView({
       {actionError && <p role="alert" className="mx-4 font-mono text-[10px] text-err">{actionError}</p>}
       <PauseBanner plan={plan} onContinue={handleContinue} />
       <CriticalBanner plan={plan} busy={mode !== "idle"} onApprove={handleRunAll} />
-      <GuardBanner plan={plan} onApprove={handleApproveStep} onCancel={handleStop} />
+      <GuardBanner plan={plan} onApprove={handleApproveStep} onCancel={handleStop} onContinue={handleContinue} />
 
       {/* ── Resizable body: [plan+preview] / [chat] ── */}
       <ResizableGroup direction="vertical" className="flex-1 min-h-0">

@@ -266,7 +266,7 @@ app.patch("/:id", async (c) => {
 
 // Edit a step: solo description, adapter, model y prompt (adapter validado). Otros campos se ignoran en silencio.
 app.patch("/:planId/steps/:stepId", async (c) => {
-  const { stepId } = c.req.param();
+  const { planId, stepId } = c.req.param();
   const body = await c.req.json<Record<string, unknown>>().catch(() => ({} as Record<string, unknown>));
   const set: { description?: string; adapter?: string; model?: string | null; prompt?: string; guardApproved?: number; guardFlags?: string | null } = {};
   if (typeof body.description === "string") set.description = body.description;
@@ -287,6 +287,12 @@ app.patch("/:planId/steps/:stepId", async (c) => {
     await db.update(schema.planSteps)
       .set(set)
       .where(eq(schema.planSteps.id, stepId));
+  }
+  if (set.prompt !== undefined) {
+    // Un prompt nuevo ya no es el que detuvo la guardia: el plan sale de la pausa (se vuelve a evaluar al correr).
+    await db.update(schema.plans)
+      .set({ pauseReason: null, updatedAt: new Date().toISOString() })
+      .where(and(eq(schema.plans.id, planId), eq(schema.plans.pauseReason, "guard")));
   }
   const step = await db.select().from(schema.planSteps).where(eq(schema.planSteps.id, stepId)).then((r) => r[0]);
   return c.json(step);
