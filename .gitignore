@@ -1,0 +1,11 @@
+node_modules/
+dist/
+ui/dist/
+*.log
+server.log
+*.db
+*.db-shm
+*.db-wal
+.env
+.env.local
+~/.orquestador-ia/
