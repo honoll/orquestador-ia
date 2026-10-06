@@ -35,6 +35,12 @@ async function clearSynthesis(planId: string) {
     .where(eq(schema.plans.id, planId));
 }
 
+/** True si el plan ya no existe o la generación fue cancelada mientras corría el segundo plano. */
+async function generationCancelled(planId: string): Promise<boolean> {
+  const p = await getPlan(planId);
+  return !p || p.status === "cancelled";
+}
+
 // Active plan-generation kill functions
 const generatingKills = new Map<string, () => void>();
 
@@ -91,6 +97,7 @@ app.post("/", async (c) => {
     let reviewKey: string | undefined;
 
     const tier = await classifyTier(body.description);
+    if (await generationCancelled(planId)) return;
     await db.update(schema.plans)
       .set({ tier: tier.tier, tierConfidence: tier.confidence, tierSource: tier.source, updatedAt: new Date().toISOString() })
       .where(eq(schema.plans.id, planId));
@@ -98,8 +105,10 @@ app.post("/", async (c) => {
     const trivial = tier.tier === "trivial";
 
     if (trivial) {
+      const writes = await trivialWrites(body.description);
+      if (await generationCancelled(planId)) return;
       generated = {
-        steps: [makeTrivialStep(body.description, await trivialWrites(body.description))],
+        steps: [makeTrivialStep(body.description, writes)],
         estimatedTokens: TRIVIAL_ESTIMATED_TOKENS,
       };
     }
@@ -161,6 +170,8 @@ app.post("/", async (c) => {
       return;
     }
 
+    if (await generationCancelled(planId)) return;
+
     if (tier.tier === "critical") {
       const withReview = addReviewStep(generated!, body.description);
       reviewKey = withReview.reviewKey;
@@ -207,7 +218,7 @@ app.post("/", async (c) => {
       timestamp: new Date().toISOString(),
     } as any);
 
-    if (trivial) {
+    if (trivial && !(await generationCancelled(planId))) {
       runPlanDag(planId, cwd, { mode: "all" }).catch((err) => console.error("runPlanDag trivial error:", err));
     }
   })();

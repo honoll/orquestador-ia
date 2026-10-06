@@ -1,7 +1,8 @@
-import { describe, it, expect, beforeAll, vi } from "vitest";
+import { describe, it, expect, beforeAll, afterEach, vi } from "vitest";
 import { randomUUID } from "node:crypto";
 
 const h = vi.hoisted(() => ({ runPlanDag: vi.fn(async () => {}), running: new Set<string>(), retrySynthesis: vi.fn(async () => true), cancelPlanRun: vi.fn(() => true),
+  gate: null as Promise<void> | null,
   tier: { tier: "normal", confidence: null, source: "fallback" } as { tier: string; confidence: number | null; source: string },
   generatePlan: vi.fn(async () => ({
     steps: [{ stepIndex: 0, key: "s1", dependsOn: [], writes: false, estimatedTokens: 1000, description: "paso", adapter: "codex", model: "m", reason: "r", prompt: "p" }],
@@ -10,7 +11,7 @@ const h = vi.hoisted(() => ({ runPlanDag: vi.fn(async () => {}), running: new Se
 }));
 vi.mock("../../src/server/plan-tier.js", async () => {
   const actual = await vi.importActual<typeof import("../../src/server/plan-tier.js")>("../../src/server/plan-tier.js");
-  return { ...actual, classifyTier: vi.fn(async () => h.tier), trivialWrites: vi.fn(async () => false) };
+  return { ...actual, classifyTier: vi.fn(async () => { if (h.gate) await h.gate; return h.tier; }), trivialWrites: vi.fn(async () => false) };
 });
 vi.mock("../../src/server/planner.js", async () => {
   const actual = await vi.importActual<typeof import("../../src/server/planner.js")>("../../src/server/planner.js");
@@ -44,6 +45,8 @@ const getPlanRow = (id: string) => db.select().from(schema.plans).where(eq(schem
 const getStep = (id: string) => db.select().from(schema.planSteps).where(eq(schema.planSteps.id, id)).then((x) => x[0]);
 const req = (path: string, method = "POST", body?: unknown) =>
   plansRoute.request(path, { method, headers: { "Content-Type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) });
+
+afterEach(() => { h.tier = { tier: "normal", confidence: null, source: "fallback" }; h.gate = null; });
 
 describe("rutas de planes (F2)", () => {
   it("run-all usa el planificador; 409 si ya corre", async () => {
@@ -226,6 +229,7 @@ describe("rutas de planes (F2)", () => {
   });
 
   it("trivial: un paso agy, sin Opus, y arranca solo", async () => {
+    h.generatePlan.mockClear();
     h.tier = { tier: "trivial", confidence: 0.95, source: "jev" };
     const r = await req("/", "POST", { description: "resume a.txt" });
     const { id } = (await r.json()) as { id: string };
@@ -250,5 +254,22 @@ describe("rutas de planes (F2)", () => {
     const steps = (await db.select().from(schema.planSteps).where(eq(schema.planSteps.planId, id))).sort((a, b) => a.stepIndex - b.stepIndex);
     expect(steps.at(-1)).toMatchObject({ stepKey: "review", adapter: "claude", readOnly: 1, writes: 0 });
     expect(h.runPlanDag).not.toHaveBeenCalled();
+  });
+
+  it("cancelar la generación durante la clasificación se respeta: sin pasos ni arranque", async () => {
+    h.tier = { tier: "trivial", confidence: 0.95, source: "jev" };
+    h.runPlanDag.mockClear();
+    h.generatePlan.mockClear();
+    let release!: () => void;
+    h.gate = new Promise<void>((r) => { release = r; });
+    const r = await req("/", "POST", { description: "resume b.txt" });
+    const { id } = (await r.json()) as { id: string };
+    expect((await req(`/${id}/cancel-generation`)).status).toBe(200);
+    release();
+    await new Promise((res) => setTimeout(res, 200));
+    expect((await getPlanRow(id)).status).toBe("cancelled");
+    expect(await db.select().from(schema.planSteps).where(eq(schema.planSteps.planId, id))).toHaveLength(0);
+    expect(h.runPlanDag).not.toHaveBeenCalled();
+    expect(h.generatePlan).not.toHaveBeenCalled();
   });
 });
