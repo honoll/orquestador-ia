@@ -71,7 +71,7 @@ Retry logic: transient errors (429, 503, rate limit text) → retry; unknown ses
 - **Session resume is adapter-scoped**: a conversation's `sessionId` is only passed as `--resume` if the new task uses the same adapter. Cross-adapter turns fall back to text prefix injection.
 - **Windows spawn**: `process-runner.ts` uses `shell: true` on Windows to avoid `ENOENT`, except agy (`agy.exe`, `shell:false`). Codex requires prompt via stdin (using `-` flag) because its args don't survive cmd.exe quoting.
 - **No prompts as cmd.exe arguments (F1 rule)**: `quoteWindowsArg` cannot make `&` or `%VAR%` safe under cmd.exe (see `it.fails` in `test/lib/quote-windows-arg.test.ts`). Send prompts via stdin or spawn with `shell:false`.
-- **`agy` is spawned directly (`agy.exe`, `shell:false`) with the prompt as NDJSON on stdin.** It is resolved via `AGY_PATH` or `%LOCALAPPDATA%gyingy.exe` (not PATH).
+- **`agy` is spawned directly (`agy.exe`, `shell:false`) with the prompt as NDJSON on stdin.** It is resolved via `AGY_PATH` or `%LOCALAPPDATA%\agy\bin\agy.exe` (not PATH).
 - **Attachments pipeline**: attached files are pre-analyzed by agy via `POST /api/analyze` before reaching the main adapter. The analysis runs agy in read-only mode (no `--dangerously-skip-permissions`).
 - **Headless flags**: Claude uses `--dangerously-skip-permissions`, Codex uses `--json`. These are required — interactive prompts break the runner.
 
