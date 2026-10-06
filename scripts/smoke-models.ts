@@ -22,7 +22,7 @@ for (const [type, cat] of Object.entries(MODEL_CATALOG) as [AdapterType, (typeof
       timeoutSec: 180,
       onLog: () => {},
     });
-    const ok = r.exitCode === 0 && !r.errorMessage && /^ok.?$/i.test(r.summary.trim());
+    const ok = r.exitCode === 0 && !r.errorMessage && /^ok\.?$/i.test(r.summary.trim());
     rows.push({ adapter: type, model: m.id, ok, detalle: ok ? `${r.inputTokens}/${r.outputTokens} tok` : (r.errorMessage ?? r.summary).slice(0, 120) });
   }
 }
