@@ -28,6 +28,7 @@ const { migrationDone } = await import("../../src/db/migrate.js");
 const { db, schema } = await import("../../src/db/index.js");
 const { default: plansRoute } = await import("../../src/server/routes/plans.js");
 const { eq } = await import("drizzle-orm");
+const tierMod = await import("../../src/server/plan-tier.js");
 
 beforeAll(async () => { await migrationDone; });
 
@@ -250,9 +251,20 @@ describe("rutas de planes (F2)", () => {
     expect(h.generatePlan).not.toHaveBeenCalled();
     const steps = await db.select().from(schema.planSteps).where(eq(schema.planSteps.planId, id));
     expect(steps).toHaveLength(1);
-    expect(steps[0]).toMatchObject({ adapter: "agy", model: "gemini-3.8-flash-low", stepKey: "s1" });
+    // trivialWrites → false: solo lee, así que corre sin permisos de escritura.
+    expect(steps[0]).toMatchObject({ adapter: "agy", model: "gemini-3.8-flash-low", stepKey: "s1", writes: 0, readOnly: 1 });
     const p = await db.select().from(schema.plans).where(eq(schema.plans.id, id)).then((x) => x[0]);
     expect(p).toMatchObject({ tier: "trivial", tierSource: "jev", status: "pending" });
+  });
+
+  it("trivial que escribe: readOnly 0", async () => {
+    h.tier = { tier: "trivial", confidence: 0.95, source: "jev" };
+    vi.mocked(tierMod.trivialWrites).mockResolvedValueOnce(true);
+    const r = await req("/", "POST", { description: "corrige el typo en a.txt" });
+    const { id } = (await r.json()) as { id: string };
+    await vi.waitFor(async () => expect(h.runPlanDag).toHaveBeenCalledWith(id, expect.any(String), { mode: "all" }));
+    const steps = await db.select().from(schema.planSteps).where(eq(schema.planSteps.planId, id));
+    expect(steps[0]).toMatchObject({ writes: 1, readOnly: 0 });
   });
 
   it("crítico: Opus planea, se agrega la revisión de solo lectura y NO arranca solo", async () => {

@@ -21,7 +21,7 @@ export interface AdapterExecutionContext {
   timeoutSec?: number;
   graceSec?: number;
   env?: Record<string, string>;
-  readOnly?: boolean; // agy y claude: sin --dangerously-skip-permissions (headless auto-deniega tools con permiso)
+  readOnly?: boolean; // agy y claude: sin --dangerously-skip-permissions (headless auto-deniega tools con permiso); codex: --sandbox read-only
   claudeProfileEnv?: Record<string, string>; // env overrides for multi-account (e.g. ANTHROPIC_API_KEY)
   onLog: (stream: "stdout" | "stderr", chunk: string) => void;
   onKill?: (kill: () => void) => void;

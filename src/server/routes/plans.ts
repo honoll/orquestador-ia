@@ -186,7 +186,8 @@ app.post("/", async (c) => {
         stepKey: step.key,
         dependsOn: JSON.stringify(step.dependsOn),
         writes: step.writes ? 1 : 0,
-        readOnly: step.key === reviewKey ? 1 : 0,
+        // Revisión crítica y trivial que solo lee: el adapter corre sin permisos de escritura.
+        readOnly: step.key === reviewKey || (trivial && !step.writes) ? 1 : 0,
         estimatedTokens: step.estimatedTokens,
         description: step.description,
         adapter: step.adapter,
@@ -277,6 +278,8 @@ app.patch("/:planId/steps/:stepId", async (c) => {
     set.guardFlags = null;
   }
   if (typeof body.model === "string" || body.model === null) set.model = body.model;
+  // Cambiar el adapter de un paso readOnly es seguro: todos los ROUTABLE_ADAPTERS (claude, codex, agy) honran
+  // readOnly. Si se agrega uno que no lo honre, aquí hay que rechazar (400) ese cambio para pasos readOnly.
   if (body.adapter !== undefined) {
     if (typeof body.adapter !== "string" || !(ROUTABLE_ADAPTERS as readonly string[]).includes(body.adapter)) {
       return c.json({ error: `adapter debe ser uno de: ${ROUTABLE_ADAPTERS.join(", ")}` }, 400);
