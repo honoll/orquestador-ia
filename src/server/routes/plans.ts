@@ -357,6 +357,9 @@ app.post("/:planId/steps/:stepId/approve", async (c) => {
   const step = await db.select().from(schema.planSteps).where(eq(schema.planSteps.id, stepId)).then((r) => r[0]);
   if (!plan || !step || step.planId !== planId) return c.json({ error: "Not found" }, 404);
   if (isPlanRunning(planId)) return c.json(RUNNING, 409);
+  if (plan.pauseReason !== "guard" || step.status !== "pending" || step.guardFlags == null) {
+    return c.json({ error: "Solo se puede aprobar un paso detenido por la guardia" }, 409);
+  }
   await db.update(schema.planSteps).set({ guardApproved: 1 }).where(eq(schema.planSteps.id, stepId));
   runPlanDag(planId, await planCwd(plan), { mode: "all" }).catch((err) => console.error("runPlanDag approve error:", err));
   return c.json({ ok: true }, 202);

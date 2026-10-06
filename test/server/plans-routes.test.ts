@@ -275,8 +275,16 @@ describe("rutas de planes (F2)", () => {
   it("aprobar paso: marca guardApproved y relanza; 409 si corre; 404 si no existe", async () => {
     const id = await mk({ pauseReason: "guard" });
     const stepId = randomUUID();
-    await db.insert(schema.planSteps).values({ id: stepId, planId: id, stepIndex: 0, description: "x", adapter: "codex", prompt: "p", status: "pending", guardFlags: "[]" });
+    await db.insert(schema.planSteps).values({ id: stepId, planId: id, stepIndex: 0, description: "x", adapter: "codex", prompt: "p", status: "pending", guardFlags: JSON.stringify([{ id: "git", label: "l", probability: 1, source: "local" }]) });
     expect((await req(`/${id}/steps/${randomUUID()}/approve`)).status).toBe(404);
+    const noFlags = await mkStep(id);
+    const r409 = await req(`/${id}/steps/${noFlags}/approve`);
+    expect(r409.status).toBe(409);
+    expect(await r409.json()).toEqual({ error: "Solo se puede aprobar un paso detenido por la guardia" });
+    const otherPlan = await mk();
+    const otherStep = await mkStep(otherPlan, { guardFlags: "[{}]" });
+    expect((await req(`/${otherPlan}/steps/${otherStep}/approve`)).status).toBe(409);
+    expect(h.runPlanDag).not.toHaveBeenCalledWith(otherPlan, expect.anything(), expect.anything());
     h.running.add(id);
     expect((await req(`/${id}/steps/${stepId}/approve`)).status).toBe(409);
     h.running.delete(id);

@@ -144,8 +144,8 @@ export async function runPlanDag(planId: string, cwd: string, opts: { mode?: "al
         // Guardia: solo escritores no aprobados; se evalúa el prompt ORIGINAL (sin el encabezado de buildStepPrompt).
         if (step.writes && row.guardApproved !== 1) {
           const guard = await guardStep({ prompt: row.prompt, deps: deps.map((d) => ({ key: d.key, result: d.result })), projectPath: cwd });
-          // La guardia puede tardar (JEV con reintento): si cancelaron mientras tanto, no se lanza.
-          if (run.cancelled) continue;
+          // La guardia puede tardar (JEV con reintento): si cancelaron mientras tanto, no se lanza nada más de esta vuelta.
+          if (run.cancelled) break;
           if (guard.flagged) {
             await db.update(schema.planSteps).set({ guardFlags: JSON.stringify(guard.flags) }).where(eq(schema.planSteps.id, step.id));
             emit({ type: "plan:guard", planId, stepId: step.id, flags: guard.flags, source: guard.source });
@@ -155,7 +155,8 @@ export async function runPlanDag(planId: string, cwd: string, opts: { mode?: "al
           await db.update(schema.planSteps).set({ guardFlags: null }).where(eq(schema.planSteps.id, step.id));
         }
         // Marcar running aquí (no solo dentro de runPlanStep) para que la siguiente vuelta no lo vuelva a elegir.
-        await db.update(schema.planSteps).set({ status: "running", startedAt: now(), errorMessage: null }).where(eq(schema.planSteps.id, step.id));
+        // La aprobación de la guardia vale una vez: se consume al lanzar (un reintento vuelve a evaluarla).
+        await db.update(schema.planSteps).set({ status: "running", startedAt: now(), errorMessage: null, ...(row.guardApproved === 1 ? { guardApproved: 0 } : {}) }).where(eq(schema.planSteps.id, step.id));
         launched++;
         const promise = runPlanStep({
           planId,
