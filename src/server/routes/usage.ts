@@ -121,7 +121,7 @@ function readClaudeLocalUsage(windowHours: number): {
  * GET /api/usage/summary?adapter=claude&windowHours=5
  *
  * For claude: reads real usage from ~/.claude/projects JSONL files.
- * For codex/gemini: falls back to orchestrator runs table.
+ * For codex/agy: falls back to orchestrator runs table.
  * Also returns rateLimitResetsAt from orchestrator runs table.
  */
 app.get("/summary", async (c) => {
@@ -172,7 +172,7 @@ app.get("/summary", async (c) => {
     });
   }
 
-  // Codex / Gemini — orchestrator runs table
+  // Codex / agy — orchestrator runs table
   const windowStart = new Date(Date.now() - windowHours * 60 * 60 * 1000).toISOString();
   const agg = await db.all<{
     inputTokens: number;
@@ -206,6 +206,21 @@ app.get("/summary", async (c) => {
     rateLimitResetsAt,
     source: "orchestrator_db",
   });
+});
+
+const SERVER_STARTED_AT = new Date().toISOString();
+
+/** GET /api/usage/session — tokens de todos los adapters desde que arrancó el servidor. */
+app.get("/session", async (c) => {
+  const runsRows = await db.all<{ tokens: number }>(sql`
+    SELECT COALESCE(SUM(COALESCE(input_tokens, 0) + COALESCE(output_tokens, 0)), 0) AS tokens
+    FROM runs WHERE datetime(started_at) >= datetime(${SERVER_STARTED_AT})
+  `);
+  const analysisRows = await db.all<{ tokens: number }>(sql`
+    SELECT COALESCE(SUM(input_tokens + output_tokens), 0) AS tokens
+    FROM agy_usage WHERE source = 'analysis' AND at >= ${SERVER_STARTED_AT}
+  `);
+  return c.json({ since: SERVER_STARTED_AT, tokens: Number(runsRows[0]?.tokens ?? 0) + Number(analysisRows[0]?.tokens ?? 0) });
 });
 
 export default app;

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { MODEL_CATALOG, PLANNER_MODEL } from "../../src/config/models.js";
+import { MODEL_CATALOG, PLANNER_MODEL, ROUTABLE_ADAPTERS } from "../../src/config/models.js";
 import { adapters } from "../../src/adapters/registry.js";
 
 describe("catálogo de modelos", () => {
@@ -28,5 +28,10 @@ describe("catálogo de modelos", () => {
     for (const old of ["claude-opus-4-7", "claude-opus-4-6", "claude-sonnet-4-6", "claude-haiku-4-6", "claude-sonnet-4-5-20250929", "o3", "gpt-5.4"]) {
       expect(all).not.toContain(old);
     }
+  });
+
+  it("gemini CLI está retirado y agy es ruteable", () => {
+    expect(Object.keys(MODEL_CATALOG)).not.toContain("gemini");
+    expect(ROUTABLE_ADAPTERS).toEqual(["claude", "codex", "agy"]);
   });
 });

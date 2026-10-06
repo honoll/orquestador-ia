@@ -96,6 +96,11 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
           if (event.type === "run:status") {
             queryClient.invalidateQueries({ queryKey: ["runs"] });
             queryClient.invalidateQueries({ queryKey: ["tasks"] });
+            queryClient.invalidateQueries({ queryKey: ["usage", "session"] });
+          }
+
+          if (event.type === "accounts:changed") {
+            queryClient.invalidateQueries({ queryKey: ["accounts"] });
           }
 
           if (event.type === "adapters:status") {

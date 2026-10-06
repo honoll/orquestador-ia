@@ -4,6 +4,7 @@ import { db, schema } from "../db/index.js";
 import { getAdapter } from "../adapters/registry.js";
 import { broadcast } from "./ws.js";
 import { claudeProfileManager } from "../adapters/claude/profile-manager.js";
+import { getActiveAccount, recordAgyCall, NoActiveAccountError } from "./agy-accounts.js";
 import { startWatch, stopWatch } from "./file-watcher.js";
 import pino from "pino";
 
@@ -12,6 +13,7 @@ const log = pino({ name: "plan-runner" });
 const TRANSIENT_RE = /429|503|529|overloaded|rate.limit|capacity|too many requests|rate limit de claude/i;
 const UNKNOWN_SESSION_RE = /unknown session|session.*not found|invalid.*session/i;
 const MAX_RETRIES = 2;
+export const QUOTA_PAUSE_PREFIX = "Pausado por cuota";
 
 export interface StepRunOptions {
   planId: string;
@@ -33,7 +35,7 @@ export async function runPlanStep(options: StepRunOptions): Promise<void> {
   if (!adapter) throw new Error(`Unknown adapter: ${step.adapter}`);
 
   await db.update(schema.planSteps)
-    .set({ status: "running", startedAt: new Date().toISOString() })
+    .set({ status: "running", startedAt: new Date().toISOString(), errorMessage: null })
     .where(eq(schema.planSteps.id, stepId));
 
   await db.update(schema.plans)
@@ -41,6 +43,14 @@ export async function runPlanStep(options: StepRunOptions): Promise<void> {
     .where(eq(schema.plans.id, planId));
 
   broadcast({ type: "plan:step", planId, stepId, status: "running", timestamp: new Date().toISOString() } as any);
+
+  const agyAccount = step.adapter === "agy" ? await getActiveAccount() : null;
+  if (step.adapter === "agy" && !agyAccount) {
+    const msg = new NoActiveAccountError().message;
+    await db.update(schema.planSteps).set({ status: "failed", errorMessage: msg, finishedAt: new Date().toISOString() }).where(eq(schema.planSteps.id, stepId));
+    broadcast({ type: "plan:step", planId, stepId, status: "failed", error: msg, timestamp: new Date().toISOString() } as any);
+    return;
+  }
 
   let sessionId = step.sessionId ?? undefined;
   let lastError: string | null = null;
@@ -81,6 +91,7 @@ export async function runPlanStep(options: StepRunOptions): Promise<void> {
     });
 
     try {
+      const callStartedAt = Date.now();
       const result = await adapter.execute({
         runId,
         prompt: step.prompt,
@@ -101,6 +112,22 @@ export async function runPlanStep(options: StepRunOptions): Promise<void> {
         },
         onKill: (kill) => options.onKillRegistered?.(kill),
       });
+
+      if (agyAccount) {
+        try { await recordAgyCall(agyAccount.id, result, "plan", Date.now(), callStartedAt); } catch (err) { log.error({ err, stepId }, "No se pudo registrar el consumo de agy"); }
+      }
+
+      if (step.adapter === "agy" && result.errorFamily === "quota_exhausted") {
+        const msg = `${QUOTA_PAUSE_PREFIX} en la cuenta "${agyAccount?.label ?? "?"}": cambia de cuenta en el panel y vuelve a ejecutar el plan.`;
+        await db.update(schema.runs).set({ status: "failed", errorMessage: result.errorMessage, errorFamily: result.errorFamily, result: result.stdout, finishedAt: new Date().toISOString() }).where(eq(schema.runs.id, runId));
+        await db.update(schema.tasks).set({ status: "failed", updatedAt: new Date().toISOString() }).where(eq(schema.tasks.id, taskId));
+        await db.update(schema.planSteps).set({ status: "pending", errorMessage: msg, runId }).where(eq(schema.planSteps.id, stepId));
+        broadcast({ type: "plan:step", planId, stepId, status: "pending", error: msg, timestamp: new Date().toISOString() } as any);
+        stopWatch(planId);
+        await db.update(schema.plans).set({ status: "pending", updatedAt: new Date().toISOString() }).where(eq(schema.plans.id, planId));
+        broadcast({ type: "plan:done", planId, status: "pending", paused: "quota", timestamp: new Date().toISOString() } as any);
+        return;
+      }
 
       const succeeded = result.exitCode === 0 && !result.timedOut;
       const isSilentRateLimit = step.adapter === "claude" && result.exitCode === 1 && !(result.stderr ?? "").trim();
@@ -215,6 +242,9 @@ export async function runPlanAll(planId: string, cwd: string): Promise<void> {
 
     // Re-fetch to check if it failed
     const updated = await db.select().from(schema.planSteps).where(eq(schema.planSteps.id, step.id)).then((r) => r[0]);
+    if (updated?.status === "pending" && updated.errorMessage?.startsWith(QUOTA_PAUSE_PREFIX)) {
+      return; // runPlanStep ya pausó el plan y emitió plan:done
+    }
     if (updated?.status === "failed") {
       stopWatch(planId);
       await db.update(schema.plans)

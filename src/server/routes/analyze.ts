@@ -1,16 +1,20 @@
 import { Hono } from "hono";
 import { randomUUID } from "node:crypto";
-import { execute } from "../../adapters/gemini/execute.js";
+import { execute } from "../../adapters/agy/execute.js";
+import { AGY_ANALYSIS_MODEL } from "../../config/models.js";
 import { broadcast } from "../ws.js";
+import { getActiveAccount, recordAgyCall } from "../agy-accounts.js";
+import pino from "pino";
 
+const log = pino({ name: "analyze" });
 const app = new Hono();
 
 /**
- * POST /api/gemini/analyze
- * Runs Gemini synchronously to analyze attached files in the context of the user prompt.
+ * POST /api/analyze — pre-análisis de adjuntos con agy (modelo barato)
+ * Runs agy synchronously to analyze attached files in the context of the user prompt.
  * Used as a pre-processing step before sending to any adapter.
  */
-app.post("/analyze", async (c) => {
+app.post("/", async (c) => {
   const body = await c.req.json<{
     files: { path: string; content: string; truncated?: boolean }[];
     prompt: string;
@@ -20,6 +24,9 @@ app.post("/analyze", async (c) => {
   if (!body.files || body.files.length === 0) {
     return c.json({ error: "No files provided" }, 400);
   }
+
+  const account = await getActiveAccount();
+  if (!account) return c.json({ error: "Sin cuenta activa de Antigravity", fallback: true }, 200);
 
   const fileSection = body.files
     .map((f) => `--- File: ${f.path} ---\n${f.content}${f.truncated ? "\n[...truncated]" : ""}`)
@@ -39,14 +46,17 @@ app.post("/analyze", async (c) => {
   const jobId = randomUUID();
 
   try {
+    const callStartedAt = Date.now();
     const result = await execute({
       runId: jobId,
       prompt: analysisPrompt,
       cwd: body.cwd || process.cwd(),
-      timeoutSec: 120,
+      model: AGY_ANALYSIS_MODEL,
+      timeoutSec: 180,
+      readOnly: true,
       onLog: (stream, chunk) => {
         broadcast({
-          type: "gemini:analyze:log",
+          type: "analyze:log",
           jobId,
           stream,
           data: chunk,
@@ -55,9 +65,15 @@ app.post("/analyze", async (c) => {
       },
     });
 
+    try {
+      await recordAgyCall(account.id, result, "analysis", Date.now(), callStartedAt);
+    } catch (err) {
+      log.error({ err }, "No se pudo registrar el consumo de agy");
+    }
+
     const analysis = result.summary || result.stdout;
     if (!analysis?.trim()) {
-      return c.json({ error: "Gemini returned empty analysis", fallback: true }, 200);
+      return c.json({ error: "El análisis de agy vino vacío", fallback: true }, 200);
     }
 
     return c.json({ analysis: analysis.trim(), jobId });

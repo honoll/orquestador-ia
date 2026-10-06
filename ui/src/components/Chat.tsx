@@ -26,7 +26,7 @@ const SLASH_COMMANDS: SlashCommand[] = [
   { name: "/clear",                         description: "Limpia el historial visual",                icon: "◻" },
   { name: "/claude", args: "<prompt>",      description: "Fuerza el uso de Claude",                  icon: "◆" },
   { name: "/codex",  args: "<prompt>",      description: "Fuerza el uso de Codex",                   icon: "◇" },
-  { name: "/gemini", args: "<prompt>",      description: "Fuerza el uso de Gemini",                  icon: "◎" },
+  { name: "/agy", args: "<prompt>",         description: "Fuerza el uso de Antigravity (agy)",       icon: "◎" },
   { name: "/slides", args: "<descripción>", description: "Crea presentación HTML animada",           icon: "◫" },
 ];
 
@@ -108,7 +108,7 @@ export function Chat() {
   const [showFilePicker, setShowFilePicker] = useState(false);
   const [attachedFiles, setAttachedFiles] = useState<{ path: string; content: string; truncated: boolean }[]>([]);
   const [activeShellJobId, setActiveShellJobId] = useState<string | null>(null);
-  const [geminiAnalyzing, setGeminiAnalyzing] = useState(false);
+  const [analyzingFiles, setAnalyzingFiles] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -335,23 +335,23 @@ export function Chat() {
   }, [lastEvent, activeShellJobId, logs]);
 
   /**
-   * If files are attached, runs them through Gemini first to get an analysis summary.
-   * Falls back to raw file content if Gemini is unavailable.
+   * If files are attached, runs them through agy first to get an analysis summary.
+   * Falls back to raw file content if agy is unavailable.
    */
-  async function getGeminiFileContext(
+  async function getFileAnalysisContext(
     files: { path: string; content: string; truncated: boolean }[],
     userPrompt: string,
     cwd?: string,
   ): Promise<string> {
     try {
-      const res = await fetch("/api/gemini/analyze", {
+      const res = await fetch("/api/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ files, prompt: userPrompt, cwd }),
       });
       const data = await res.json();
       if (data.analysis) {
-        return `[Gemini file analysis]\n${data.analysis}\n\n`;
+        return `[Análisis de archivos (agy)]\n${data.analysis}\n\n`;
       }
     } catch {
       // fall through to raw context
@@ -454,8 +454,8 @@ export function Chat() {
       return;
     }
 
-    // /claude, /codex, /gemini — force adapter for this message
-    const adapterMatch = prompt.match(/^\/(claude|codex|gemini)\s+(.+)/si);
+    // /claude, /codex, /agy — force adapter for this message
+    const adapterMatch = prompt.match(/^\/(claude|codex|agy)\s+(.+)/si);
     if (adapterMatch) {
       const forcedAdapter = adapterMatch[1].toLowerCase();
       const forcedPrompt = adapterMatch[2].trim();
@@ -465,12 +465,12 @@ export function Chat() {
       setAttachedFiles([]);
       (async () => {
         try {
-          // Always run files through Gemini first, even for forced adapter
+          // Always run files through agy first, even for forced adapter
           let effectivePrompt = forcedPrompt;
           if (filesToAttach.length > 0) {
-            setGeminiAnalyzing(true);
-            const ctx = await getGeminiFileContext(filesToAttach, forcedPrompt);
-            setGeminiAnalyzing(false);
+            setAnalyzingFiles(true);
+            const ctx = await getFileAnalysisContext(filesToAttach, forcedPrompt);
+            setAnalyzingFiles(false);
             effectivePrompt = ctx + forcedPrompt;
           }
           const taskRes = await fetch("/api/tasks", {
@@ -498,7 +498,7 @@ export function Chat() {
           }
           setActiveRunId(runId);
         } catch (err: any) {
-          setGeminiAnalyzing(false);
+          setAnalyzingFiles(false);
           setMessages((prev) => [
             ...prev,
             { role: "assistant", content: `Error: ${err.message}`, status: "failed" },
@@ -508,22 +508,22 @@ export function Chat() {
       return;
     }
 
-    // Normal prompt — run files through Gemini if attached, then send to selected adapter
+    // Normal prompt — run files through agy if attached, then send to selected adapter
     const filesToAttach = [...attachedFiles];
     setMessages((prev) => [...prev, { role: "user", content: prompt }]);
     setInput("");
     setAttachedFiles([]);
 
     if (filesToAttach.length > 0) {
-      // Async: Gemini analysis → main adapter
+      // Async: agy analysis → main adapter
       (async () => {
         try {
-          setGeminiAnalyzing(true);
-          const ctx = await getGeminiFileContext(filesToAttach, prompt);
-          setGeminiAnalyzing(false);
+          setAnalyzingFiles(true);
+          const ctx = await getFileAnalysisContext(filesToAttach, prompt);
+          setAnalyzingFiles(false);
           sendMutation.mutate(ctx + prompt);
         } catch {
-          setGeminiAnalyzing(false);
+          setAnalyzingFiles(false);
           sendMutation.mutate(buildFileContext(filesToAttach) + prompt);
         }
       })();
@@ -710,13 +710,13 @@ export function Chat() {
             </div>
           ))}
 
-          {/* Gemini file analysis indicator */}
-          {geminiAnalyzing && (
+          {/* agy file analysis indicator */}
+          {analyzingFiles && (
             <div className="animate-fade-in flex items-center gap-2">
               <span className="font-mono text-sm text-sky-400">◎</span>
               <div className="h-1 w-1 rounded-full bg-sky-400 animate-pulse-dot" />
               <span className="font-mono text-xs text-sky-400/80">
-                Gemini analizando archivos…
+                ◎ agy analizando archivos…
               </span>
             </div>
           )}
@@ -818,7 +818,7 @@ export function Chat() {
                     handleSubmit(e);
                   }
                 }}
-                disabled={!!activeRunId || geminiAnalyzing}
+                disabled={!!activeRunId || analyzingFiles}
               />
               {/* File attach button — only when a project is selected */}
               {selectedProjectId && !activeRunId && (
@@ -843,9 +843,9 @@ export function Chat() {
                 >
                   detener
                 </button>
-              ) : geminiAnalyzing ? (
+              ) : analyzingFiles ? (
                 <span className="shrink-0 font-mono text-[10px] text-sky-400/70 pb-0.5">
-                  ◎ gemini…
+                  ◎ agy…
                 </span>
               ) : (
                 <button

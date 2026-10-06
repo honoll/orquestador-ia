@@ -156,7 +156,7 @@ interface PlanStep {
   planId: string;
   stepIndex: number;
   description: string;
-  adapter: "claude" | "codex" | "gemini";
+  adapter: "claude" | "codex" | "agy";
   model: string | null;
   reason: string | null;
   prompt: string;
@@ -186,31 +186,31 @@ interface Plan {
 const A_COLOR: Record<string, string> = {
   claude: "text-violet-400",
   codex:  "text-emerald-400",
-  gemini: "text-sky-400",
+  agy: "text-sky-400",
 };
 
 const A_BORDER: Record<string, string> = {
   claude: "border-violet-400/30",
   codex:  "border-emerald-400/30",
-  gemini: "border-sky-400/30",
+  agy: "border-sky-400/30",
 };
 
 const A_BG: Record<string, string> = {
   claude: "bg-violet-400/10",
   codex:  "bg-emerald-400/10",
-  gemini: "bg-sky-400/10",
+  agy: "bg-sky-400/10",
 };
 
 const A_RING: Record<string, string> = {
   claude: "ring-violet-400/50",
   codex:  "ring-emerald-400/50",
-  gemini: "ring-sky-400/50",
+  agy: "ring-sky-400/50",
 };
 
 const A_ICON: Record<string, string> = {
   claude: "◆",
   codex:  "◇",
-  gemini: "◎",
+  agy: "◎",
 };
 
 const STATUS_DOT: Record<string, string> = {
@@ -268,7 +268,7 @@ function GeneratingView({
 
       {/* Animated adapter icons */}
       <div className="flex items-center justify-center gap-8 py-8">
-        {["claude", "codex", "gemini"].map((a, i) => (
+        {["claude", "codex", "agy"].map((a, i) => (
           <div
             key={a}
             className="flex flex-col items-center gap-2 animate-fade-in"
@@ -1107,6 +1107,7 @@ export function PlanView({
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [changedFiles, setChangedFiles] = useState<ChangedFile[]>([]);
   const [showFilePreview, setShowFilePreview] = useState(false);
+  const [quotaPaused, setQuotaPaused] = useState(false);
 
   const isGenerating = plan.status === "generating";
   const genLog = logs.get(`gen:${plan.id}`) ?? "";
@@ -1162,6 +1163,7 @@ export function PlanView({
 
     if (e.type === "plan:done") {
       setPlan((prev) => ({ ...prev, status: e.status }));
+      setQuotaPaused(e.status === "pending" && e.paused === "quota");
       setMode("idle");
       setWaitingForNext(false);
       queryClient.invalidateQueries({ queryKey: ["plans"] });
@@ -1175,6 +1177,7 @@ export function PlanView({
         .then((r) => r.json())
         .then((p: Plan) => {
           setPlan(p);
+          setQuotaPaused(p.status === "pending" && (p.steps ?? []).some((s) => s.errorMessage?.startsWith("Pausado por cuota")));
           fetch(`/api/plans/${p.id}/file-changes`)
             .then((r) => r.json())
             .then((rows: Array<{ filePath: string; content: string; changedAt: string }>) => {
@@ -1196,11 +1199,13 @@ export function PlanView({
   }, [plan.id, isGenerating]);
 
   async function handleRunAll() {
+    setQuotaPaused(false);
     setMode("running-all");
     await fetch(`/api/plans/${plan.id}/run-all`, { method: "POST" });
   }
 
   async function handleRunNext() {
+    setQuotaPaused(false);
     setMode("step-by-step");
     setWaitingForNext(false);
     await fetch(`/api/plans/${plan.id}/run-next`, { method: "POST" });
@@ -1208,6 +1213,7 @@ export function PlanView({
 
   async function handleResume() {
     // Reset failed steps to pending in local state immediately for responsive UI
+    setQuotaPaused(false);
     setMode("running-all");
     setPlan((prev) => ({
       ...prev,
@@ -1398,6 +1404,12 @@ export function PlanView({
           )}
         </div>
       </div>
+
+      {quotaPaused && (
+        <div role="status" className="mx-4 my-2 rounded-lg border border-accent/40 bg-accent-dim px-3 py-2 font-mono text-[11px] text-text-primary">
+          Plan pausado por cuota de Antigravity. Cambia de cuenta en el panel de cuentas y pulsa «ejecutar todo» o «paso a paso» para seguir desde el paso pendiente.
+        </div>
+      )}
 
       {/* ── Resizable body: [plan+preview] / [chat] ── */}
       <ResizableGroup direction="vertical" className="flex-1 min-h-0">

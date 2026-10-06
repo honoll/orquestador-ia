@@ -26,4 +26,14 @@ describe("normalizeSteps", () => {
     expect(steps.map((s) => s.description)).toEqual(["Paso 1", "Paso 2"]);
     expect(steps[1].stepIndex).toBe(1);
   });
+
+  it("agy es un adapter ruteable y conserva un modelo válido del catálogo", () => {
+    const [s] = normalizeSteps([{ description: "leer", adapter: "agy", model: "gemini-3.8-flash-low", reason: "r", prompt: "p" }]);
+    expect(s.adapter).toBe("agy");
+    expect(s.model).toBe("gemini-3.8-flash-low");
+  });
+
+  it("gemini ya no es ruteable", () => {
+    expect(() => normalizeSteps([{ description: "x", adapter: "gemini", model: "", reason: "", prompt: "p" }])).toThrow("no permitido");
+  });
 });

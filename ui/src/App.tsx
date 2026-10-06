@@ -1,6 +1,8 @@
 import { useState } from "react";
+import { AccountsPanel } from "./components/AccountsPanel";
 import { AdapterPanel } from "./components/AdapterPanel";
 import { Chat } from "./components/Chat";
+import { HudBar } from "./components/HudBar";
 import { ProjectPanel } from "./components/ProjectPanel";
 import { ResizableGroup, ResizableHandle, ResizablePanel } from "./components/ResizableDivider";
 import { useWs } from "./context/WebSocketProvider";
@@ -10,9 +12,10 @@ export default function App() {
   const [rightOpen, setRightOpen] = useState(true);
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-surface-0">
+    <div className="flex h-screen w-screen flex-col overflow-hidden bg-surface-0">
+      <HudBar />
       {/* Left — Adapters */}
-      <ResizableGroup direction="horizontal" className="flex-1 overflow-hidden">
+      <ResizableGroup direction="horizontal" className="min-h-0 flex-1 overflow-hidden">
         <ResizablePanel defaultSize={16} minSize={10} maxSize={30}>
           <aside className="border-r border-edge flex h-full flex-col bg-surface-1">
             <header className="flex items-center gap-3 px-5 py-4">
@@ -24,7 +27,10 @@ export default function App() {
                 title={connected ? "conectado" : "desconectado"}
               />
             </header>
-            <AdapterPanel />
+            <div className="flex-1 overflow-y-auto overflow-x-hidden">
+              <AdapterPanel />
+              <AccountsPanel />
+            </div>
           </aside>
         </ResizablePanel>
 

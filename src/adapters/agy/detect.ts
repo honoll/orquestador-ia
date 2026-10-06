@@ -1,7 +1,7 @@
-import { resolveCommandPath } from "../../lib/resolve-command.js";
+import { resolveAgyPath } from "../../lib/agy-path.js";
 import type { AdapterDetectResult } from "../../lib/types.js";
 
 export async function detect(): Promise<AdapterDetectResult> {
-  const resolvedPath = await resolveCommandPath("gemini", process.cwd());
+  const resolvedPath = resolveAgyPath();
   return { available: resolvedPath !== null, resolvedPath };
 }

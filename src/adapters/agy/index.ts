@@ -4,17 +4,17 @@ import { detect } from "./detect.js";
 import { execute } from "./execute.js";
 
 export const meta: AdapterMeta = {
-  type: "gemini",
-  label: "Gemini CLI",
-  command: "gemini",
-  models: MODEL_CATALOG.gemini.models,
-  defaultModel: MODEL_CATALOG.gemini.defaultModel,
+  type: "agy",
+  label: "Antigravity (agy)",
+  command: "agy",
+  models: MODEL_CATALOG.agy.models,
+  defaultModel: MODEL_CATALOG.agy.defaultModel,
 };
 
-export const geminiAdapter: Adapter = {
+export const agyAdapter: Adapter = {
   meta,
   detect,
   execute,
 };
 
-export default geminiAdapter;
+export default agyAdapter;
