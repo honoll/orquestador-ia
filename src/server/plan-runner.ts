@@ -1,4 +1,4 @@
-import { eq, and, asc } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { db, schema } from "../db/index.js";
 import { getAdapter } from "../adapters/registry.js";
@@ -228,14 +228,4 @@ export async function runPlanStep(options: StepRunOptions): Promise<StepOutcome>
 
   broadcast({ type: "plan:step", planId, stepId, status: "failed", error: lastError, timestamp: new Date().toISOString() } as any);
   return { status: "failed", tokensUsed };
-}
-
-// TEMPORAL: Task 6 lo reemplaza por runPlanDag
-export async function runPlanAll(planId: string, cwd: string): Promise<void> {
-  const steps = await db.select().from(schema.planSteps)
-    .where(and(eq(schema.planSteps.planId, planId), eq(schema.planSteps.status, "pending")))
-    .orderBy(asc(schema.planSteps.stepIndex));
-  for (const step of steps) {
-    await runPlanStep({ planId, stepId: step.id, cwd });
-  }
 }
