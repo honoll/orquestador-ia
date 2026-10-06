@@ -7,6 +7,7 @@ import { broadcast } from "./ws.js";
 import { startWatch, stopWatch } from "./file-watcher.js";
 import { runPlanStep, type StepOutcome } from "./plan-runner.js";
 import { getActiveAccount } from "./agy-accounts.js";
+import { guardStep } from "./plan-guard.js";
 import { getAdapter } from "../adapters/registry.js";
 import { PLANNER_MODEL } from "../config/models.js";
 import {
@@ -108,7 +109,7 @@ export async function runPlanDag(planId: string, cwd: string, opts: { mode?: "al
 
     const inFlight = new Map<string, Promise<{ stepId: string; outcome: StepOutcome }>>();
     let failed = false;
-    let pause: "quota" | "budget" | null = null;
+    let pause: "quota" | "budget" | "guard" | null = null;
     let launched = 0;
 
     for (;;) {
@@ -140,6 +141,19 @@ export async function runPlanDag(planId: string, cwd: string, opts: { mode?: "al
           const depRow = rowById.get(dagByKey.get(k)!.id)!;
           return { key: k, description: depRow.description, result: depRow.result };
         });
+        // Guardia: solo escritores no aprobados; se evalúa el prompt ORIGINAL (sin el encabezado de buildStepPrompt).
+        if (step.writes && row.guardApproved !== 1) {
+          const guard = await guardStep({ prompt: row.prompt, deps: deps.map((d) => ({ key: d.key, result: d.result })), projectPath: cwd });
+          // La guardia puede tardar (JEV con reintento): si cancelaron mientras tanto, no se lanza.
+          if (run.cancelled) continue;
+          if (guard.flagged) {
+            await db.update(schema.planSteps).set({ guardFlags: JSON.stringify(guard.flags) }).where(eq(schema.planSteps.id, step.id));
+            emit({ type: "plan:guard", planId, stepId: step.id, flags: guard.flags, source: guard.source });
+            pause = "guard";
+            continue; // no se lanza; los lectores de esta misma vuelta sí
+          }
+          await db.update(schema.planSteps).set({ guardFlags: null }).where(eq(schema.planSteps.id, step.id));
+        }
         // Marcar running aquí (no solo dentro de runPlanStep) para que la siguiente vuelta no lo vuelva a elegir.
         await db.update(schema.planSteps).set({ status: "running", startedAt: now(), errorMessage: null }).where(eq(schema.planSteps.id, step.id));
         launched++;

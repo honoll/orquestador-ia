@@ -272,4 +272,17 @@ describe("rutas de planes (F2)", () => {
     expect(h.runPlanDag).not.toHaveBeenCalled();
     expect(h.generatePlan).not.toHaveBeenCalled();
   });
+  it("aprobar paso: marca guardApproved y relanza; 409 si corre; 404 si no existe", async () => {
+    const id = await mk({ pauseReason: "guard" });
+    const stepId = randomUUID();
+    await db.insert(schema.planSteps).values({ id: stepId, planId: id, stepIndex: 0, description: "x", adapter: "codex", prompt: "p", status: "pending", guardFlags: "[]" });
+    expect((await req(`/${id}/steps/${randomUUID()}/approve`)).status).toBe(404);
+    h.running.add(id);
+    expect((await req(`/${id}/steps/${stepId}/approve`)).status).toBe(409);
+    h.running.delete(id);
+    expect((await req(`/${id}/steps/${stepId}/approve`)).status).toBe(202);
+    const s = await db.select().from(schema.planSteps).where(eq(schema.planSteps.id, stepId)).then((x) => x[0]);
+    expect(s.guardApproved).toBe(1);
+    expect(h.runPlanDag).toHaveBeenLastCalledWith(id, expect.any(String), { mode: "all" });
+  });
 });
