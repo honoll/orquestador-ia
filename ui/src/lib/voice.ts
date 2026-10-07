@@ -146,6 +146,43 @@ export async function playSpeech(id: string, text: string, summary: boolean, ori
   }
 }
 
+/**
+ * Una frase del modo «Platicar»: usa el mismo reproductor único, pero SIN lease `speak` (el lease
+ * `conversation` ya cubre el ducking y `speak` excluiría al navegador). Resuelve al terminar o al abortar.
+ */
+export async function playSentence(text: string, signal: AbortSignal): Promise<void> {
+  if (signal.aborted) return;
+  stopSpeech();
+  const ctrl = new AbortController();
+  abort = ctrl;
+  const onAbort = () => ctrl.abort();
+  signal.addEventListener("abort", onAbort, { once: true });
+  try {
+    const blob = await fetchSpeech(text, false, ctrl.signal);
+    if (ctrl.signal.aborted) return;
+    objectUrl = URL.createObjectURL(blob);
+    const a = new Audio(objectUrl);
+    audio = a;
+    setSpeech({ id: "conversation", phase: "playing", origin: "manual", error: null });
+    await new Promise<void>((resolve, reject) => {
+      a.onended = () => resolve();
+      a.onerror = () => reject(new Error("No se pudo reproducir el audio."));
+      ctrl.signal.addEventListener("abort", () => resolve(), { once: true });
+      a.play().catch(reject);
+    });
+  } catch (err) {
+    if (!ctrl.signal.aborted) throw err;
+  } finally {
+    signal.removeEventListener("abort", onAbort);
+    // Si otra reproducción tomó el reproductor, no se toca.
+    if (abort === ctrl) {
+      abort = null;
+      cleanupAudio();
+      setSpeech({ ...speech, id: null, phase: "idle", origin: null });
+    }
+  }
+}
+
 /** Botón «escuchar»: si ya suena (o carga) este id lo detiene; si no, lo reproduce. */
 export function toggleSpeech(id: string, text: string, summary: boolean) {
   if (speech.id === id && speech.phase !== "idle") stopSpeech();

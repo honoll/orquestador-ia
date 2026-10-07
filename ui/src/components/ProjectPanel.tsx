@@ -64,6 +64,13 @@ export function ProjectPanel({ onClose }: { onClose?: () => void }) {
     enabled: !!selectedProjectId,
   });
 
+  // Sin proyecto seleccionado: las pláticas que no pertenecen a ninguno (p. ej. las del asistente de voz).
+  const { data: looseConversations } = useQuery({
+    queryKey: ["conversations", "none"],
+    queryFn: () => fetchConversations("none"),
+    enabled: !selectedProjectId,
+  });
+
   const { data: plans } = useQuery({
     queryKey: ["plans", selectedProjectId],
     queryFn: () => fetchPlans(selectedProjectId!),
@@ -398,6 +405,34 @@ export function ProjectPanel({ onClose }: { onClose?: () => void }) {
                 )}
               </button>
             ))}
+
+            {looseConversations && looseConversations.length > 0 && (
+              <div className="mt-5">
+                <p className="mb-3 font-mono text-[10px] uppercase tracking-widest text-text-tertiary">
+                  Pláticas sin proyecto
+                </p>
+                <div className="space-y-1">
+                  {looseConversations.map((conv) => {
+                    const isActive = conversationId === conv.conversationId;
+                    return (
+                      <button
+                        key={conv.conversationId}
+                        type="button"
+                        onClick={() => setConversation(conv.conversationId)}
+                        className={`w-full rounded-lg p-2 text-left transition-colors ${
+                          isActive ? "bg-accent-dim" : "hover:bg-surface-2/50"
+                        }`}
+                      >
+                        <p className={`truncate font-mono text-[11px] ${isActive ? "text-accent" : "text-text-primary"}`}>
+                          {conv.title}
+                        </p>
+                        <p className="mt-1 font-mono text-[9px] text-text-tertiary">{formatDate(conv.updatedAt)}</p>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </>
         )}
       </div>

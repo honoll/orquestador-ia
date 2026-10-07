@@ -2,7 +2,7 @@
 // arrendamiento activo (caduca a los 45 s), así que se renueva cada 20 s. Controlador puro con temporizadores
 // inyectados para poder probarlo sin DOM.
 
-export type DuckReason = "mic" | "speak";
+export type DuckReason = "mic" | "speak" | "conversation";
 export const DUCK_RENEW_MS = 20_000;
 
 export interface DuckLeaseDeps {
