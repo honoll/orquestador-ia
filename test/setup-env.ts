@@ -6,3 +6,6 @@ import path from "node:path";
 process.env.ORQUESTADOR_DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "orq-test-"));
 
 delete process.env.TYPESAFE_API_KEY; // los tests nunca llaman a JEV real
+
+// Las notas de plan nunca se escriben en la bóveda real de Cerebro durante los tests.
+process.env.CEREBRO_PATH = fs.mkdtempSync(path.join(os.tmpdir(), "cerebro-test-"));
