@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { AccountsPanel } from "./components/AccountsPanel";
+import { WorkerIsolationNotice } from "./components/WorkerIsolationNotice";
 import { AdapterPanel } from "./components/AdapterPanel";
 import { Chat } from "./components/Chat";
 import { HudBar } from "./components/HudBar";
@@ -30,6 +31,7 @@ export default function App() {
             <div className="flex-1 overflow-y-auto overflow-x-hidden">
               <AdapterPanel />
               <AccountsPanel />
+              <WorkerIsolationNotice />
             </div>
           </aside>
         </ResizablePanel>

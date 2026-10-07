@@ -24,7 +24,7 @@ const GIT_RE = /\bgit\s+(push|commit|rebase|filter-branch|reset\s+--hard|remote\
 /** `git branch -D` (borrado forzado) distingue mayúsculas: `-d` solo borra ramas ya integradas. */
 const GIT_BRANCH_FORCE_RE = /\bgit\s+branch\s+(?:\S+\s+)*?-[a-zA-Z]*D[a-zA-Z]*\b/;
 const DESTRUCTIVE_RE = /\brm\s+(?:-[a-z]+\s+)*-[a-z]*r[a-z]*\b|\bgit\s+clean\s+-[a-z]*f[a-z]*\b|\bRemove-Item\b[^\n]*-Recurse|\b(rmdir|rd)\s+\/s\b|\bdel\s+\/[sfq]\b|\bformat\s+[a-z]:|\bDROP\s+(TABLE|DATABASE)\b|\bTRUNCATE\s+TABLE\b/i;
-const SENSITIVE_RE = /(%USERPROFILE%|%APPDATA%|%LOCALAPPDATA%|\\AppData\\|[\\/]\.ssh\b|[\\/]\.claude[\\/]|[\\/]\.codex[\\/]|[\\/]\.gemini[\\/]|(^|\s)~[\\/]|(^|[\s"'(`=:])\/etc\/)/i;
+const SENSITIVE_RE = /(%USERPROFILE%|%APPDATA%|%LOCALAPPDATA%|\\AppData\\|[\\/]\.ssh\b|[\\/]\.claude[\\/]|[\\/]\.codex[\\/]|[\\/]\.gemini[\\/]|[\\/]\.orquestador-ia[\\/]|(^|\s)~[\\/]|(^|[\s"'(`=:])\/etc\/)/i;
 const WIN_ABS_RE = /\b[A-Za-z]:[\\/][^\s"'`<>|]*/g;
 
 const norm = (p: string) => p.replace(/\//g, "\\").replace(/\\+$/, "").toLowerCase();

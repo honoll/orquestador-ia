@@ -25,6 +25,8 @@ describe("reglas locales", () => {
     expect(ids("escribe en C:\\Windows\\System32\\x.dll")).toEqual(["outside_project"]);
     expect(ids("edita C:\\proyectos\\demo\\src\\a.ts")).toEqual([]);
     expect(ids("revisa %APPDATA%\\algo")).toEqual(["outside_project"]);
+    expect(ids("lee C:\\proyectos\\demo\\.orquestador-ia\\data\\x.db")).toEqual(["outside_project"]);
+    expect(ids("lee ~/.orquestador-ia/workers/codex/auth")).toEqual(["outside_project"]);
   });
   it("rm -r sin -f, git clean, git branch -D y rd /s", () => {
     expect(ids("rm -r build")).toEqual(["destructive"]);

@@ -1,9 +1,10 @@
 import { createClient } from "@libsql/client";
 import path from "node:path";
+import { orchestratorDataRoot } from "../lib/worker-profile.js";
 import fs from "node:fs";
 
 const DB_DIR = path.join(
-  process.env.ORQUESTADOR_DATA_DIR || path.join(process.env.HOME || process.env.USERPROFILE || ".", ".orquestador-ia"),
+  orchestratorDataRoot(),
   "data",
 );
 fs.mkdirSync(DB_DIR, { recursive: true });

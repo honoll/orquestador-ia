@@ -2,6 +2,7 @@ import { runProcess } from "../lib/process-runner.js";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
+import { CLAUDE_ISOLATION_ARGS } from "../adapters/claude/execute.js";
 import { validateDag } from "./plan-dag.js";
 import { MODEL_CATALOG, PLANNER_MODEL, ROUTABLE_ADAPTERS, type AdapterType } from "../config/models.js";
 
@@ -191,6 +192,18 @@ export interface GeneratePlanOptions {
   onKillRegistered?: (kill: () => void) => void;
 }
 
+export function buildPlannerArgs(systemPromptFile: string): string[] {
+  return [
+    "--print", "-",
+    "--output-format", "stream-json",
+    "--verbose",
+    ...CLAUDE_ISOLATION_ARGS,
+    "--dangerously-skip-permissions",
+    "--model", PLANNER_MODEL,
+    "--system-prompt-file", systemPromptFile,
+  ];
+}
+
 export async function generatePlan(
   description: string,
   cwd: string,
@@ -204,17 +217,11 @@ export async function generatePlan(
   const tmpSystemFile = path.join(os.tmpdir(), `orquestador-plan-sys-${Date.now()}.txt`);
   fs.writeFileSync(tmpSystemFile, ROUTING_SYSTEM, "utf8");
 
-  const args = [
-    "--print", "-",
-    "--output-format", "stream-json",
-    "--verbose",
-    "--dangerously-skip-permissions",
-    "--model", PLANNER_MODEL,
-    "--system-prompt-file", tmpSystemFile,
-  ];
+  const args = buildPlannerArgs(tmpSystemFile);
 
   // Run planner in a neutral temp dir so Claude doesn't auto-load any CLAUDE.md
-  // from the project directory (which would interfere with our system prompt).
+  // from the project directory (which would interfere with our system prompt);
+  // the isolation flags (F3a) in buildPlannerArgs complement this.
   // All project context is already embedded in the user prompt as text.
   const plannerCwd = os.tmpdir();
 

@@ -1,11 +1,12 @@
 import { createClient } from "@libsql/client";
 import { drizzle } from "drizzle-orm/libsql";
 import path from "node:path";
+import { orchestratorDataRoot } from "../lib/worker-profile.js";
 import fs from "node:fs";
 import * as schema from "./schema.js";
 
 const DB_DIR = path.join(
-  process.env.ORQUESTADOR_DATA_DIR || path.join(process.env.HOME || process.env.USERPROFILE || ".", ".orquestador-ia"),
+  orchestratorDataRoot(),
   "data",
 );
 

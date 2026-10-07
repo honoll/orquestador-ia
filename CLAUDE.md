@@ -105,8 +105,38 @@ POST /api/tasks → POST /api/tasks/:id/run
 - Pause banner (quota or budget) with "continuar"; final-answer card with markdown and "reintentar síntesis".
 - Rejected actions (409) are shown next to the controls (`postAction`, step retry included) and the plan is re-read.
 
-**Known issues (deferred to F3):**
-1. **Codex usage spike:** Codex loads the user's global skills and AGENTS.md (walking up from cwd under `C:\Users\sidel`), which inflates the tokens it actually **uses** (168k on a step estimated at 12k), not the estimate. Candidate fix: isolate the worker config.
+## Worker isolation (F3a)
+
+Codex, Claude, and agy now run with isolated worker profiles to prevent loading the user's global `CLAUDE.md` and skills. This eliminates the 168k-token usage spike on small Codex steps (previously 12k estimate → 17.3k actual on unoptimized runs).
+
+**Configuration:**
+- **Claude** (workers, chat, planner, synthesis) always runs with: `--setting-sources project,local --strict-mcp-config --disable-slash-commands`. The `readOnly` mode (plan synthesis) adds `--disallowedTools` to forbid writing.
+- **Codex** has two modes:
+  - **Reader steps** (read_only=1): `--sandbox read-only` (no write permissions).
+  - **Writer steps** with worker profile (logged-in): `--sandbox danger-full-access --ignore-user-config` (parity with claude/agy write modes; protected by F4 guard + project cwd). *Note: MSIX virtualization prevents configuring the Windows elevated sandbox for a second `CODEX_HOME`, so writers use full-access sandbox instead.*
+  - **Writer steps** without profile: `--sandbox workspace-write -c windows.sandbox='elevated' --ignore-user-config` (older fallback).
+  - All Codex runs add `-c approval_policy='never'`.
+- **agy** is spawned with `--ignore-user-config` on all steps (inherits PROJECT_HOME from runner; no global leakage).
+
+**Measured baseline (2026-10-06):**
+- Codex reader with worker profile: 10.3k input tokens (was 17.3k normal, 10.7k flags-only).
+- Verified via the adapter: no global-instructions marker, follows project AGENTS.md.
+- Worker profile `CODEX_HOME = <ORQUESTADOR_DATA_DIR | %USERPROFILE%\.orquestador-ia>\workers\codex`.
+
+**How to log in the worker profile:**
+- Use the UI button under the accounts panel, or from a terminal that can see codex:
+  ```bash
+  set CODEX_HOME=%USERPROFILE%\.orquestador-ia\workers\codex && codex login
+  ```
+  (Note: codex lives in Claude's virtualized AppData; a normal PowerShell may not find `codex` — use the button.)
+- The user's normal `codex login` is unaffected; they are separate.
+
+**Status routes:**
+- `GET /api/workers/status[?fresh=1]` — returns `{ codex: { logged_in: true, profile: "..." } }`.
+- `POST /api/workers/codex/login-terminal` — opens a visible terminal to log in.
+
+**Known issue (resolved 2026-10-06):**
+The 168k Codex step mentioned in F2 was caused by global config leakage. With worker isolation now in place, Codex steps run at their estimated token count without the spike.
 
 ### WebSocket
 
@@ -120,6 +150,7 @@ POST /api/tasks → POST /api/tasks/:id/run
 - **No prompts as cmd.exe arguments (F1 rule)**: `quoteWindowsArg` cannot make `&` or `%VAR%` safe under cmd.exe (see `it.fails` in `test/lib/quote-windows-arg.test.ts`). Send prompts via stdin or spawn with `shell:false`.
 - **`agy` is spawned directly (`agy.exe`, `shell:false`) with the prompt as NDJSON on stdin.** It is resolved via `AGY_PATH` or `%LOCALAPPDATA%\agy\bin\agy.exe` (not PATH).
 - **Attachments pipeline**: attached files are pre-analyzed by agy via `POST /api/analyze` before reaching the main adapter. The analysis runs agy in read-only mode (no `--dangerously-skip-permissions`).
+- **Codex sandbox modes (`buildCodexArgs`, all with `-c approval_policy='never'`):** read-only steps `--sandbox read-only`; writers with the worker profile (logged-in isolated `CODEX_HOME`) `--sandbox danger-full-access` (parity with claude/agy `--dangerously-skip-permissions`; protection = F4 guard + project cwd; reason: MSIX virtualization of AppData breaks the Windows elevated sandbox setup for a second `CODEX_HOME`); writers without the profile `--sandbox workspace-write` (+ `-c windows.sandbox='elevated'` on win32). `--full-auto` is deprecated and left the writer read-only with `--ignore-user-config`.
 - **Headless flags**: Claude uses `--dangerously-skip-permissions` (except `readOnly` runs like the plan synthesis, see Plan System), Codex uses `--json`. These are required — interactive prompts break the runner.
 
 ### Database Schema (`src/db/schema.ts`)
@@ -168,7 +199,7 @@ Introduced in F4 (2026-10-06). Decision making for request tiers and writer-step
 - **Local rules:** git push/commit/rebase/`reset --hard`/remotes, `git branch -D`; `rm -r`/`-rf`, `git clean -f*`, `Remove-Item -Recurse`, `rmdir /s`/`rd /s`, `del /s`, DROP/TRUNCATE; paths outside the project, sensitive folders, `/etc/`.
 - **Approval:** `POST /api/plans/:planId/steps/:stepId/approve` (409 unless paused + step pending with flags) sets `guard_approved`. Consumed on launch together with `guard_flags`; a retry re-evaluates. **Editing the step prompt clears approval and flags and, if the plan was paused by the guard, clears `pause_reason`.** If the plan is guard-paused with no flagged pending step, `GuardBanner` offers "continuar" (`POST /continue`).
 - **Readers:** never gated by guard.
-- **Read-only steps (`read_only=1`: critical review, read-only trivial):** claude runs without write tools, agy without `--dangerously-skip-permissions`, codex with `--sandbox read-only` instead of `--full-auto` (`buildCodexArgs`). All `ROUTABLE_ADAPTERS` honor `readOnly`, so changing a read-only step's adapter via PATCH is allowed (a future adapter that does not honor it must be rejected there).
+- **Read-only steps (`read_only=1`: critical review, read-only trivial):** claude runs without write tools, agy without `--dangerously-skip-permissions`, codex with `--sandbox read-only` instead of `--sandbox workspace-write` (`buildCodexArgs`; writers add `-c approval_policy='never'` and, on Windows, `-c windows.sandbox='elevated'`; `--full-auto` is deprecated and left the writer read-only with `--ignore-user-config`). All `ROUTABLE_ADAPTERS` honor `readOnly`, so changing a read-only step's adapter via PATCH is allowed (a future adapter that does not honor it must be rejected there).
 - **Fallback (no JEV):** conservative local regex rules over prompt + dependencies (do NOT understand negations; guard only works well with JEV).
 - **The guard is a speed bump, not a sandbox:** it reduces surprises; it does not stop a writer agent from doing something it did not detect.
 - **Critical-plan approval is enforced in the UI** ("aprobar y ejecutar"); the routes (`run-all`, etc.) do not check it.
