@@ -8,6 +8,7 @@ import { broadcast } from "./ws.js";
 import { indexVault } from "../memory/vault-index.js";
 import { buildMemorySection, retrieveMemory, type MemoryResult } from "../memory/retrieve.js";
 import { createOllamaEmbedder } from "../memory/ollama.js";
+import { queryEmbedder } from "../memory/query-embedder.js";
 import { memoryConfig } from "../memory/config.js";
 import { classifyTier, trivialWrites, makeTrivialStep, addReviewStep, TRIVIAL_ESTIMATED_TOKENS } from "./plan-tier.js";
 
@@ -31,15 +32,13 @@ async function generationCancelled(planId: string): Promise<boolean> {
 export const generatingKills = new Map<string, () => void>();
 
 const MEMORY_INDEX_TIMEOUT_MS = 20_000;
-/** La consulta de recuperación (un solo embedding) no espera más de esto. */
-const MEMORY_QUERY_TIMEOUT_MS = 10_000;
 
 /** Indexa (incremental) y recupera memoria de Cerebro; nunca lanza ni bloquea más de 20 s + 10 s. */
 async function loadMemory(description: string, project: { name: string; path: string } | null | undefined): Promise<MemoryResult> {
   try {
     const cfg = memoryConfig();
     const embedder = createOllamaEmbedder(cfg);
-    const queryEmbedder = createOllamaEmbedder({ timeoutMs: MEMORY_QUERY_TIMEOUT_MS });
+    const embedderForQuery = queryEmbedder();
     let timer: NodeJS.Timeout | undefined;
     try {
       await Promise.race([
@@ -49,7 +48,7 @@ async function loadMemory(description: string, project: { name: string; path: st
     } finally {
       if (timer) clearTimeout(timer);
     }
-    return await retrieveMemory({ query: description, project, embedder: queryEmbedder });
+    return await retrieveMemory({ query: description, project, embedder: embedderForQuery });
   } catch (err) {
     console.error("[memoria] recuperación omitida:", (err as Error)?.message);
     return { notes: [], source: "none" };
