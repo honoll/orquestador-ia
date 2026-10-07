@@ -1,5 +1,27 @@
 # Orquestador-IA — Continuación y Estado
 
+## F5 — Voz local (Whisper + Piper + ducking) · completado 2026-10-06
+
+**Rama:** `f5-voz-local` (sin merge a `main` todavía; falta la prueba de micrófono de Alejandro)
+
+Lo que se agregó (detalle técnico en `CLAUDE.md`, sección "Local voice (F5)"):
+- **Dictado:** botón de micrófono que se mantiene presionado, graba `audio/webm`, ffmpeg → WAV 16 kHz, `whisper-server` local (large-v3-turbo q5_0, puerto 8091, arranque perezoso: primera vez ~40 s, luego ~0.3 s). El texto se **agrega** a la caja del chat y nunca se envía solo
+- **Lectura:** Piper (`es_MX-claude-high`); botón "Escuchar" y lectura automática (interruptor; resumen de 3 oraciones, solo respuestas de esta sesión)
+- **Ducking:** baja el volumen de las demás apps mientras grabas o Piper lee; helper `.exe` detached (sobrevive aunque mates node) con archivo de estado `voice-duck.json` y recuperación al arrancar
+- **Seguridad:** `originGuard` en todo `/api/*` mutante (403 si el `Origin` no es la UI propia), JSON obligatorio en `/duck` y `/speak`, topes de 10 MB / 120 s / 64 KB y máximo 2 trabajos simultáneos (429)
+- **Instalación:** `C:	oolsoz` (fuera de AppData por la virtualización MSIX). Variables `VOICE_DIR`, `WHISPER_PORT`, `PIPER_VOICE`, `FFMPEG_PATH`, `VOICE_DUCK`, `VOICE_DUCK_LEVEL` (ver `.env.example`)
+
+Verificado en vivo: ida y vuelta Piper → Whisper con el texto exacto ("Hola Alejandro, el plan terminó con tres pasos y costó 2.5 mil tokens, ¿quieres que lo revise?"), transcripción en caliente 0.36 s; Spotify 0.69 → 0.14 → 0.69 al soltar y tras matar node a la fuerza. Revisión final: 0 críticos, 5 importantes (todos corregidos salvo la documentación, hecha ahora).
+
+Pendientes:
+- **Alejandro prueba el micrófono** en el navegador real (dictado, "Escuchar", lectura automática, ducking)
+- Merge de `f5-voz-local` a `main` (y de `f3b-memoria-obsidian` si sigue abierta)
+- Menores diferidos: id en el protocolo del helper, watchdog del helper, exponer el error de compilación en `/status`, POST de ducking encadenados, Vivaldi/Arc/Chromium en la lista de navegadores, lease por cliente, reaplicar el ducking a apps que empiezan a sonar a mitad, whisper adoptado que muere, limpiar `duck-helper-*.exe` viejos, validar `Host` (DNS rebinding)
+- **Llave de JEV (`TYPESAFE_API_KEY`) sigue pendiente:** sin ella los tiers caen a `normal` y la guardia usa solo reglas locales
+- Siguiente fase: por definir (F6)
+
+---
+
 ## F3b — Memoria en Obsidian (Cerebro) · completado 2026-10-06
 
 **Rama:** `f3b-memoria-obsidian` (sin merge a `main` todavía)
