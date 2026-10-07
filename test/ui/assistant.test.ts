@@ -1,6 +1,8 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import {
   assistantPaths,
+  createFinishAfterSpeech,
+  turnDoneSpeech,
   endBody,
   parseAssistantEvent,
   readBargeIn,
@@ -103,5 +105,66 @@ describe("interruptor de barge-in", () => {
     expect(readBargeIn(bad)).toBe(false);
     expect(() => writeBargeIn(bad, true)).not.toThrow();
     expect(readBargeIn(null)).toBe(false);
+  });
+});
+
+describe("aviso de error hablado (I4)", () => {
+  it("turnDoneSpeech: la frase del servidor se dice aunque traiga error", () => {
+    const quota = "Se acabó la cuota de esta cuenta de Antigravity; cámbiala en el panel.";
+    expect(turnDoneSpeech({ speech: quota, error: "quota exhausted" }, 0)).toBe(quota);
+    expect(turnDoneSpeech({ speech: "  Hola.  " }, 0)).toBe("Hola.");
+    expect(turnDoneSpeech({ speech: "Hola." }, 2)).toBeNull(); // ya se dijo por deltas
+    expect(turnDoneSpeech({ speech: "  ", error: "x" }, 0)).toBeNull();
+  });
+
+  it("assistantPaths.interrupt", () => {
+    expect(assistantPaths.interrupt("a/b")).toBe("/api/voice/assistant/a%2Fb/interrupt");
+  });
+
+  it("createFinishAfterSpeech: con la cola vacía cierra al instante", () => {
+    const done = vi.fn();
+    const f = createFinishAfterSpeech({ idle: () => true });
+    f.request(done);
+    expect(done).toHaveBeenCalledTimes(1);
+  });
+
+  it("createFinishAfterSpeech: espera a que la cola quede vacía, una sola vez", () => {
+    vi.useFakeTimers();
+    try {
+      const done = vi.fn();
+      const f = createFinishAfterSpeech({ idle: () => false });
+      f.request(done);
+      expect(done).not.toHaveBeenCalled();
+      f.notifyIdle();
+      expect(done).toHaveBeenCalledTimes(1);
+      f.notifyIdle();
+      vi.advanceTimersByTime(20_000);
+      expect(done).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("createFinishAfterSpeech: tope de seguridad de 15 s y cancel", () => {
+    vi.useFakeTimers();
+    try {
+      const done = vi.fn();
+      const f = createFinishAfterSpeech({ idle: () => false });
+      f.request(done);
+      vi.advanceTimersByTime(14_999);
+      expect(done).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(1);
+      expect(done).toHaveBeenCalledTimes(1);
+
+      const other = vi.fn();
+      const g = createFinishAfterSpeech({ idle: () => false });
+      g.request(other);
+      g.cancel();
+      g.notifyIdle();
+      vi.advanceTimersByTime(20_000);
+      expect(other).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

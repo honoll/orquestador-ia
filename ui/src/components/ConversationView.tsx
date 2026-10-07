@@ -13,12 +13,15 @@ import {
 } from "../lib/conversation";
 import { createSentenceStreamer } from "../lib/sentences";
 import {
+  createFinishAfterSpeech,
   endSession,
   endSessionBeacon,
+  interruptSession,
   parseAssistantEvent,
   postTurn,
   readBargeIn,
   startSession,
+  turnDoneSpeech,
   writeBargeIn,
 } from "../lib/assistant";
 import { duckLease } from "../lib/duck";
@@ -148,7 +151,13 @@ export function ConversationView({
     });
 
     const queue = createSpeechQueue({ fetch: fetchSentence, play: playSpeechBlob });
-    queue.onIdle(() => dispatch({ type: "speakIdle" }));
+    // Fin decidido por el servidor (cuota, agy perdido, frase de cierre): se cierra al terminar de hablar.
+    const finishAfterSpeech = createFinishAfterSpeech({ idle: () => queue.idle() });
+    let closing = false;
+    queue.onIdle(() => {
+      finishAfterSpeech.notifyIdle();
+      dispatch({ type: "speakIdle" });
+    });
 
     const onSentence = (s: string) => {
       turnSentences++;
@@ -159,6 +168,7 @@ export function ConversationView({
     let streamer = createSentenceStreamer(onSentence);
 
     const releaseResources = () => {
+      finishAfterSpeech.cancel();
       maxSpeech.cancel();
       if (idleTimer) clearInterval(idleTimer);
       idleTimer = null;
@@ -212,7 +222,10 @@ export function ConversationView({
       maxSpeech.cancel();
       queue.stop();
       stopSpeech();
+      // Lo que se dejó de oír no se puede confirmar: el servidor descarta la acción pendiente.
+      if (sessionId && !closing) void interruptSession(sessionId).catch(() => {});
       dispatch({ type: "interrupt" });
+      if (closing) finishAfterSpeech.notifyIdle(); // cortar el aviso final cierra ya
     }
 
     function onKey(e: KeyboardEvent) {
@@ -269,7 +282,7 @@ export function ConversationView({
         dispatch({ type: "discarded" });
         return;
       }
-      if (closed || ctl.signal.aborted) return;
+      if (closed || closing || ctl.signal.aborted) return;
       if (!text) return dispatch({ type: "discarded" });
       setNotice(null);
       const seq = ++turnSeq;
@@ -317,7 +330,16 @@ export function ConversationView({
       if (!sessionId) return;
       const ev = parseAssistantEvent(raw, sessionId);
       if (!ev) return;
-      if (ev.type === "ended") return finish(ev.notePath);
+      if (ev.type === "ended") {
+        // Terminar pedido por el usuario: cierra ya. Fin del servidor: primero se oye el último aviso.
+        if (convRef.current.phase === "ending") return finish(ev.notePath);
+        closing = true;
+        maxSpeech.cancel();
+        vad?.pause();
+        const notePath = ev.notePath;
+        finishAfterSpeech.request(() => finish(notePath));
+        return;
+      }
       if (ev.type === "announce") {
         addLine("asistente", ev.text);
         if (convRef.current.phase === "listening") dispatch({ type: "announce" });
@@ -343,11 +365,10 @@ export function ConversationView({
       }
       // turn-done
       streamer.flush();
-      if (turnSentences === 0 && !ev.error && ev.speech.trim()) onSentence(ev.speech.trim());
-      if (ev.error) {
-        addLine("asistente", "Hubo un problema al responder.");
-        setNotice(ev.error);
-      }
+      // También con error: el aviso del servidor (cuota, conexión perdida) se dice en voz.
+      const say = turnDoneSpeech(ev, turnSentences);
+      if (say) onSentence(say);
+      if (ev.error) setNotice(ev.error);
       curTurn = null;
       dispatch({ type: "turnDone", hasAudio: turnSentences > 0 });
     }

@@ -61,7 +61,53 @@ export const assistantPaths = {
   start: "/api/voice/assistant/start",
   turn: (id: string) => `/api/voice/assistant/${encodeURIComponent(id)}/turn`,
   end: (id: string) => `/api/voice/assistant/${encodeURIComponent(id)}/end`,
+  interrupt: (id: string) => `/api/voice/assistant/${encodeURIComponent(id)}/interrupt`,
 };
+
+/**
+ * Qué decir al llegar turn-done: la frase del servidor si nada se dijo por deltas, también cuando trae
+ * error (cuota agotada, agy perdido: el aviso se oye antes de cerrar).
+ */
+export function turnDoneSpeech(ev: { speech: string; error?: string }, sentencesSoFar: number): string | null {
+  const s = ev.speech.trim();
+  return sentencesSoFar === 0 && s ? s : null;
+}
+
+export const FINISH_AFTER_SPEECH_MAX_MS = 15_000;
+
+/**
+ * Cierre diferido: cuando el servidor termina la plática, la vista espera a que la cola de voz quede vacía
+ * (con un tope de seguridad) para que el último aviso se oiga completo. done() se llama una sola vez.
+ */
+export function createFinishAfterSpeech(opts: { idle(): boolean; timeoutMs?: number }): {
+  request(done: () => void): void;
+  notifyIdle(): void;
+  cancel(): void;
+} {
+  let pending: (() => void) | null = null;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const fire = () => {
+    const done = pending;
+    pending = null;
+    if (timer) clearTimeout(timer);
+    timer = null;
+    done?.();
+  };
+  return {
+    request(done) {
+      if (pending) return;
+      if (opts.idle()) return done();
+      pending = done;
+      timer = setTimeout(fire, opts.timeoutMs ?? FINISH_AFTER_SPEECH_MAX_MS);
+    },
+    notifyIdle: fire,
+    cancel() {
+      pending = null;
+      if (timer) clearTimeout(timer);
+      timer = null;
+    },
+  };
+}
 
 export type TurnOutcome =
   | { kind: "accepted"; turnId: string }
@@ -146,6 +192,15 @@ export async function endSession(sessionId: string): Promise<{ notePath: string 
   });
   const b = (await json(r)) as { notePath?: unknown };
   return { notePath: str(b.notePath) && b.notePath ? b.notePath : null };
+}
+
+/** Avisa al servidor de una interrupción: descarta la acción pendiente (no cancela el turno de agy). */
+export async function interruptSession(sessionId: string): Promise<void> {
+  await fetch(assistantPaths.interrupt(sessionId), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: "{}",
+  });
 }
 
 /** Al cerrar la pestaña no hay tiempo para un fetch normal. */
