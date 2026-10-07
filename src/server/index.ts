@@ -22,6 +22,8 @@ import accountsRoute from "./routes/accounts.js";
 import workersRoute from "./routes/workers.js";
 import jevRoute from "./routes/jev.js";
 import memoryRoute from "./routes/memory.js";
+import voiceRoute from "./routes/voice.js";
+import { whisper } from "../voice/whisper.js";
 import { indexVault } from "../memory/vault-index.js";
 import { createOllamaEmbedder } from "../memory/ollama.js";
 import { memoryConfig } from "../memory/config.js";
@@ -56,6 +58,7 @@ app.route("/api/accounts", accountsRoute);
 app.route("/api/workers", workersRoute);
 app.route("/api/jev", jevRoute);
 app.route("/api/memory", memoryRoute);
+app.route("/api/voice", voiceRoute);
 
 app.get(
   "/ws",
@@ -91,4 +94,13 @@ try {
     .catch((err) => log.warn({ err: String(err?.message ?? err) }, "índice de memoria omitido"));
 } catch (err) {
   log.warn({ err: String((err as Error)?.message ?? err) }, "índice de memoria omitido");
+}
+
+// whisper-server (voz, F5) arranca de forma perezosa; se apaga junto con el orquestador.
+process.on("exit", () => whisper.stop());
+for (const sig of ["SIGINT", "SIGTERM"] as const) {
+  process.on(sig, () => {
+    whisper.stop();
+    process.exit(0);
+  });
 }
