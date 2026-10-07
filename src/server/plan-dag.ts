@@ -194,19 +194,21 @@ export const MEMORY_BLOCK_START = "<<<MEMORIA>>>";
 export const MEMORY_BLOCK_END = "<<<FIN MEMORIA>>>";
 
 const MEMORY_ITEMS_MAX = 5;
+const MEMORY_ITEM_MAX_CHARS = 300;
 
-/** Separa la respuesta del bloque MEMORIA. JSON inválido o ausente → memory null (la respuesta se limpia igual). */
+/** Separa la respuesta del bloque MEMORIA, que solo vale si cierra el texto. Si no, se quitan los marcadores y memory es null. */
 export function splitSynthesis(text: string): { answer: string; memory: { decisiones: string[]; aprendizajes: string[] } | null } {
-  const start = text.lastIndexOf(MEMORY_BLOCK_START);
-  if (start === -1) return { answer: text.replace(MEMORY_BLOCK_END, "").trim(), memory: null };
-  const answer = text.slice(0, start).trim();
-  const endIdx = text.indexOf(MEMORY_BLOCK_END, start);
-  const raw = text.slice(start + MEMORY_BLOCK_START.length, endIdx === -1 ? undefined : endIdx).trim();
+  const trimmed = text.trim();
+  const idx = trimmed.lastIndexOf(MEMORY_BLOCK_START);
+  const m = idx === -1 ? null : /^<<<MEMORIA>>>\s*([\s\S]*?)\s*<<<FIN MEMORIA>>>$/.exec(trimmed.slice(idx));
+  if (!m) return { answer: trimmed.split(MEMORY_BLOCK_START).join("").split(MEMORY_BLOCK_END).join("").trim(), memory: null };
+  const answer = trimmed.slice(0, idx).trim();
   try {
-    const j = JSON.parse(raw) as { decisiones?: unknown; aprendizajes?: unknown };
+    const j = JSON.parse(m[1]) as { decisiones?: unknown; aprendizajes?: unknown };
     if (!j || typeof j !== "object" || Array.isArray(j)) return { answer, memory: null };
     const strs = (v: unknown) =>
-      (Array.isArray(v) ? v : []).filter((x): x is string => typeof x === "string" && x.trim() !== "").map((x) => x.trim()).slice(0, MEMORY_ITEMS_MAX);
+      (Array.isArray(v) ? v : []).filter((x): x is string => typeof x === "string" && x.trim() !== "")
+        .map((x) => x.trim().slice(0, MEMORY_ITEM_MAX_CHARS)).slice(0, MEMORY_ITEMS_MAX);
     return { answer, memory: { decisiones: strs(j.decisiones), aprendizajes: strs(j.aprendizajes) } };
   } catch {
     return { answer, memory: null };

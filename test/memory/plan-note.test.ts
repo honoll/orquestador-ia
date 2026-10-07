@@ -16,7 +16,7 @@ describe("buildPlanNote", () => {
   it("nombre, frontmatter y secciones", () => {
     const { fileName, content } = buildPlanNote(base());
     expect(fileName).toBe("2026-10-06-arregla-el-login-de-la-app.md");
-    expect(content).toContain("ruta: C:/estudio/orquestador-ia");
+    expect(content).toContain(`ruta: ${JSON.stringify("C:/estudio/orquestador-ia")}`);
     expect(content.startsWith(["---", "tipo: plan-orquestador", "estado: terminado", ""].join("\n"))).toBe(true);
     expect(content).toContain("actualizado: 2026-10-06");
     expect(content).toContain("tags: [orquestador, plan, normal]");
@@ -27,11 +27,30 @@ describe("buildPlanNote", () => {
     expect(content).toContain("- [[Nota Uno]]");
     expect(content).toContain("[[Orquestador-IA]]");
   });
+  it("ruta con comillas o saltos se cita como JSON en el frontmatter", () => {
+    const { content } = buildPlanNote(base({ projectPath: 'C:/a"b\nc: x' }));
+    expect(content).toContain(`ruta: ${JSON.stringify('C:/a"b c: x')}`);
+  });
+  it("neutraliza encabezados y separadores en Pedido y Resultado", () => {
+    const { content } = buildPlanNote(base({ description: "hola\n## Falso\n---\nfin", answer: "ok\n# Titulo\n---\n### otro" }));
+    expect(content).not.toMatch(/^## Falso/m);
+    expect(content).not.toMatch(/^# Titulo/m);
+    expect(content).not.toMatch(/^### otro/m);
+    expect(content).toContain(String.fromCharCode(92) + "## Falso");
+    expect(content).toContain(String.fromCharCode(92) + "# Titulo");
+    // solo los dos "---" del frontmatter
+    expect(content.split("\n").filter((l) => l === "---")).toHaveLength(2);
+  });
+  it("escapa ]] y | en los destinos de enlace", () => {
+    const { content } = buildPlanNote(base({ memoryNotes: [{ path: "x.md", title: "A]]B|C" }], projectName: "P]]Q|R" }));
+    expect(content).toContain("- [[A)B-C]]");
+    expect(content).toContain("- [[P)Q-R]]");
+  });
   it("valores desconocidos son PENDIENTE", () => {
     const { content } = buildPlanNote(base({ projectPath: null, projectName: null, tier: null, memory: null, memoryNotes: [] }));
-    expect(content).toContain("ruta: PENDIENTE");
+    expect(content).toContain(`ruta: "PENDIENTE"`);
     expect(content).toContain("tags: [orquestador, plan]");
-    expect(content).toContain("tier: PENDIENTE");
+    expect(content).toContain(`tier: "PENDIENTE"`);
   });
   it("redacta secretos en todo el contenido", () => {
     const { content } = buildPlanNote(base({ answer: "la llave sk-abcdefghijklmnopqrstuvwx", description: "token: abc123secreto" }));

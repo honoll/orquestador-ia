@@ -20,30 +20,35 @@ const pad = (n: number) => String(n).padStart(2, "0");
 const ymd = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 const oneLine = (s: string) => s.replace(/\s+/g, " ").trim();
 const cell = (s: string) => oneLine(s).replace(/\|/g, "\\|");
+/** Texto no confiable dentro de una sección: sin encabezados ni separadores que rompan la estructura de la nota. */
+const neutralize = (s: string) =>
+  s.split(/\r?\n/).map((l) => (/^\s*-{3,}\s*$/.test(l) ? "—" : /^\s*#/.test(l) ? `\\${l.trimStart()}` : l)).join("\n");
+/** Enlace wiki seguro: sin `]]`, `[[` ni `|` en el destino. */
+const link = (s: string) => `[[${oneLine(s).replace(/\]\]/g, ")").replace(/\[\[/g, "(").replace(/\|/g, "-")}]]`;
 const list = (items: string[]) => (items.length ? items.map((i) => `- ${oneLine(i)}`).join("\n") : "- (ninguno)");
 
 export function buildPlanNote(input: PlanNoteInput): { fileName: string; content: string } {
   const date = ymd(input.date);
   const fileName = `${date}-${slugify(input.description) || "plan"}.md`;
-  const tags = ["orquestador", "plan", ...(input.tier ? [input.tier] : [])].join(", ");
+  const tags = ["orquestador", "plan", ...(input.tier ? [slugify(input.tier) || "PENDIENTE"] : [])].join(", ");
   const rows = input.steps.map((s) => `| ${cell(s.key)} | ${cell(s.description)} | ${cell(s.adapter)} | ${cell(s.status)} |`);
-  const used = input.memoryNotes.length ? input.memoryNotes.map((n) => `- [[${n.title}]]`).join("\n") : "- (ninguna)";
-  const related = input.projectName ? `- [[${oneLine(input.projectName)}]]` : "- PENDIENTE";
+  const used = input.memoryNotes.length ? input.memoryNotes.map((n) => `- ${link(n.title)}`).join("\n") : "- (ninguna)";
+  const related = input.projectName ? `- ${link(input.projectName)}` : "- PENDIENTE";
   const content = [
     "---",
     "tipo: plan-orquestador",
     "estado: terminado",
-    `ruta: ${input.projectPath ? oneLine(input.projectPath) : "PENDIENTE"}`,
+    `ruta: ${JSON.stringify(input.projectPath ? oneLine(input.projectPath) : "PENDIENTE")}`,
     `actualizado: ${date}`,
     `tags: [${tags}]`,
-    `tier: ${input.tier ?? "PENDIENTE"}`,
+    `tier: ${JSON.stringify(input.tier ?? "PENDIENTE")}`,
     `tokens: ${input.usedTokens}`,
     "---",
     "",
     `# Plan ${date}: ${oneLine(input.description).slice(0, 80)}`,
     "",
     "## Pedido",
-    input.description.trim(),
+    neutralize(input.description.trim()),
     "",
     "## Pasos",
     "| Paso | Descripción | Adapter | Estado |",
@@ -51,7 +56,7 @@ export function buildPlanNote(input: PlanNoteInput): { fileName: string; content
     ...rows,
     "",
     "## Resultado",
-    input.answer.trim() || "PENDIENTE",
+    neutralize(input.answer.trim()) || "PENDIENTE",
     "",
     "## Decisiones",
     list(input.memory?.decisiones ?? []),

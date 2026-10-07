@@ -180,6 +180,28 @@ describe("splitSynthesis / bloque MEMORIA", () => {
     const r = splitSynthesis(`X\n${block('{"decisiones":["1","2","3","4","5","6"],"aprendizajes":[]}')}`);
     expect(r.memory!.decisiones).toHaveLength(5);
   });
+  it("un marcador citado a mitad del texto conserva la respuesta completa sin marcadores", () => {
+    const r = splitSynthesis("Antes <<<MEMORIA>>> citado y despues <<<FIN MEMORIA>>> mas texto");
+    expect(r.memory).toBeNull();
+    expect(r.answer).toBe("Antes  citado y despues  mas texto");
+  });
+  it("marcador citado y bloque real al final: solo cuenta el del final", () => {
+    const r = splitSynthesis(`Mira <<<MEMORIA>>> aqui.\n${block('{"decisiones":["d"],"aprendizajes":[]}')}`);
+    expect(r.memory).toEqual({ decisiones: ["d"], aprendizajes: [] });
+    expect(r.answer).toContain("Mira <<<MEMORIA>>> aqui.");
+  });
+  it("bloque sin cierre: respuesta completa sin marcadores y memory null", () => {
+    const r = splitSynthesis('Hola\n<<<MEMORIA>>>\n{"decisiones":[]}');
+    expect(r.memory).toBeNull();
+    expect(r.answer).not.toContain("<<<");
+  });
+  it("recorta cada elemento a 300 caracteres", () => {
+    const r = splitSynthesis(`X\n${block(JSON.stringify({ decisiones: ["a".repeat(500)], aprendizajes: [] }))}`);
+    expect(r.memory!.decisiones[0]).toHaveLength(300);
+  });
+  it("la síntesis pide el contenido de MEMORIA en español de México", () => {
+    expect(buildSynthesisPrompt("x", [], "n")).toMatch(/Spanish \(Mexico\), at most 5/);
+  });
   it("la síntesis pide el bloque al final", () => {
     const p = buildSynthesisPrompt("x", [], "n");
     expect(p).toContain("<<<MEMORIA>>>");
