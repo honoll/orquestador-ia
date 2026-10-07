@@ -179,7 +179,43 @@ describe("createDucker", () => {
       enabled: () => true,
       fs: noFs,
     });
-    expect(await bad.acquire("mic")).toEqual({ supported: true, active: ["mic"] });
+    expect(await bad.acquire("mic")).toEqual({ supported: true, active: ["mic"], error: "boom" });
+  });
+
+  it("nunca lanza: la compilación del exe falla -> estado con error y sin spawn", async () => {
+    let spawned = 0;
+    const bad = createDucker({
+      platform: "win32",
+      ensureExe: async () => {
+        throw new Error("csc no disponible");
+      },
+      spawnHelper: () => {
+        spawned++;
+        return new FakeHelper();
+      },
+      enabled: () => true,
+      fs: noFs,
+    });
+    expect(await bad.acquire("mic")).toEqual({ supported: true, active: ["mic"], error: "csc no disponible" });
+    expect(spawned).toBe(0);
+  });
+
+  it("spawnHelper recibe la ruta del exe compilado", async () => {
+    const seen: string[] = [];
+    const d = createDucker({
+      platform: "win32",
+      ensureExe: async () => "C:/x/duck-helper-abc.exe",
+      spawnHelper: (exe) => {
+        seen.push(exe);
+        const h = new FakeHelper();
+        h.reply = () => ({ ok: true, active: [] });
+        return h;
+      },
+      enabled: () => true,
+      fs: noFs,
+    });
+    await d.acquire("mic");
+    expect(seen).toEqual(["C:/x/duck-helper-abc.exe"]);
   });
 
   it("nunca lanza: helper mudo (timeout)", async () => {

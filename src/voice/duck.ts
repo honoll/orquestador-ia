@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { orchestratorDataRoot } from "../lib/worker-profile.js";
@@ -6,7 +7,10 @@ import { withoutOrchestratorSecrets } from "../lib/process-runner.js";
 
 /**
  * Audio ducking (F5): baja el volumen de las demás apps mientras el usuario graba (mic) o Piper lee (speak) y lo
- * restaura después. Usa un helper PowerShell de larga vida (scripts/voice/duck.ps1) con Core Audio por sesión.
+ * restaura después. Usa un helper de larga vida con Core Audio por sesión: un .exe compilado una sola vez desde
+ * scripts/voice/DuckHelper.cs (Add-Type, ver build-duck-helper.ps1) y lanzado con detached:true. No es un script
+ * PowerShell porque libuv mete a los hijos no-detached en un job object con KILL_ON_JOB_CLOSE: si node muere de
+ * golpe, el helper moriría antes de restaurar. Detached sobrevive, ve el EOF de stdin y restaura.
  */
 export type DuckReason = "mic" | "speak";
 export const DUCK_REASONS: readonly DuckReason[] = ["mic", "speak"];
@@ -58,7 +62,10 @@ export interface DuckEntry {
 
 export interface DuckerDeps {
   platform?: NodeJS.Platform;
-  spawnHelper?: () => HelperProc;
+  /** Lanza el helper (recibe la ruta del exe ya compilado). */
+  spawnHelper?: (exePath: string) => HelperProc;
+  /** Garantiza que el exe exista y devuelve su ruta; lanza si no puede compilarse. Los tests lo inyectan. */
+  ensureExe?: () => Promise<string>;
   now?: () => number;
   setTimer?: (fn: () => void, ms: number) => unknown;
   clearTimer?: (h: unknown) => void;
@@ -77,6 +84,8 @@ export interface DuckerDeps {
 export interface DuckStatus {
   supported: boolean;
   active: DuckReason[];
+  /** Presente si el helper no pudo compilarse/lanzarse (el ducking queda desactivado, nada más falla). */
+  error?: string;
 }
 
 interface HelperReply {
@@ -86,13 +95,59 @@ interface HelperReply {
   active?: DuckEntry[];
 }
 
-function realSpawnHelper(): HelperProc {
-  const script = path.resolve(import.meta.dirname, "../../scripts/voice/duck.ps1");
-  const child = spawn(
-    "powershell.exe",
-    ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", script],
-    { shell: false, windowsHide: true, stdio: ["pipe", "pipe", "ignore"], env: withoutOrchestratorSecrets(process.env) },
-  );
+const HELPER_SOURCE = path.resolve(import.meta.dirname, "../../scripts/voice/DuckHelper.cs");
+const BUILD_SCRIPT = path.resolve(import.meta.dirname, "../../scripts/voice/build-duck-helper.ps1");
+const BUILD_TIMEOUT_MS = 120_000;
+
+let exeBuild: Promise<string> | null = null;
+
+/** Compila (una vez por proceso y por contenido del .cs) el exe del helper en <data dir>/voice/. Las llamadas concurrentes comparten la compilación. */
+export function ensureHelperExe(): Promise<string> {
+  exeBuild ??= buildHelperExe();
+  return exeBuild;
+}
+
+async function buildHelperExe(): Promise<string> {
+  const hash = crypto.createHash("sha256").update(fs.readFileSync(HELPER_SOURCE)).digest("hex").slice(0, 12);
+  const exe = path.join(orchestratorDataRoot(), "voice", `duck-helper-${hash}.exe`);
+  if (fs.existsSync(exe)) return exe;
+  fs.mkdirSync(path.dirname(exe), { recursive: true });
+  await new Promise<void>((resolve, reject) => {
+    const child = spawn(
+      "powershell.exe",
+      ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", BUILD_SCRIPT, "-Source", HELPER_SOURCE, "-Out", exe],
+      { shell: false, windowsHide: true, stdio: ["ignore", "ignore", "pipe"], env: withoutOrchestratorSecrets(process.env) },
+    );
+    let err = "";
+    child.stderr.setEncoding("utf8");
+    child.stderr.on("data", (d: string) => {
+      err = (err + d).slice(-500);
+    });
+    const timer = setTimeout(() => child.kill(), BUILD_TIMEOUT_MS);
+    child.on("error", (e) => {
+      clearTimeout(timer);
+      reject(e);
+    });
+    child.on("exit", (code) => {
+      clearTimeout(timer);
+      if (code === 0) resolve();
+      else reject(new Error(`compilación del helper falló (código ${code}): ${err.trim()}`));
+    });
+  });
+  if (!fs.existsSync(exe)) throw new Error("compilación del helper no produjo el exe");
+  return exe;
+}
+
+function realSpawnHelper(exePath: string): HelperProc {
+  // detached: en Windows saca al hijo del job object (KILL_ON_JOB_CLOSE) de node; así, si node muere de golpe, el
+  // helper ve el EOF de stdin y restaura los volúmenes. Sin unref(): seguimos leyendo su stdout.
+  const child = spawn(exePath, [], {
+    shell: false,
+    windowsHide: true,
+    detached: true,
+    stdio: ["pipe", "pipe", "ignore"],
+    env: withoutOrchestratorSecrets(process.env),
+  });
   let buf = "";
   const lineCbs: Array<(l: string) => void> = [];
   child.stdout.setEncoding("utf8");
@@ -150,6 +205,8 @@ export function createDucker(deps: DuckerDeps = {}) {
   const clearTimer = deps.clearTimer ?? ((h: unknown) => clearTimeout(h as NodeJS.Timeout));
   const leaseMs = deps.leaseMs ?? DEFAULT_LEASE_MS;
   const spawnHelper = deps.spawnHelper ?? realSpawnHelper;
+  const ensureExe = deps.ensureExe ?? (deps.spawnHelper ? async () => "" : ensureHelperExe);
+  let setupError: string | null = null;
   const level = deps.level ?? (() => duckLevel());
   const enabled = deps.enabled ?? (() => duckEnabled());
   const log = deps.log ?? (() => {});
@@ -191,10 +248,13 @@ export function createDucker(deps: DuckerDeps = {}) {
     p.resolve(null);
   }
 
-  function ensureHelper(): HelperProc | null {
+  async function ensureHelper(): Promise<HelperProc | null> {
     if (helper && helperAlive) return helper;
     try {
-      const h = spawnHelper();
+      const exe = await ensureExe();
+      if (helper && helperAlive) return helper;
+      const h = spawnHelper(exe);
+      setupError = null;
       helper = h;
       helperAlive = true;
       h.onLine((line) => {
@@ -221,14 +281,15 @@ export function createDucker(deps: DuckerDeps = {}) {
     } catch (err) {
       helperAlive = false;
       helper = null;
-      log("duck: no se pudo lanzar el helper", String((err as Error)?.message ?? err));
+      setupError = String((err as Error)?.message ?? err);
+      log("duck: no se pudo lanzar el helper", setupError);
       return null;
     }
   }
 
   function request(payload: object): Promise<HelperReply | null> {
     const run = async (): Promise<HelperReply | null> => {
-      const h = ensureHelper();
+      const h = await ensureHelper();
       if (!h) return null;
       return new Promise<HelperReply | null>((resolve) => {
         const timer = setTimer(() => {
@@ -265,7 +326,7 @@ export function createDucker(deps: DuckerDeps = {}) {
   }
 
   function status(): DuckStatus {
-    return { supported, active: activeReasons() };
+    return setupError ? { supported, active: activeReasons(), error: setupError } : { supported, active: activeReasons() };
   }
 
   /** Aplica el estado deseado según los motivos activos. Nunca lanza. */
