@@ -11,8 +11,10 @@ import { guardStep } from "./plan-guard.js";
 import { getAdapter } from "../adapters/registry.js";
 import { PLANNER_MODEL } from "../config/models.js";
 import {
-  toDagSteps, pickRunnable, hasReadyAgyStep, budgetExceeded, buildStepPrompt, buildSynthesisPrompt, type DagStep,
+  toDagSteps, pickRunnable, hasReadyAgyStep, budgetExceeded, buildStepPrompt, buildSynthesisPrompt, splitSynthesis, type DagStep,
 } from "./plan-dag.js";
+import { memoryConfig } from "../memory/config.js";
+import { writePlanNote } from "../memory/plan-note.js";
 
 const log = pino({ name: "plan-scheduler" });
 
@@ -302,10 +304,47 @@ export async function runSynthesis(planId: string, run?: ActiveRun): Promise<voi
     await setPlan(planId, { status: "completed", synthesisStatus: "failed", synthesisError: errorMessage.slice(0, 2000) });
     emit({ type: "plan:synthesis", planId, status: "failed", error: errorMessage });
   } else {
-    await setPlan(planId, { status: "completed", synthesisStatus: "succeeded", synthesis: text });
-    emit({ type: "plan:synthesis", planId, status: "succeeded", synthesis: text });
+    const { answer, memory } = splitSynthesis(text);
+    await setPlan(planId, { status: "completed", synthesisStatus: "succeeded", synthesis: answer });
+    emit({ type: "plan:synthesis", planId, status: "succeeded", synthesis: answer });
+    await savePlanNote(planId, rows, answer, memory);
   }
   emit({ type: "plan:done", planId, status: "completed" });
+}
+
+/** Deja la nota del plan en la bóveda. Nunca hace fallar el plan. */
+async function savePlanNote(
+  planId: string,
+  rows: (typeof schema.planSteps.$inferSelect)[],
+  answer: string,
+  memory: { decisiones: string[]; aprendizajes: string[] } | null,
+): Promise<void> {
+  try {
+    const plan = await getPlan(planId);
+    const project = plan.projectId
+      ? (await db.select().from(schema.projects).where(eq(schema.projects.id, plan.projectId)))[0]
+      : undefined;
+    let notes: { path: string; title: string; projectNote?: boolean }[] = [];
+    try { notes = plan.memoryNotes ? JSON.parse(plan.memoryNotes) : []; } catch { notes = []; }
+    const cfg = memoryConfig();
+    const rel = writePlanNote(cfg.vaultPath, cfg.writeDir, {
+      planId,
+      description: plan.description,
+      tier: plan.tier ?? null,
+      usedTokens: plan.usedTokens,
+      projectName: notes.find((n) => n.projectNote)?.title ?? project?.name ?? null,
+      projectPath: project?.path ?? null,
+      steps: rows.map((r, i) => ({ key: r.stepKey ?? `s${i + 1}`, description: r.description, adapter: r.adapter, status: r.status })),
+      answer,
+      memory,
+      memoryNotes: notes.map((n) => ({ path: n.path, title: n.title })),
+      date: new Date(),
+    });
+    await setPlan(planId, { memoryNotePath: rel });
+    emit({ type: "plan:memory-note", planId, path: rel });
+  } catch (err) {
+    log.error({ err, planId }, "No se pudo escribir la nota del plan en Cerebro");
+  }
 }
 
 /** Reintento manual de la síntesis (botón de la UI). */
