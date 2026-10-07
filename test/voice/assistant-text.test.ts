@@ -47,10 +47,24 @@ describe("extractAction", () => {
 });
 
 describe("isConfirmation", () => {
-  it.each(["sí, dale", "Sí", "dale", "Órale", "Claro, hazlo", "ok"])("acepta %s", (u) => {
-    expect(isConfirmation(u)).toBe(true);
-  });
-  it.each(["no, espera", "sí pero no ahorita", "dime si funciona el plan de mañana", "mejor no", "", "hola"])(
+  it.each(["sí, dale", "Sí", "dale", "Órale", "Claro, hazlo", "ok", "va, arráncalo", "órale pues", "sí, por favor"])(
+    "acepta %s",
+    (u) => {
+      expect(isConfirmation(u)).toBe(true);
+    },
+  );
+  it.each([
+    "no, espera",
+    "sí pero no ahorita",
+    "dime si funciona el plan de mañana",
+    "mejor no",
+    "",
+    "hola",
+    "dime si funciona",
+    "y si mejor lo reviso",
+    "va a ser tarde",
+    "si funciona",
+  ])(
     "rechaza %s",
     (u) => {
       expect(isConfirmation(u)).toBe(false);

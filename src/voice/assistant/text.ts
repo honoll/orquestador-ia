@@ -42,6 +42,7 @@ const YES_WORDS = new Set([
   "si", "dale", "arrancalo", "arrancale", "hazlo", "va", "orale", "adelante", "claro", "correcto",
   "confirmo", "ok", "okay", "sale",
 ]);
+const FILLER_WORDS = new Set(["pues", "porfa", "por", "favor", "ya", "eso", "asi"]);
 const NO_WORDS = new Set(["no", "nel", "espera", "todavia", "aun", "cancela"]);
 
 export function isConfirmation(utterance: string): boolean {
@@ -50,7 +51,9 @@ export function isConfirmation(utterance: string): boolean {
   const words = n.split(" ");
   if (words.length > 6) return false;
   if (n.includes("mejor no") || words.some((w) => NO_WORDS.has(w))) return false;
-  return words.some((w) => YES_WORDS.has(w));
+  // Debe EMPEZAR con una palabra de confirmación; el resto, solo confirmaciones o muletillas.
+  if (!YES_WORDS.has(words[0])) return false;
+  return words.slice(1).every((w) => YES_WORDS.has(w) || FILLER_WORDS.has(w));
 }
 
 const CLOSING = new Set([
