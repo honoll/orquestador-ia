@@ -17,11 +17,13 @@ describe("execute (cableado de aislamiento)", () => {
     h.env.mockResolvedValue({ CODEX_HOME: "H" });
     await execute(ctx());
     expect(h.run.mock.calls[0]![0].env).toEqual({ A: "1", CODEX_HOME: "H" });
+    expect(h.run.mock.calls[0]![0].args).toContain("danger-full-access");
   });
   it("sin sesión: no recibe CODEX_HOME", async () => {
     h.env.mockResolvedValue({});
     await execute(ctx());
     expect(h.run.mock.calls[0]![0].env).toEqual({ A: "1" });
+    expect(h.run.mock.calls[0]![0].args).toContain("workspace-write");
   });
   it("modelo vacío: usa el modelo por defecto del catálogo", async () => {
     h.env.mockResolvedValue({});
@@ -40,6 +42,13 @@ describe("buildCodexArgs", () => {
     const args = buildCodexArgs("gpt-5.5", { platform: "win32" });
     expect(args).toEqual(["exec", "--json", "--sandbox", "workspace-write", "-c", "approval_policy='never'", "-c", "windows.sandbox='elevated'", "--skip-git-repo-check", ...iso, "-m", "gpt-5.5", "-"]);
     expect(args).not.toContain("--full-auto");
+  });
+  it("escritor con perfil de trabajador: danger-full-access + never, sin windows.sandbox", () => {
+    for (const platform of ["win32", "linux"] as const)
+      expect(buildCodexArgs("gpt-5.5", { platform, workerProfile: true })).toEqual(["exec", "--json", "--sandbox", "danger-full-access", "-c", "approval_policy='never'", "--skip-git-repo-check", ...iso, "-m", "gpt-5.5", "-"]);
+  });
+  it("readOnly con perfil sigue en read-only", () => {
+    expect(buildCodexArgs(undefined, { readOnly: true, workerProfile: true })).toContain("read-only");
   });
   it("escritor (no win32): sin windows.sandbox", () => {
     expect(buildCodexArgs("gpt-5.5", { platform: "linux" })).toEqual(["exec", "--json", "--sandbox", "workspace-write", "-c", "approval_policy='never'", "--skip-git-repo-check", ...iso, "-m", "gpt-5.5", "-"]);

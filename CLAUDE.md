@@ -120,6 +120,7 @@ POST /api/tasks → POST /api/tasks/:id/run
 - **No prompts as cmd.exe arguments (F1 rule)**: `quoteWindowsArg` cannot make `&` or `%VAR%` safe under cmd.exe (see `it.fails` in `test/lib/quote-windows-arg.test.ts`). Send prompts via stdin or spawn with `shell:false`.
 - **`agy` is spawned directly (`agy.exe`, `shell:false`) with the prompt as NDJSON on stdin.** It is resolved via `AGY_PATH` or `%LOCALAPPDATA%\agy\bin\agy.exe` (not PATH).
 - **Attachments pipeline**: attached files are pre-analyzed by agy via `POST /api/analyze` before reaching the main adapter. The analysis runs agy in read-only mode (no `--dangerously-skip-permissions`).
+- **Codex sandbox modes (`buildCodexArgs`, all with `-c approval_policy='never'`):** read-only steps `--sandbox read-only`; writers with the worker profile (logged-in isolated `CODEX_HOME`) `--sandbox danger-full-access` (parity with claude/agy `--dangerously-skip-permissions`; protection = F4 guard + project cwd; reason: MSIX virtualization of AppData breaks the Windows elevated sandbox setup for a second `CODEX_HOME`); writers without the profile `--sandbox workspace-write` (+ `-c windows.sandbox='elevated'` on win32). `--full-auto` is deprecated and left the writer read-only with `--ignore-user-config`.
 - **Headless flags**: Claude uses `--dangerously-skip-permissions` (except `readOnly` runs like the plan synthesis, see Plan System), Codex uses `--json`. These are required — interactive prompts break the runner.
 
 ### Database Schema (`src/db/schema.ts`)
