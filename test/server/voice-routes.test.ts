@@ -170,6 +170,11 @@ describe("POST /duck", () => {
     expect(r.status).toBe(200);
     expect(h.ducker.release).toHaveBeenCalledWith("mic");
   });
+  it("acepta reason conversation", async () => {
+    const r = await duck('{"reason":"conversation","on":true}', "Mozilla/5.0 Firefox/130.0");
+    expect(r.status).toBe(200);
+    expect(h.ducker.acquire).toHaveBeenCalledWith("conversation", ["firefox"]);
+  });
   it("on:false libera", async () => {
     const r = await duck('{"reason":"mic","on":false}');
     expect(await r.json()).toEqual({ supported: true, active: [] });

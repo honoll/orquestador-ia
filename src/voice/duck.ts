@@ -12,8 +12,8 @@ import { withoutOrchestratorSecrets } from "../lib/process-runner.js";
  * PowerShell porque libuv mete a los hijos no-detached en un job object con KILL_ON_JOB_CLOSE: si node muere de
  * golpe, el helper moriría antes de restaurar. Detached sobrevive, ve el EOF de stdin y restaura.
  */
-export type DuckReason = "mic" | "speak";
-export const DUCK_REASONS: readonly DuckReason[] = ["mic", "speak"];
+export type DuckReason = "mic" | "speak" | "conversation";
+export const DUCK_REASONS: readonly DuckReason[] = ["mic", "speak", "conversation"];
 export const DEFAULT_LEASE_MS = 45_000;
 export const DEFAULT_DUCK_LEVEL = 0.2;
 const REQUEST_TIMEOUT_MS = 10_000;
@@ -402,7 +402,7 @@ export function createDucker(deps: DuckerDeps = {}) {
       void release(reason);
     }, leaseMs);
     leases.set(reason, { expires: now() + leaseMs, timer });
-    if (reason === "speak") {
+    if (reason === "speak" || reason === "conversation") {
       const allowed = new Set<string>(BROWSER_ALLOWLIST);
       speakExclude = browserNames.filter((n) => allowed.has(n));
     }

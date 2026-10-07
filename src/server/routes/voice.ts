@@ -102,7 +102,9 @@ app.post("/duck", limitBody(MAX_DUCK_BODY_BYTES, "Cuerpo demasiado grande"), asy
     return c.json({ error: "JSON inválido" }, 400);
   }
   const b = (body && typeof body === "object" ? body : {}) as { reason?: unknown; on?: unknown };
-  if (b.reason !== "mic" && b.reason !== "speak") return c.json({ error: "reason debe ser mic o speak" }, 400);
+  if (b.reason !== "mic" && b.reason !== "speak" && b.reason !== "conversation") {
+    return c.json({ error: "reason debe ser mic, speak o conversation" }, 400);
+  }
   if (typeof b.on !== "boolean") return c.json({ error: "on debe ser booleano" }, 400);
   const reason: DuckReason = b.reason;
   const ducker = getDucker();
