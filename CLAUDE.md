@@ -105,8 +105,38 @@ POST /api/tasks → POST /api/tasks/:id/run
 - Pause banner (quota or budget) with "continuar"; final-answer card with markdown and "reintentar síntesis".
 - Rejected actions (409) are shown next to the controls (`postAction`, step retry included) and the plan is re-read.
 
-**Known issues (deferred to F3):**
-1. **Codex usage spike:** Codex loads the user's global skills and AGENTS.md (walking up from cwd under `C:\Users\sidel`), which inflates the tokens it actually **uses** (168k on a step estimated at 12k), not the estimate. Candidate fix: isolate the worker config.
+## Worker isolation (F3a)
+
+Codex, Claude, and agy now run with isolated worker profiles to prevent loading the user's global `CLAUDE.md` and skills. This eliminates the 168k-token usage spike on small Codex steps (previously 12k estimate → 17.3k actual on unoptimized runs).
+
+**Configuration:**
+- **Claude** (workers, chat, planner, synthesis) always runs with: `--setting-sources project,local --strict-mcp-config --disable-slash-commands`. The `readOnly` mode (plan synthesis) adds `--disallowedTools` to forbid writing.
+- **Codex** has two modes:
+  - **Reader steps** (read_only=1): `--sandbox read-only` (no write permissions).
+  - **Writer steps** with worker profile (logged-in): `--sandbox danger-full-access --ignore-user-config` (parity with claude/agy write modes; protected by F4 guard + project cwd). *Note: MSIX virtualization prevents configuring the Windows elevated sandbox for a second `CODEX_HOME`, so writers use full-access sandbox instead.*
+  - **Writer steps** without profile: `--sandbox workspace-write -c windows.sandbox='elevated' --ignore-user-config` (older fallback).
+  - All Codex runs add `-c approval_policy='never'`.
+- **agy** is spawned with `--ignore-user-config` on all steps (inherits PROJECT_HOME from runner; no global leakage).
+
+**Measured baseline (2026-10-06):**
+- Codex reader with worker profile: 10.3k input tokens (was 17.3k normal, 10.7k flags-only).
+- Verified via the adapter: no global-instructions marker, follows project AGENTS.md.
+- Worker profile `CODEX_HOME = <ORQUESTADOR_DATA_DIR | %USERPROFILE%\.orquestador-ia>\workers\codex`.
+
+**How to log in the worker profile:**
+- Use the UI button under the accounts panel, or from a terminal that can see codex:
+  ```bash
+  set CODEX_HOME=%USERPROFILE%\.orquestador-ia\workers\codex && codex login
+  ```
+  (Note: codex lives in Claude's virtualized AppData; a normal PowerShell may not find `codex` — use the button.)
+- The user's normal `codex login` is unaffected; they are separate.
+
+**Status routes:**
+- `GET /api/workers/status[?fresh=1]` — returns `{ codex: { logged_in: true, profile: "..." } }`.
+- `POST /api/workers/codex/login-terminal` — opens a visible terminal to log in.
+
+**Known issue (resolved 2026-10-06):**
+The 168k Codex step mentioned in F2 was caused by global config leakage. With worker isolation now in place, Codex steps run at their estimated token count without the spike.
 
 ### WebSocket
 

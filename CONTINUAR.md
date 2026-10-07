@@ -119,6 +119,39 @@ Pruebas:
 
 ---
 
+## F3a — Aislar trabajadores (workers) · completado 2026-10-06
+
+**Rama:** `f3a-aislar-trabajadores`
+
+Lo que se agregó:
+- **Aislamiento de config:** Claude, Codex y agy corren con `--ignore-user-config` y/o `--setting-sources project,local` para no cargar CLAUDE.md/AGENTS.md globales ni skills del usuario
+- **Codex:** lectores con `--sandbox read-only`; escritores con worker profile (login aislado) en `~/.orquestador-ia/workers/codex/` usando `--sandbox danger-full-access --ignore-user-config` (no se puede usar sandbox elevado con MSIX por el segundo CODEX_HOME); fallback writers sin profile con `--sandbox workspace-write -c windows.sandbox='elevated'`
+- **Claude (workers, chat, planner):** siempre `--setting-sources project,local --strict-mcp-config --disable-slash-commands`; solo lectura agrega `--disallowedTools`
+- **agy:** `--ignore-user-config` en todos los pasos
+- **Reducción de tokens:** Codex de 17.3k → 10.3k en runs no optimizados; el spike de 168k del paso estimado en 12k desapareció
+- **API worker status:** `GET /api/workers/status[?fresh=1]`, `POST /api/workers/codex/login-terminal`
+- **UI worker isolation notice:** bajo el panel de cuentas, botón para login del perfil
+
+Verificación (2026-10-06):
+- Medido en el adapter real: Codex reader 10.3k input tokens, no marker de globales, sigue AGENTS.md del proyecto
+- Writer creó archivo; no leak de `C:\Users\sidel\AGENTS.md` en %TEMP%
+- Suite completa verde: `npm test && npm run lint && npm run typecheck && npm run build:ui`
+
+Cómo usar — login del perfil de trabajador:
+1. **Opción A (UI):** botón en panel de cuentas (AccountsPanel)
+2. **Opción B (terminal):** 
+   ```bash
+   set CODEX_HOME=%USERPROFILE%\.orquestador-ia\workers\codex && codex login
+   ```
+   (Nota: codex vive en AppData virtualizada de Claude; PowerShell normal podría no encontrarlo — usar botón)
+- El login normal del usuario (`codex login`) es independiente y no afecta
+
+Trampas:
+- El perfil de trabajador de Codex necesita su propio login; no se puede usar el del usuario
+- Codex está en AppData virtualizada (MSIX): el sandbox elevado de Windows no se puede configurar para ese perfil → escritores de Codex sin perfil de trabajador NO usan `--full-auto` (deprecated), usan `--sandbox workspace-write`; **escritores WITH perfil usan `danger-full-access`** (los protege la guardia F4 + project cwd)
+
+---
+
 ## Que es
 Un orquestador local de CLIs de IA (Claude Code, Codex CLI, agy/Antigravity) con interfaz web.
 Inspirado en PaperClip (https://github.com/paperclipai/paperclip) pero simplificado para uso personal.
