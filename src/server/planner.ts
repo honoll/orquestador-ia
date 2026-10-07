@@ -203,13 +203,17 @@ export interface GeneratePlanOptions {
   memory?: string;
 }
 
-/** El planner solo devuelve JSON: corre sin herramientas de escritura, red ni shell. */
+/**
+ * El planner solo devuelve JSON: corre sin NINGUNA herramienta (`--tools ""`, ni Read/Glob/Grep, para que texto
+ * inyectado desde la bóveda no le haga leer ~/.ssh o .env) y, como segunda capa, con `--disallowedTools`.
+ */
 export function buildPlannerArgs(systemPromptFile: string): string[] {
   return [
     "--print", "-",
     "--output-format", "stream-json",
     "--verbose",
     ...CLAUDE_ISOLATION_ARGS,
+    "--tools", "",
     "--disallowedTools", READ_ONLY_DISALLOWED_TOOLS,
     "--model", PLANNER_MODEL,
     "--system-prompt-file", systemPromptFile,
