@@ -23,6 +23,7 @@ import workersRoute from "./routes/workers.js";
 import jevRoute from "./routes/jev.js";
 import memoryRoute from "./routes/memory.js";
 import voiceRoute from "./routes/voice.js";
+import { originGuard } from "./origin-guard.js";
 import { whisper } from "../voice/whisper.js";
 import { getDucker } from "../voice/duck.js";
 import { indexVault } from "../memory/vault-index.js";
@@ -43,6 +44,8 @@ const app = new Hono();
 const { injectWebSocket, upgradeWebSocket } = createNodeWebSocket({ app });
 
 app.use("/api/*", cors({ origin: "*" }));
+// Las peticiones que cambian estado solo desde la UI propia (o sin Origin): ver origin-guard.ts.
+app.use("/api/*", originGuard());
 
 app.route("/api/adapters", adaptersRoute);
 app.route("/api/projects", projectsRoute);

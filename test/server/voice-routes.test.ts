@@ -185,3 +185,57 @@ describe("POST /duck", () => {
     expect((await duck(JSON.stringify({ reason: "mic", on: true, pad: "x".repeat(5000) }))).status).toBe(413);
   });
 });
+
+describe("seguridad: Origin, Content-Type y concurrencia (I4)", () => {
+  const send = (p: string, body: string, headers: Record<string, string>) =>
+    voiceRoute.request(p, { method: "POST", body, headers });
+  const json = { "Content-Type": "application/json" };
+
+  it.each(["http://127.0.0.1:3100", "http://localhost:3100", "http://127.0.0.1:5173", "http://localhost:5173"])(
+    "acepta Origin %s",
+    async (origin) => {
+      expect((await send("/duck", '{"reason":"mic","on":false}', { ...json, Origin: origin })).status).toBe(200);
+    },
+  );
+  it("rechaza Origin ajeno con 403 y no toca el ducker", async () => {
+    h.ducker.acquire.mockClear();
+    const r = await send("/duck", '{"reason":"mic","on":true}', { ...json, Origin: "https://evil.example" });
+    expect(r.status).toBe(403);
+    expect(h.ducker.acquire).not.toHaveBeenCalled();
+    expect((await send("/speak", '{"text":"hola"}', { ...json, Origin: "null" })).status).toBe(403);
+  });
+  it("rechaza Sec-Fetch-Site: cross-site", async () => {
+    expect((await send("/duck", '{"reason":"mic","on":false}', { ...json, "Sec-Fetch-Site": "cross-site" })).status).toBe(403);
+  });
+  it("/duck y /speak exigen application/json (415 con text/plain)", async () => {
+    expect((await send("/duck", '{"reason":"mic","on":true}', { "Content-Type": "text/plain" })).status).toBe(415);
+    expect((await send("/speak", '{"text":"hola"}', { "Content-Type": "text/plain" })).status).toBe(415);
+  });
+  it("tope de /speak simultáneos -> 429 y se libera al terminar", async () => {
+    touch("p.exe");
+    const gates: Array<(b: Buffer) => void> = [];
+    h.synth.mockImplementation(() => new Promise<Buffer | null>((res) => gates.push(res)));
+    const speak = () => send("/speak", '{"text":"hola"}', json);
+    const a = speak();
+    const b = speak();
+    await new Promise((r) => setTimeout(r, 10));
+    expect((await speak()).status).toBe(429);
+    gates.forEach((g) => g(Buffer.from("RIFF")));
+    expect((await a).status).toBe(200);
+    expect((await b).status).toBe(200);
+    h.synth.mockResolvedValue(Buffer.from("RIFF"));
+    expect((await speak()).status).toBe(200);
+  });
+  it("tope de /transcribe simultáneos -> 429", async () => {
+    const gates: Array<(t: string) => void> = [];
+    h.transcribe.mockImplementation(() => new Promise<string | null>((res) => gates.push(res)));
+    const tr = () => send("/transcribe", "audio", { "Content-Type": "audio/webm" });
+    const a = tr();
+    const b = tr();
+    await new Promise((r) => setTimeout(r, 10));
+    expect((await tr()).status).toBe(429);
+    gates.forEach((g) => g("hola"));
+    expect((await a).status).toBe(200);
+    expect((await b).status).toBe(200);
+  });
+});

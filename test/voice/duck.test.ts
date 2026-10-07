@@ -167,7 +167,8 @@ describe("createDucker", () => {
     helpers[0].kill();
     await ducker.acquire("speak", ["firefox"]);
     expect(helpers).toHaveLength(2);
-    expect(helpers[1].sent[0]).toMatchObject({ cmd: "apply" });
+    expect(helpers[1].sent[0]).toMatchObject({ cmd: "restore" });
+    expect(helpers[1].sent[1]).toMatchObject({ cmd: "apply" });
   });
 
   it("nunca lanza: spawn que falla", async () => {
@@ -282,5 +283,114 @@ describe("createDucker", () => {
     ducker.closeHelper();
     expect(helpers[0].closed).toBe(true);
     expect(ducker.status().active).toEqual([]);
+  });
+});
+
+describe("carreras y reinicio del helper (I1/I2)", () => {
+  it("acquire -> release rápido antes de que el helper esté listo termina en restore, sin dejar nada atenuado", async () => {
+    const helpers: FakeHelper[] = [];
+    let open: (p: string) => void = () => {};
+    const gate = new Promise<string>((r) => (open = r));
+    const d = createDucker({
+      platform: "win32",
+      ensureExe: () => gate,
+      spawnHelper: () => {
+        const h = new FakeHelper();
+        helpers.push(h);
+        return h;
+      },
+      enabled: () => true,
+      fs: noFs,
+    });
+    const a = d.acquire("mic");
+    await new Promise((r) => setTimeout(r, 0));
+    const r = d.release("mic");
+    open("x.exe");
+    await Promise.all([a, r]);
+    const cmds = helpers.flatMap((h) => h.sent.map((s) => s.cmd));
+    expect(cmds).not.toContain("apply");
+    expect(cmds.at(-1)).toBe("restore");
+    expect(d.status().active).toEqual([]);
+  });
+
+  it("helper nuevo con estado ducked: restaura las entradas guardadas ANTES de aplicar", async () => {
+    const { ducker, helpers, files, entry } = setup();
+    await ducker.acquire("mic");
+    helpers[0].kill(); // el helper muere con Spotify atenuado
+    await ducker.acquire("speak", ["firefox"]);
+    expect(helpers).toHaveLength(2);
+    expect(helpers[1].sent[0]).toEqual({ cmd: "restore", entries: [entry] });
+    expect(helpers[1].sent[1]).toMatchObject({ cmd: "apply" });
+    expect(JSON.parse(files["state.json"])).toEqual({ entries: [entry] });
+  });
+
+  it("helper nuevo + release: restaura las entradas y solo entonces borra el archivo", async () => {
+    const { ducker, helpers, files, entry } = setup();
+    await ducker.acquire("mic");
+    helpers[0].kill();
+    await ducker.release("mic");
+    expect(helpers[1].sent[0]).toEqual({ cmd: "restore", entries: [entry] });
+    expect(files["state.json"]).toBeUndefined();
+  });
+
+  it("si la restauración falla, el archivo de estado se conserva y no se aplica encima", async () => {
+    const helpers: FakeHelper[] = [];
+    const files: Record<string, string> = {};
+    const entry = { pid: 7, name: "Spotify", saved: 0.7, ducked: 0.14 };
+    let mute = false;
+    const d = createDucker({
+      platform: "win32",
+      statePath: "s.json",
+      spawnHelper: () => {
+        const h = new FakeHelper();
+        h.reply = (req) => (mute ? { ok: false, error: "x" } : req.cmd === "apply" ? { ok: true, active: [entry] } : { ok: true, active: [] });
+        helpers.push(h);
+        return h;
+      },
+      enabled: () => true,
+      fs: { write: (p, t) => void (files[p] = t), read: (p) => files[p] ?? null, remove: (p) => void delete files[p] },
+    });
+    await d.acquire("mic");
+    helpers[0].kill();
+    mute = true;
+    await d.release("mic");
+    expect(files["s.json"]).toBeDefined();
+    expect(helpers[1].sent.map((s) => s.cmd)).toEqual(["restore"]);
+  });
+
+  it("recover: conserva el archivo si la restauración falla", async () => {
+    const entry = { pid: 7, name: "Spotify", saved: 0.7, ducked: 0.14 };
+    const files: Record<string, string> = { "s.json": JSON.stringify({ entries: [entry] }) };
+    const d = createDucker({
+      platform: "win32",
+      statePath: "s.json",
+      spawnHelper: () => {
+        const h = new FakeHelper();
+        h.reply = () => ({ ok: false });
+        return h;
+      },
+      enabled: () => true,
+      fs: { write: (p, t) => void (files[p] = t), read: (p) => files[p] ?? null, remove: (p) => void delete files[p] },
+    });
+    await d.recover();
+    expect(files["s.json"]).toBeDefined();
+  });
+
+  it("entradas sin sesión que restaurar (missing) siguen en el archivo", async () => {
+    const entry = { pid: 7, name: "Spotify", saved: 0.7, ducked: 0.14 };
+    const files: Record<string, string> = { "s.json": JSON.stringify({ entries: [entry] }) };
+    const d = createDucker({
+      platform: "win32",
+      statePath: "s.json",
+      spawnHelper: () => {
+        const h = new FakeHelper();
+        h.reply = () => ({ ok: true, active: [{ ...entry, id: "k" }] });
+        return h;
+      },
+      enabled: () => true,
+      fs: { write: (p, t) => void (files[p] = t), read: (p) => files[p] ?? null, remove: (p) => void delete files[p] },
+    });
+    await d.recover();
+    expect(JSON.parse(files["s.json"]).entries).toHaveLength(1);
   });
 });

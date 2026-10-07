@@ -103,7 +103,17 @@ let exeBuild: Promise<string> | null = null;
 
 /** Compila (una vez por proceso y por contenido del .cs) el exe del helper en <data dir>/voice/. Las llamadas concurrentes comparten la compilación. */
 export function ensureHelperExe(): Promise<string> {
-  exeBuild ??= buildHelperExe();
+  if (!exeBuild) {
+    const b = buildHelperExe();
+    exeBuild = b;
+    // Un fallo transitorio (antivirus, disco) no debe desactivar el ducking hasta reiniciar: se reintenta tras 60 s.
+    b.catch(() => {
+      const t = setTimeout(() => {
+        if (exeBuild === b) exeBuild = null;
+      }, 60_000);
+      t.unref?.();
+    });
+  }
   return exeBuild;
 }
 
@@ -239,6 +249,8 @@ export function createDucker(deps: DuckerDeps = {}) {
   let pending: { resolve: (r: HelperReply | null) => void; timer: unknown } | null = null;
   let chain: Promise<unknown> = Promise.resolve();
   let lastEntries: DuckEntry[] = [];
+  /** true tras lanzar un helper nuevo: antes de aplicar hay que restaurar lo que el anterior dejó atenuado. */
+  let freshHelper = false;
 
   function failPending() {
     if (!pending) return;
@@ -257,6 +269,7 @@ export function createDucker(deps: DuckerDeps = {}) {
       setupError = null;
       helper = h;
       helperAlive = true;
+      freshHelper = true;
       h.onLine((line) => {
         let msg: HelperReply;
         try {
@@ -287,28 +300,29 @@ export function createDucker(deps: DuckerDeps = {}) {
     }
   }
 
-  function request(payload: object): Promise<HelperReply | null> {
-    const run = async (): Promise<HelperReply | null> => {
-      const h = await ensureHelper();
-      if (!h) return null;
-      return new Promise<HelperReply | null>((resolve) => {
-        const timer = setTimer(() => {
-          if (pending) {
-            pending = null;
-            resolve(null);
-          }
-        }, REQUEST_TIMEOUT_MS);
-        pending = { resolve, timer };
-        try {
-          h.send(JSON.stringify(payload));
-        } catch {
-          failPending();
-        }
-      });
-    };
-    const p = chain.then(run, run);
+  /** Serializa los pasos contra el helper: cada paso decide qué hacer al EJECUTARSE, no al encolarse. */
+  function enqueue<T>(fn: () => Promise<T>): Promise<T> {
+    const p = chain.then(fn, fn);
     chain = p.catch(() => null);
     return p;
+  }
+
+  /** Envía una petición a un helper ya vivo. Solo se llama desde dentro de un paso encolado. */
+  function rawRequest(h: HelperProc, payload: object): Promise<HelperReply | null> {
+    return new Promise<HelperReply | null>((resolve) => {
+      const timer = setTimer(() => {
+        if (pending) {
+          pending = null;
+          resolve(null);
+        }
+      }, REQUEST_TIMEOUT_MS);
+      pending = { resolve, timer };
+      try {
+        h.send(JSON.stringify(payload));
+      } catch {
+        failPending();
+      }
+    });
   }
 
   function persist(entries: DuckEntry[]) {
@@ -329,20 +343,47 @@ export function createDucker(deps: DuckerDeps = {}) {
     return setupError ? { supported, active: activeReasons(), error: setupError } : { supported, active: activeReasons() };
   }
 
-  /** Aplica el estado deseado según los motivos activos. Nunca lanza. */
+  /**
+   * Un paso de reconciliación: lee los motivos activos al ejecutarse (y otra vez tras esperar al helper, que puede
+   * tardar en compilar/arrancar) y manda apply o restore. Nunca lanza.
+   */
+  async function reconcileStep(): Promise<void> {
+    // Sin helper vivo y sin nada ducked no hay nada que restaurar (no se lanza powershell en vano).
+    if (activeReasons().length === 0 && !helperAlive && lastEntries.length === 0) return;
+    const h = await ensureHelper();
+    if (!h) return;
+    let restoredEntries = false;
+    if (freshHelper) {
+      // Helper nuevo (el anterior murió con volúmenes atenuados): restaurar primero lo guardado, nunca atenuar encima.
+      freshHelper = false;
+      if (lastEntries.length > 0) {
+        const r = await rawRequest(h, { cmd: "restore", entries: lastEntries });
+        if (r?.ok) {
+          persist(Array.isArray(r.active) ? r.active : []);
+          restoredEntries = true;
+        } else {
+          freshHelper = true; // se reintenta en el siguiente paso; el archivo de estado se conserva
+          log("duck: no se pudo restaurar el estado previo", r?.error);
+          return;
+        }
+      }
+    }
+    const reasons = activeReasons();
+    if (reasons.length === 0) {
+      if (restoredEntries) return;
+      const r = await rawRequest(h, { cmd: "restore" });
+      if (r?.ok) persist(Array.isArray(r.active) ? r.active : []);
+      return;
+    }
+    const exclude = reasons.includes("mic") ? [] : speakExclude;
+    const r = await rawRequest(h, { cmd: "apply", level: level(), exclude });
+    if (r?.ok && Array.isArray(r.active)) persist(r.active);
+    else log("duck: apply falló", r?.error);
+  }
+
   async function sync(): Promise<void> {
     try {
-      if (activeReasons().length === 0) {
-        // Sin helper vivo y sin nada ducked no hay nada que restaurar (no se lanza powershell en vano).
-        if (!helperAlive && lastEntries.length === 0) return;
-        const r = await request({ cmd: "restore" });
-        if (r?.ok) persist([]);
-        return;
-      }
-      const exclude = leases.has("mic") ? [] : speakExclude;
-      const r = await request({ cmd: "apply", level: level(), exclude });
-      if (r?.ok && Array.isArray(r.active)) persist(r.active);
-      else log("duck: apply falló", r?.error);
+      await enqueue(reconcileStep);
     } catch (err) {
       log("duck: sync falló", String((err as Error)?.message ?? err));
     }
@@ -408,9 +449,14 @@ export function createDucker(deps: DuckerDeps = {}) {
       } catch {
         /* archivo corrupto: solo se borra */
       }
-      if (entries.length > 0) await request({ cmd: "restore", entries });
-      store.remove(statePath);
-      lastEntries = [];
+      if (entries.length === 0) {
+        store.remove(statePath);
+        lastEntries = [];
+        return;
+      }
+      // El paso de reconciliación lanza el helper y restaura estas entradas; el archivo solo se borra si se restauró.
+      lastEntries = entries;
+      await sync();
     } catch (err) {
       log("duck: recuperación falló", String((err as Error)?.message ?? err));
     }
