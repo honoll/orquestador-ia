@@ -25,20 +25,26 @@ export function decodeVector(s: string): Float32Array {
   return new Float32Array(copy.buffer);
 }
 
-interface NoteFile { rel: string; abs: string; mtimeMs: number }
+interface NoteFile { rel: string; abs: string; mtimeMs: number | null }
+interface Walk { files: NoteFile[]; skippedDirs: string[] }
 
-function walk(root: string, dir = root, out: NoteFile[] = []): NoteFile[] {
-  for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+function walk(root: string, dir = root, out: Walk = { files: [], skippedDirs: [] }): Walk {
+  let entries: fs.Dirent[];
+  try {
+    entries = fs.readdirSync(dir, { withFileTypes: true });
+  } catch {
+    out.skippedDirs.push(path.relative(root, dir).split(path.sep).join("/"));
+    return out;
+  }
+  for (const e of entries) {
     const abs = path.join(dir, e.name);
     if (e.isDirectory()) {
       if (e.name.startsWith(".") || EXCLUDED_DIRS.has(e.name)) continue;
       walk(root, abs, out);
     } else if (e.isFile() && e.name.toLowerCase().endsWith(".md")) {
-      out.push({
-        rel: path.relative(root, abs).split(path.sep).join("/"),
-        abs,
-        mtimeMs: Math.floor(fs.statSync(abs).mtimeMs),
-      });
+      let mtimeMs: number | null = null;
+      try { mtimeMs = Math.floor(fs.statSync(abs).mtimeMs); } catch { /* se omite */ }
+      out.files.push({ rel: path.relative(root, abs).split(path.sep).join("/"), abs, mtimeMs });
     }
   }
   return out;
@@ -54,9 +60,24 @@ async function embedAll(embedder: Embedder, texts: string[]): Promise<number[][]
   return all;
 }
 
-export async function indexVault(opts: { vaultPath: string; embedder: Embedder }): Promise<IndexReport> {
+let inFlight: Promise<IndexReport> | null = null;
+
+/** Indexa la bóveda; si ya hay una corrida en curso devuelve esa misma promesa. */
+export function indexVault(opts: { vaultPath: string; embedder: Embedder }): Promise<IndexReport> {
+  if (inFlight) return inFlight;
+  const p = runIndex(opts).finally(() => { if (inFlight === p) inFlight = null; });
+  inFlight = p;
+  return p;
+}
+
+async function runIndex(opts: { vaultPath: string; embedder: Embedder }): Promise<IndexReport> {
   await migrationDone;
-  const files = walk(opts.vaultPath);
+  try {
+    if (!fs.statSync(opts.vaultPath).isDirectory()) throw new Error("no es carpeta");
+  } catch {
+    return { scanned: 0, updated: 0, removed: 0, chunks: 0, failed: true };
+  }
+  const { files, skippedDirs } = walk(opts.vaultPath);
   const report: IndexReport = { scanned: files.length, updated: 0, removed: 0, chunks: 0, failed: false };
 
   const known = await db.select().from(schema.vaultNotes);
@@ -65,6 +86,7 @@ export async function indexVault(opts: { vaultPath: string; embedder: Embedder }
 
   for (const n of known) {
     if (present.has(n.path)) continue;
+    if (skippedDirs.some((d) => d === "" || n.path.startsWith(d + "/"))) continue;
     await db.transaction(async (tx) => {
       await tx.delete(schema.vaultChunks).where(eq(schema.vaultChunks.path, n.path));
       await tx.delete(schema.vaultNotes).where(eq(schema.vaultNotes.path, n.path));
@@ -73,9 +95,11 @@ export async function indexVault(opts: { vaultPath: string; embedder: Embedder }
   }
 
   for (const f of files) {
-    if (knownMtime.get(f.rel) === f.mtimeMs) continue;
+    if (f.mtimeMs === null || knownMtime.get(f.rel) === f.mtimeMs) continue;
     const title = path.basename(f.rel, path.extname(f.rel));
-    const { data, body } = parseFrontmatter(fs.readFileSync(f.abs, "utf8"));
+    let raw: string;
+    try { raw = fs.readFileSync(f.abs, "utf8"); } catch { continue; }
+    const { data, body } = parseFrontmatter(raw);
     const chunks = chunkNote(title, body);
     const embeddings = await embedAll(opts.embedder, chunks.map((c) => `${c.heading}\n${c.text}`));
     if (!embeddings) { report.failed = true; break; }
@@ -86,7 +110,7 @@ export async function indexVault(opts: { vaultPath: string; embedder: Embedder }
       await tx.insert(schema.vaultNotes).values({
         path: f.rel,
         title,
-        mtimeMs: f.mtimeMs,
+        mtimeMs: f.mtimeMs as number,
         frontmatter: JSON.stringify(data),
         indexedAt: new Date().toISOString(),
       });

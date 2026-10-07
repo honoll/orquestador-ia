@@ -24,6 +24,18 @@ describe("createOllamaEmbedder", () => {
   });
 });
 
+describe("validacion de vectores", () => {
+  const mk = (embeddings: unknown, n = 2) =>
+    createOllamaEmbedder({ fetchImpl: (async () => json({ embeddings })) as unknown as typeof fetch })(Array(n).fill("x"));
+  it("vacio, no numerico, no finito o de distinta dimension -> null", async () => {
+    expect(await mk([[], [1]])).toBeNull();
+    expect(await mk([["a"], [1]])).toBeNull();
+    expect(await mk([[1, null], [1, 2]])).toBeNull();
+    expect(await mk([[1, 2], [1]])).toBeNull();
+    expect(await mk([[1, 2], [3, 4]])).toEqual([[1, 2], [3, 4]]);
+  });
+});
+
 describe("ollamaHealth", () => {
   const f = (body: unknown, status = 200) => (async () => json(body, status)) as unknown as typeof fetch;
   it("detecta bge-m3 y bge-m3:latest", async () => {

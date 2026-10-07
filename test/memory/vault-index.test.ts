@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -104,6 +104,64 @@ describe("indexVault", () => {
     expect((await chunks()).length).toBe(before);
     const again = await indexVault({ vaultPath: vault, embedder: ok.fn });
     expect(again).toMatchObject({ updated: 2, failed: false });
+  });
+});
+
+describe("robustez", () => {
+  it("raiz inexistente -> failed sin lanzar", async () => {
+    const r = await indexVault({ vaultPath: path.join(vault, "no-existe"), embedder: fakeEmbedder().fn });
+    expect(r).toMatchObject({ scanned: 0, updated: 0, failed: true });
+  });
+
+  it("archivo que desaparece antes de leerse no lanza ni registra su mtime", async () => {
+    const e = fakeEmbedder();
+    let first = true;
+    const embedder: Embedder = async (t) => {
+      if (first) { first = false; fs.rmSync(path.join(vault, "sub", "b.md")); fs.rmSync(path.join(vault, "c.md")); }
+      return e.fn(t);
+    };
+    const r = await indexVault({ vaultPath: vault, embedder });
+    expect(r.failed).toBe(false);
+    const paths = (await notes()).map((n) => n.path);
+    expect(paths).toContain("a.md");
+    expect(paths.length).toBeLessThan(3);
+  });
+
+  it("directorio ilegible: sus notas ya indexadas no se borran", async () => {
+    await indexVault({ vaultPath: vault, embedder: fakeEmbedder().fn });
+    const orig = fs.readdirSync;
+    const spy = vi.spyOn(fs, "readdirSync").mockImplementation(((d: fs.PathLike, o?: unknown) => {
+      if (String(d).endsWith("sub")) throw new Error("EACCES");
+      return (orig as unknown as (a: unknown, b: unknown) => unknown)(d, o);
+    }) as unknown as typeof fs.readdirSync);
+    try {
+      const r = await indexVault({ vaultPath: vault, embedder: fakeEmbedder().fn });
+      expect(r.removed).toBe(0);
+    } finally { spy.mockRestore(); }
+    expect((await notes()).some((n) => n.path === "sub/b.md")).toBe(true);
+  });
+
+  it("nota con cuerpo vacio: tiene fila y no se reprocesa", async () => {
+    fs.rmSync(path.join(vault, "a.md")); fs.rmSync(path.join(vault, "c.md")); fs.rmSync(path.join(vault, "sub"), { recursive: true });
+    write("vacia.md", "");
+    const r1 = await indexVault({ vaultPath: vault, embedder: fakeEmbedder().fn });
+    expect(r1.updated).toBe(1);
+    expect((await notes()).map((n) => n.path)).toEqual(["vacia.md"]);
+    const e = fakeEmbedder();
+    const r2 = await indexVault({ vaultPath: vault, embedder: e.fn });
+    expect(r2.updated).toBe(0);
+    expect(e.batches.length).toBe(0);
+  });
+
+  it("llamadas concurrentes comparten la misma ejecucion", async () => {
+    const e = fakeEmbedder();
+    const p1 = indexVault({ vaultPath: vault, embedder: e.fn });
+    const p2 = indexVault({ vaultPath: vault, embedder: e.fn });
+    expect(p2).toBe(p1);
+    await p1;
+    const p3 = indexVault({ vaultPath: vault, embedder: e.fn });
+    expect(p3).not.toBe(p1);
+    await p3;
   });
 });
 

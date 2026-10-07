@@ -32,7 +32,10 @@ export function createOllamaEmbedder(opts: Opts = {}): Embedder {
         const json = (await res.json()) as { embeddings?: unknown };
         const emb = json?.embeddings;
         if (!Array.isArray(emb) || emb.length !== texts.length) return null;
-        if (!emb.every((v) => Array.isArray(v))) return null;
+        const dim = Array.isArray(emb[0]) ? emb[0].length : 0;
+        const valid = dim > 0 && emb.every((v) =>
+          Array.isArray(v) && v.length === dim && v.every((x) => typeof x === "number" && Number.isFinite(x)));
+        if (!valid) return null;
         return emb as number[][];
       })();
       const timeout = new Promise<null>((resolve) => {
