@@ -143,7 +143,7 @@ Introduced in F4 (2026-10-06). Decision making for request tiers and writer-step
 - Configuration: `TYPESAFE_API_KEY` in `.env` (git-ignored; `.env.example` documents it). Loaded server-side with `process.loadEnvFile`.
 - Status: `GET /api/jev/status` returns `{ configured: true|false }`.
 - Behavior: never throws. 10 s timeout, a single retry on 429/529, returns `null` on any failure. If JEV fails: tier → `normal`; guard → local rules.
-- **The key never reaches the workers:** `runProcess` (`src/lib/process-runner.ts`) strips `ORCHESTRATOR_SECRET_ENV` (`["TYPESAFE_API_KEY"]`, case-insensitive) from the child env, including from `options.env`. Only the server process reads it.
+- **The key never reaches the workers or the agy login terminal:** `runProcess` (`src/lib/process-runner.ts`) strips `ORCHESTRATOR_SECRET_ENV` (`["TYPESAFE_API_KEY"]`, case-insensitive) from the child env, including from `options.env`. The interactive agy terminal launched by `openAgyTerminal` (`src/lib/agy-terminal.ts`) also receives a filtered env via `terminalEnv()`. Only the server process reads the key.
 - Branch: `f4-jev`.
 
 **Tier System** (`src/server/plan-tier.ts`):

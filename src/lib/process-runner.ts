@@ -19,6 +19,21 @@ export function quoteWindowsArg(arg: string): string {
  */
 export const ORCHESTRATOR_SECRET_ENV: readonly string[] = ["TYPESAFE_API_KEY"];
 
+/**
+ * Retorna una copia del entorno sin las claves secretas del orquestador.
+ * Comparación sin mayúsculas (Windows).
+ */
+export function withoutOrchestratorSecrets(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const filtered = { ...env };
+  const secret = new Set(ORCHESTRATOR_SECRET_ENV.map((k) => k.toUpperCase()));
+  for (const k of Object.keys(filtered)) {
+    if (secret.has(k.toUpperCase())) {
+      delete filtered[k];
+    }
+  }
+  return filtered;
+}
+
 export interface RunProcessOptions {
   command: string;
   args: string[];
@@ -78,9 +93,7 @@ export function runProcess(options: RunProcessOptions): { promise: Promise<RunPr
     child.kill(signal);
   };
 
-  const mergedEnv = { ...process.env, ...env } as NodeJS.ProcessEnv;
-  const secret = new Set(ORCHESTRATOR_SECRET_ENV.map((k) => k.toUpperCase()));
-  for (const k of Object.keys(mergedEnv)) if (secret.has(k.toUpperCase())) delete mergedEnv[k];
+  const mergedEnv = withoutOrchestratorSecrets({ ...process.env, ...env });
 
   const promise = new Promise<RunProcessResult>((resolve) => {
     // On Windows, shell:true is required to run .CMD/.BAT files (codex.CMD, claude.cmd).
