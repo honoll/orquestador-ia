@@ -150,7 +150,6 @@ app.post("/", async (c) => {
         .set({
           memoryNotes: JSON.stringify(noExcerpt),
           memorySource: mem.source,
-          memoryNotePath: mem.notes.find((n) => n.projectNote)?.path ?? null,
           updatedAt: new Date().toISOString(),
         })
         .where(eq(schema.plans.id, planId));

@@ -291,7 +291,7 @@ describe("rutas de planes (F2)", () => {
     expect(h.retrieveMemory).toHaveBeenCalledWith(expect.objectContaining({ query: "agrega login" }));
     const p = await getPlanRow(id);
     expect(p.memorySource).toBe("semantic");
-    expect(p.memoryNotePath).toBe("Proyectos/x.md");
+    expect(p.memoryNotePath).toBeNull();
     const saved = JSON.parse(p.memoryNotes!);
     expect(saved).toHaveLength(1);
     expect(saved[0]).toMatchObject({ path: "Proyectos/x.md", projectNote: true });
