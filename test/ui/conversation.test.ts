@@ -15,13 +15,22 @@ const st = (phase: ConvState["phase"], extra: Partial<ConvState> = {}): ConvStat
   micOpen: false,
   error: null,
   lastSpeechAt: 0,
+  turnDone: false,
+  queueIdle: true,
   ...extra,
 });
 const step = (s: ConvState, e: ConvEvent, now = 1, o = on) => convReducer(s, e, now, o);
 
 describe("convReducer", () => {
   it("estado inicial", () => {
-    expect(initialConv(5)).toEqual({ phase: "starting", micOpen: false, error: null, lastSpeechAt: 5 });
+    expect(initialConv(5)).toEqual({
+      phase: "starting",
+      micOpen: false,
+      error: null,
+      lastSpeechAt: 5,
+      turnDone: false,
+      queueIdle: true,
+    });
   });
 
   it("started -> listening con micrófono abierto", () => {
@@ -61,13 +70,51 @@ describe("convReducer", () => {
     expect(step(st("thinking"), { type: "replyStarted" }, 1, barge).micOpen).toBe(true);
   });
 
-  it("turnDone sin audio -> listening; con audio sigue y speakIdle -> listening", () => {
+  it("turnDone sin audio -> listening; con audio en cola sigue y speakIdle -> listening", () => {
     expect(step(st("thinking"), { type: "turnDone", hasAudio: false }).phase).toBe("listening");
-    const a = step(st("thinking"), { type: "turnDone", hasAudio: true });
+    const q = step(st("thinking"), { type: "speakQueued" });
+    expect(q.queueIdle).toBe(false);
+    const a = step(q, { type: "turnDone", hasAudio: true });
     expect(a.phase).toBe("speaking");
     const b = step(a, { type: "speakIdle" });
     expect(b.phase).toBe("listening");
     expect(b.micOpen).toBe(true);
+  });
+
+  it("speakIdle antes de turnDone se queda en speaking; turnDone después -> listening", () => {
+    let s = step(st("thinking"), { type: "speakQueued" });
+    s = step(s, { type: "speakIdle" });
+    expect(s.phase).toBe("speaking");
+    expect(s.micOpen).toBe(false);
+    s = step(s, { type: "turnDone", hasAudio: true });
+    expect(s.phase).toBe("listening");
+    expect(s.micOpen).toBe(true);
+  });
+
+  it("vaciado a mitad de respuesta: idle, queued, idle, turnDone -> listening", () => {
+    let s = step(st("thinking"), { type: "speakQueued" });
+    s = step(s, { type: "speakIdle" });
+    s = step(s, { type: "speakQueued" });
+    expect(s.phase).toBe("speaking");
+    expect(s.queueIdle).toBe(false);
+    s = step(s, { type: "speakIdle" });
+    expect(s.phase).toBe("speaking");
+    s = step(s, { type: "turnDone", hasAudio: true });
+    expect(s.phase).toBe("listening");
+  });
+
+  it("transcribed reinicia las banderas del turno", () => {
+    const s = step(st("transcribing", { turnDone: true, queueIdle: false }), { type: "transcribed", text: "x" });
+    expect(s).toMatchObject({ phase: "thinking", turnDone: false, queueIdle: true });
+  });
+
+  it("entrar a listening reinicia el reloj de inactividad", () => {
+    const s = step(st("speaking", { lastSpeechAt: 0, turnDone: true }), { type: "speakIdle" }, 99_000);
+    expect(s.lastSpeechAt).toBe(99_000);
+  });
+
+  it("announce desde listening -> speaking", () => {
+    expect(step(st("listening", { micOpen: true }), { type: "announce" }).phase).toBe("speaking");
   });
 
   it("interrupt en speaking/thinking -> listening", () => {

@@ -33,12 +33,16 @@ export type ConvState = {
   micOpen: boolean;
   error: string | null;
   lastSpeechAt: number;
+  /** El turno actual ya terminó de llegar (turnDone). */
+  turnDone: boolean;
+  /** La cola de reproducción está vacía. */
+  queueIdle: boolean;
 };
 
 export const CONV_IDLE_MS = 180_000;
 
 export function initialConv(now: number): ConvState {
-  return { phase: "starting", micOpen: false, error: null, lastSpeechAt: now };
+  return { phase: "starting", micOpen: false, error: null, lastSpeechAt: now, turnDone: false, queueIdle: true };
 }
 
 function micFor(phase: ConvPhase, bargeIn: boolean): boolean {
@@ -52,8 +56,10 @@ export function convReducer(
   opts: { bargeIn: boolean },
 ): ConvState {
   if (s.phase === "ended" || s.phase === "error") return s;
+  const p0 = s.phase;
   const to = (phase: ConvPhase, extra: Partial<ConvState> = {}): ConvState => ({
     ...s,
+    ...(phase === "listening" && p0 !== "listening" ? { lastSpeechAt: now } : {}),
     ...extra,
     phase,
     micOpen: micFor(phase, opts.bargeIn),
@@ -69,19 +75,22 @@ export function convReducer(
     case "speechEnd":
       return p === "listening" ? to("transcribing", { lastSpeechAt: now }) : s;
     case "transcribed":
-      return p === "transcribing" ? to("thinking") : s;
+      return p === "transcribing" ? to("thinking", { turnDone: false, queueIdle: true }) : s;
     case "discarded":
       return p === "transcribing" ? to("listening") : s;
     case "replyStarted":
-    case "speakQueued":
       return p === "thinking" || p === "speaking" ? to("speaking") : s;
+    case "speakQueued":
+      return p === "thinking" || p === "speaking" ? to("speaking", { queueIdle: false }) : s;
     case "speakIdle":
-      return p === "speaking" ? to("listening") : s;
+      if (p !== "speaking") return s;
+      return s.turnDone ? to("listening", { queueIdle: true }) : to("speaking", { queueIdle: true });
     case "turnDone":
       if (p !== "thinking" && p !== "speaking") return s;
-      return e.hasAudio ? to("speaking") : to("listening");
+      if (!e.hasAudio || s.queueIdle) return to("listening", { turnDone: true });
+      return to("speaking", { turnDone: true });
     case "interrupt":
-      return p === "speaking" || p === "thinking" ? to("listening") : s;
+      return p === "speaking" || p === "thinking" ? to("listening", { queueIdle: true }) : s;
     case "announce":
       return p === "listening" ? to("speaking") : s;
     case "idleTimeout":
