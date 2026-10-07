@@ -5,6 +5,7 @@ export type WhisperState = "stopped" | "starting" | "warming" | "ready" | "faile
 export interface VoiceStatus {
   whisper: { available: boolean; state: WhisperState };
   piper: { available: boolean; voice: string };
+  duck?: { supported: boolean; enabled: boolean };
 }
 
 /** Duración máxima de una grabación (el servidor rechaza más de 120 s). */

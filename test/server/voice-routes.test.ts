@@ -162,6 +162,14 @@ describe("POST /duck", () => {
     expect(await r.json()).toEqual({ supported: true, active: ["mic"] });
     expect(h.ducker.acquire).toHaveBeenCalledWith("speak", ["firefox"]);
   });
+  it("acepta un Blob JSON como el de navigator.sendBeacon (pagehide)", async () => {
+    const r = await voiceRoute.request("/duck", {
+      method: "POST",
+      body: new Blob(['{"reason":"mic","on":false}'], { type: "application/json" }),
+    });
+    expect(r.status).toBe(200);
+    expect(h.ducker.release).toHaveBeenCalledWith("mic");
+  });
   it("on:false libera", async () => {
     const r = await duck('{"reason":"mic","on":false}');
     expect(await r.json()).toEqual({ supported: true, active: [] });

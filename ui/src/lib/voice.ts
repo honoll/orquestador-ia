@@ -9,6 +9,7 @@ import {
   writeAutoRead,
   type VoiceStatus,
 } from "./voice-utils";
+import { duckLease, setDuckAvailability } from "./duck";
 
 // ─── API ───────────────────────────────────────────────────────────────────────
 
@@ -20,7 +21,9 @@ async function errorFrom(r: Response): Promise<string> {
 export async function fetchVoiceStatus(): Promise<VoiceStatus> {
   const r = await fetch("/api/voice/status");
   if (!r.ok) throw new Error(await errorFrom(r));
-  return r.json();
+  const status = (await r.json()) as VoiceStatus;
+  setDuckAvailability(status.duck);
+  return status;
 }
 
 export function useVoiceStatus() {
@@ -81,9 +84,12 @@ function setSpeech(next: SpeechState) {
 }
 
 function cleanupAudio() {
+  duckLease("speak").stop();
   if (audio) {
     audio.onended = null;
     audio.onerror = null;
+    audio.onplaying = null;
+    audio.onpause = null;
     audio.pause();
     audio.removeAttribute("src");
     audio = null;
@@ -122,6 +128,10 @@ export async function playSpeech(id: string, text: string, summary: boolean, ori
       setSpeech({ ...speech, id: null, phase: "idle", origin: null });
     };
     audio.onerror = () => fail("No se pudo reproducir el audio.");
+    audio.onplaying = () => {
+      if (!ctrl.signal.aborted) duckLease("speak").start();
+    };
+    audio.onpause = () => duckLease("speak").stop();
     await audio.play();
     if (ctrl.signal.aborted) return;
     setSpeech({ id, phase: "playing", origin, error: null });
@@ -219,6 +229,7 @@ export function useVoiceRecorder(onText: (text: string) => void) {
   const release = useCallback(() => {
     streamRef.current?.getTracks().forEach((t) => t.stop());
     streamRef.current = null;
+    duckLease("mic").stop();
     if (timer.current) clearInterval(timer.current);
     timer.current = null;
   }, []);
@@ -338,6 +349,8 @@ export function useVoiceRecorder(onText: (text: string) => void) {
       setError(micErrorMessage(err));
       return;
     }
+    // Ducking solo cuando la grabación realmente arrancó; sin esperar la respuesta del servidor.
+    duckLease("mic").start();
     timer.current = setInterval(() => {
       const ms = Date.now() - startedAt.current;
       setElapsed(ms);
