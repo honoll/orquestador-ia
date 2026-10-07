@@ -9,7 +9,7 @@ Lo que se agregó (detalle técnico en `CLAUDE.md`, sección "Local voice (F5)")
 - **Lectura:** Piper (`es_MX-claude-high`); botón "Escuchar" y lectura automática (interruptor; resumen de 3 oraciones, solo respuestas de esta sesión)
 - **Ducking:** baja el volumen de las demás apps mientras grabas o Piper lee; helper `.exe` detached (sobrevive aunque mates node) con archivo de estado `voice-duck.json` y recuperación al arrancar
 - **Seguridad:** `originGuard` en todo `/api/*` mutante (403 si el `Origin` no es la UI propia), JSON obligatorio en `/duck` y `/speak`, topes de 10 MB / 120 s / 64 KB y máximo 2 trabajos simultáneos (429)
-- **Instalación:** `C:	oolsoz` (fuera de AppData por la virtualización MSIX). Variables `VOICE_DIR`, `WHISPER_PORT`, `PIPER_VOICE`, `FFMPEG_PATH`, `VOICE_DUCK`, `VOICE_DUCK_LEVEL` (ver `.env.example`)
+- **Instalación:** `C:\tools\voz` (fuera de AppData por la virtualización MSIX). Variables `VOICE_DIR`, `WHISPER_PORT`, `PIPER_VOICE`, `FFMPEG_PATH`, `VOICE_DUCK`, `VOICE_DUCK_LEVEL` (ver `.env.example`)
 
 Verificado en vivo: ida y vuelta Piper → Whisper con el texto exacto ("Hola Alejandro, el plan terminó con tres pasos y costó 2.5 mil tokens, ¿quieres que lo revise?"), transcripción en caliente 0.36 s; Spotify 0.69 → 0.14 → 0.69 al soltar y tras matar node a la fuerza. Revisión final: 0 críticos, 5 importantes (todos corregidos salvo la documentación, hecha ahora).
 
