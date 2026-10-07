@@ -1,7 +1,22 @@
-import { describe, it, expect, beforeAll, vi } from "vitest";
+import { describe, it, expect, beforeAll, afterEach, vi } from "vitest";
 import { randomUUID } from "node:crypto";
 
-const h = vi.hoisted(() => ({ runPlanDag: vi.fn(async () => {}), running: new Set<string>(), retrySynthesis: vi.fn(async () => true), cancelPlanRun: vi.fn(() => true) }));
+const h = vi.hoisted(() => ({ runPlanDag: vi.fn(async () => {}), running: new Set<string>(), retrySynthesis: vi.fn(async () => true), cancelPlanRun: vi.fn(() => true),
+  gate: null as Promise<void> | null,
+  tier: { tier: "normal", confidence: null, source: "fallback" } as { tier: string; confidence: number | null; source: string },
+  generatePlan: vi.fn(async () => ({
+    steps: [{ stepIndex: 0, key: "s1", dependsOn: [], writes: false, estimatedTokens: 1000, description: "paso", adapter: "codex", model: "m", reason: "r", prompt: "p" }],
+    estimatedTokens: 1000,
+  })),
+}));
+vi.mock("../../src/server/plan-tier.js", async () => {
+  const actual = await vi.importActual<typeof import("../../src/server/plan-tier.js")>("../../src/server/plan-tier.js");
+  return { ...actual, classifyTier: vi.fn(async () => { if (h.gate) await h.gate; return h.tier; }), trivialWrites: vi.fn(async () => false) };
+});
+vi.mock("../../src/server/planner.js", async () => {
+  const actual = await vi.importActual<typeof import("../../src/server/planner.js")>("../../src/server/planner.js");
+  return { ...actual, generatePlan: h.generatePlan };
+});
 vi.mock("../../src/server/plan-scheduler.js", () => ({
   runPlanDag: h.runPlanDag,
   isPlanRunning: (id: string) => h.running.has(id),
@@ -13,6 +28,7 @@ const { migrationDone } = await import("../../src/db/migrate.js");
 const { db, schema } = await import("../../src/db/index.js");
 const { default: plansRoute } = await import("../../src/server/routes/plans.js");
 const { eq } = await import("drizzle-orm");
+const tierMod = await import("../../src/server/plan-tier.js");
 
 beforeAll(async () => { await migrationDone; });
 
@@ -30,6 +46,8 @@ const getPlanRow = (id: string) => db.select().from(schema.plans).where(eq(schem
 const getStep = (id: string) => db.select().from(schema.planSteps).where(eq(schema.planSteps.id, id)).then((x) => x[0]);
 const req = (path: string, method = "POST", body?: unknown) =>
   plansRoute.request(path, { method, headers: { "Content-Type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) });
+
+afterEach(() => { h.tier = { tier: "normal", confidence: null, source: "fallback" }; h.gate = null; });
 
 describe("rutas de planes (F2)", () => {
   it("run-all usa el planificador; 409 si ya corre", async () => {
@@ -201,5 +219,103 @@ describe("rutas de planes (F2)", () => {
     const r = await req(`/${id}/steps/${s}`, "PATCH", { prompt: "nuevo", adapter: "claude", model: "claude-opus-5-5", description: "d2", status: "succeeded", result: "falso" });
     expect(r.status).toBe(200);
     expect(await getStep(s)).toMatchObject({ prompt: "nuevo", adapter: "claude", model: "claude-opus-5-5", description: "d2", status: "pending", result: null });
+  });
+
+  it("PATCH de paso: cambiar el prompt anula la aprobación de la guardia", async () => {
+    const id = await mk();
+    const stepId = randomUUID();
+    await db.insert(schema.planSteps).values({ id: stepId, planId: id, stepIndex: 0, description: "x", adapter: "codex", prompt: "p", status: "pending", guardApproved: 1, guardFlags: "[]" });
+    const r = await req(`/${id}/steps/${stepId}`, "PATCH", { prompt: "otro" });
+    expect(await r.json()).toMatchObject({ prompt: "otro", guardApproved: 0, guardFlags: null });
+  });
+
+  it("PATCH de paso: cambiar el prompt de un plan en pausa de guardia quita la pausa", async () => {
+    const id = await mk({ pauseReason: "guard" });
+    const s = await mkStep(id, { guardFlags: "[]" });
+    await req(`/${id}/steps/${s}`, "PATCH", { description: "solo descripción" });
+    expect((await getPlanRow(id)).pauseReason).toBe("guard");
+    await req(`/${id}/steps/${s}`, "PATCH", { prompt: "otro" });
+    expect((await getPlanRow(id)).pauseReason).toBeNull();
+    const budget = await mk({ pauseReason: "budget" });
+    const s2 = await mkStep(budget);
+    await req(`/${budget}/steps/${s2}`, "PATCH", { prompt: "otro" });
+    expect((await getPlanRow(budget)).pauseReason).toBe("budget");
+  });
+
+  it("trivial: un paso agy, sin Opus, y arranca solo", async () => {
+    h.generatePlan.mockClear();
+    h.tier = { tier: "trivial", confidence: 0.95, source: "jev" };
+    const r = await req("/", "POST", { description: "resume a.txt" });
+    const { id } = (await r.json()) as { id: string };
+    await vi.waitFor(async () => expect(h.runPlanDag).toHaveBeenCalledWith(id, expect.any(String), { mode: "all" }));
+    expect(h.generatePlan).not.toHaveBeenCalled();
+    const steps = await db.select().from(schema.planSteps).where(eq(schema.planSteps.planId, id));
+    expect(steps).toHaveLength(1);
+    // trivialWrites → false: solo lee, así que corre sin permisos de escritura.
+    expect(steps[0]).toMatchObject({ adapter: "agy", model: "gemini-3.8-flash-low", stepKey: "s1", writes: 0, readOnly: 1 });
+    const p = await db.select().from(schema.plans).where(eq(schema.plans.id, id)).then((x) => x[0]);
+    expect(p).toMatchObject({ tier: "trivial", tierSource: "jev", status: "pending" });
+  });
+
+  it("trivial que escribe: readOnly 0", async () => {
+    h.tier = { tier: "trivial", confidence: 0.95, source: "jev" };
+    vi.mocked(tierMod.trivialWrites).mockResolvedValueOnce(true);
+    const r = await req("/", "POST", { description: "corrige el typo en a.txt" });
+    const { id } = (await r.json()) as { id: string };
+    await vi.waitFor(async () => expect(h.runPlanDag).toHaveBeenCalledWith(id, expect.any(String), { mode: "all" }));
+    const steps = await db.select().from(schema.planSteps).where(eq(schema.planSteps.planId, id));
+    expect(steps[0]).toMatchObject({ writes: 1, readOnly: 0 });
+  });
+
+  it("crítico: Opus planea, se agrega la revisión de solo lectura y NO arranca solo", async () => {
+    h.tier = { tier: "critical", confidence: 0.9, source: "jev" };
+    h.runPlanDag.mockClear();
+    const r = await req("/", "POST", { description: "migra producción" });
+    const { id } = (await r.json()) as { id: string };
+    await vi.waitFor(async () => {
+      const p = await db.select().from(schema.plans).where(eq(schema.plans.id, id)).then((x) => x[0]);
+      expect(p.status).toBe("pending");
+    });
+    const steps = (await db.select().from(schema.planSteps).where(eq(schema.planSteps.planId, id))).sort((a, b) => a.stepIndex - b.stepIndex);
+    expect(steps.at(-1)).toMatchObject({ stepKey: "review", adapter: "claude", readOnly: 1, writes: 0 });
+    expect(h.runPlanDag).not.toHaveBeenCalled();
+  });
+
+  it("cancelar la generación durante la clasificación se respeta: sin pasos ni arranque", async () => {
+    h.tier = { tier: "trivial", confidence: 0.95, source: "jev" };
+    h.runPlanDag.mockClear();
+    h.generatePlan.mockClear();
+    let release!: () => void;
+    h.gate = new Promise<void>((r) => { release = r; });
+    const r = await req("/", "POST", { description: "resume b.txt" });
+    const { id } = (await r.json()) as { id: string };
+    expect((await req(`/${id}/cancel-generation`)).status).toBe(200);
+    release();
+    await new Promise((res) => setTimeout(res, 200));
+    expect((await getPlanRow(id)).status).toBe("cancelled");
+    expect(await db.select().from(schema.planSteps).where(eq(schema.planSteps.planId, id))).toHaveLength(0);
+    expect(h.runPlanDag).not.toHaveBeenCalled();
+    expect(h.generatePlan).not.toHaveBeenCalled();
+  });
+  it("aprobar paso: marca guardApproved y relanza; 409 si corre; 404 si no existe", async () => {
+    const id = await mk({ pauseReason: "guard" });
+    const stepId = randomUUID();
+    await db.insert(schema.planSteps).values({ id: stepId, planId: id, stepIndex: 0, description: "x", adapter: "codex", prompt: "p", status: "pending", guardFlags: JSON.stringify([{ id: "git", label: "l", probability: 1, source: "local" }]) });
+    expect((await req(`/${id}/steps/${randomUUID()}/approve`)).status).toBe(404);
+    const noFlags = await mkStep(id);
+    const r409 = await req(`/${id}/steps/${noFlags}/approve`);
+    expect(r409.status).toBe(409);
+    expect(await r409.json()).toEqual({ error: "Solo se puede aprobar un paso detenido por la guardia" });
+    const otherPlan = await mk();
+    const otherStep = await mkStep(otherPlan, { guardFlags: "[{}]" });
+    expect((await req(`/${otherPlan}/steps/${otherStep}/approve`)).status).toBe(409);
+    expect(h.runPlanDag).not.toHaveBeenCalledWith(otherPlan, expect.anything(), expect.anything());
+    h.running.add(id);
+    expect((await req(`/${id}/steps/${stepId}/approve`)).status).toBe(409);
+    h.running.delete(id);
+    expect((await req(`/${id}/steps/${stepId}/approve`)).status).toBe(202);
+    const s = await db.select().from(schema.planSteps).where(eq(schema.planSteps.id, stepId)).then((x) => x[0]);
+    expect(s.guardApproved).toBe(1);
+    expect(h.runPlanDag).toHaveBeenLastCalledWith(id, expect.any(String), { mode: "all" });
   });
 });

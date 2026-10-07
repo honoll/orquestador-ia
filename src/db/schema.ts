@@ -40,7 +40,11 @@ export const plans = sqliteTable("plans", {
   usedTokens: integer("used_tokens").notNull().default(0),
   maxParallel: integer("max_parallel").notNull().default(3),
   // Por qué está pausado el plan: cuota agotada o presupuesto de tokens.
-  pauseReason: text("pause_reason", { enum: ["quota", "budget"] }),
+  pauseReason: text("pause_reason", { enum: ["quota", "budget", "guard"] }),
+  // Nivel de rigor del plan (clasificado por JEV o por el respaldo local) y de dónde salió.
+  tier: text("tier", { enum: ["trivial", "normal", "critical"] }),
+  tierConfidence: real("tier_confidence"),
+  tierSource: text("tier_source", { enum: ["jev", "fallback"] }),
   synthesis: text("synthesis"),
   synthesisStatus: text("synthesis_status", { enum: ["running", "succeeded", "failed"] }),
   synthesisError: text("synthesis_error"),
@@ -75,6 +79,12 @@ export const planSteps = sqliteTable("plan_steps", {
   // 1 si el paso escribe en el proyecto, 0 si es solo lectura.
   writes: integer("writes"),
   estimatedTokens: integer("estimated_tokens"),
+  // 1 = el adapter corre sin permisos de escritura.
+  readOnly: integer("read_only").notNull().default(0),
+  // JSON: arreglo de banderas (GuardFlag[]) que la guardia detectó en el prompt.
+  guardFlags: text("guard_flags"),
+  // 1 = el usuario aprobó correr el paso aunque la guardia lo marcó.
+  guardApproved: integer("guard_approved").notNull().default(0),
 });
 
 export const runs = sqliteTable("runs", {

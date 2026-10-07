@@ -101,6 +101,7 @@ export async function runPlanStep(options: StepRunOptions): Promise<StepOutcome>
         cwd,
         sessionId,
         timeoutSec: 1800,
+        readOnly: step.readOnly === 1,
         claudeProfileEnv,
         onLog: (stream, chunk) => {
           broadcast({

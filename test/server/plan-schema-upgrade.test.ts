@@ -33,9 +33,9 @@ describe("actualización de una base anterior a F2", () => {
     const { db, schema } = await import("../../src/db/index.js");
 
     const plan = (await db.select().from(schema.plans))[0];
-    expect(plan).toMatchObject({ id: "p1", description: "viejo", usedTokens: 0, maxParallel: 3, budgetTokens: null });
+    expect(plan).toMatchObject({ id: "p1", description: "viejo", usedTokens: 0, maxParallel: 3, budgetTokens: null, tier: null, tierConfidence: null, tierSource: null });
     const step = (await db.select().from(schema.planSteps))[0];
-    expect(step).toMatchObject({ id: "s1", stepKey: null, dependsOn: null, writes: null, estimatedTokens: null });
+    expect(step).toMatchObject({ id: "s1", stepKey: null, dependsOn: null, writes: null, estimatedTokens: null, readOnly: 0, guardFlags: null, guardApproved: 0 });
     const accounts = await db.select().from(schema.agyAccounts);
     expect(accounts.filter((a) => a.active === 1).map((a) => a.id)).toEqual(["a"]);
     await expect(db.insert(schema.agyAccounts).values({ id: "z", label: "Z", active: 1 })).rejects.toThrow();

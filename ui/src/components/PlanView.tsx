@@ -176,6 +176,9 @@ interface PlanStep {
   dependsOn: string | null;
   writes: number | null;
   estimatedTokens: number | null;
+  readOnly: number;
+  guardFlags: string | null;
+  guardApproved: number;
 }
 
 export interface Plan {
@@ -191,7 +194,10 @@ export interface Plan {
   budgetTokens: number | null;
   usedTokens: number;
   maxParallel: number;
-  pauseReason: "quota" | "budget" | null;
+  pauseReason: "quota" | "budget" | "guard" | null;
+  tier: "trivial" | "normal" | "critical" | null;
+  tierConfidence: number | null;
+  tierSource: "jev" | "fallback" | null;
   synthesis: string | null;
   synthesisStatus: "running" | "succeeded" | "failed" | null;
   synthesisError: string | null;
@@ -262,6 +268,11 @@ function GeneratingView({
       {/* Header */}
       <div className="flex items-center gap-4 px-6 h-12 border-b border-edge shrink-0">
         <span className="font-mono text-xs text-text-secondary">/plan</span>
+        {plan.tier && (
+          <span className="font-mono text-[10px] text-text-secondary">
+            tier: {TIER_TEXT[plan.tier]} ({tierShort(plan)})<span className="sr-only"> ({tierDetail(plan)})</span>
+          </span>
+        )}
         <div className="ml-auto flex items-center gap-3">
           <div className="flex items-center gap-1.5">
             <span className="h-1 w-1 rounded-full bg-accent animate-pulse-dot" />
@@ -480,6 +491,12 @@ function StepCard({
             >
               {step.writes === 0 ? "lee" : "escribe"}
             </span>
+            {step.readOnly === 1 && (
+              <span className="font-mono text-[10px] border border-edge rounded px-1 text-text-secondary shrink-0">solo lectura</span>
+            )}
+            {step.guardApproved === 1 && (
+              <span className="font-mono text-[10px] border border-ok/40 rounded px-1 text-ok shrink-0">aprobado</span>
+            )}
             {((step.inputTokens ?? 0) + (step.outputTokens ?? 0) > 0) && (
               <span className="font-mono text-[10px] text-text-tertiary shrink-0">
                 {formatTokens((step.inputTokens ?? 0) + (step.outputTokens ?? 0))}
@@ -1194,8 +1211,70 @@ function BudgetBar({ plan, disabled, onSave }: { plan: Plan; disabled: boolean; 
   );
 }
 
+const TIER_TEXT = { trivial: "trivial", normal: "normal", critical: "crítico" } as const;
+
+function tierShort(plan: Plan): string {
+  return plan.tierSource === "jev" ? `JEV ${Math.round((plan.tierConfidence ?? 0) * 100)} %` : "sin JEV";
+}
+
+function tierDetail(plan: Plan): string {
+  return plan.tierSource === "jev"
+    ? `JEV · confianza ${Math.round((plan.tierConfidence ?? 0) * 100)} %`
+    : "sin JEV: se trató como normal";
+}
+
+function TierBadge({ plan }: { plan: Plan }) {
+  if (!plan.tier) return null;
+  const tone = plan.tier === "critical" ? "text-err border-err/40" : plan.tier === "trivial" ? "text-ok border-ok/40" : "text-text-secondary border-edge";
+  const detail = tierDetail(plan);
+  return (
+    <span className={`rounded border px-1.5 py-0.5 font-mono text-[10px] ${tone}`} title={detail}>
+      {TIER_TEXT[plan.tier]}<span className="sr-only"> ({detail})</span>
+    </span>
+  );
+}
+
+function CriticalBanner({ plan, busy, onApprove }: { plan: Plan; busy: boolean; onApprove: () => void }) {
+  const untouched = plan.steps.every((s) => s.status === "pending");
+  if (plan.tier !== "critical" || plan.status !== "pending" || plan.pauseReason || !untouched || busy) return null;
+  return (
+    <div role="status" className="mx-4 my-2 flex flex-wrap items-center gap-3 rounded-lg border border-err/40 bg-err/10 px-3 py-2 font-mono text-[11px] text-text-primary">
+      <span>Plan crítico: revisa los pasos (incluye una revisión de Opus al final) y apruébalo para ejecutarlo.</span>
+      <button onClick={onApprove} className="ml-auto rounded border border-err/50 min-h-6 px-2 py-0.5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent text-err hover:text-text-primary">aprobar y ejecutar</button>
+    </div>
+  );
+}
+
+function GuardBanner({ plan, onApprove, onCancel, onContinue }: { plan: Plan; onApprove: (stepId: string) => void; onCancel: () => void; onContinue: () => void }) {
+  if (plan.status !== "pending" || plan.pauseReason !== "guard") return null;
+  const step = plan.steps.find((s) => s.guardFlags && s.guardApproved !== 1 && s.status === "pending");
+  if (!step) {
+    // Pausa de guardia sin paso marcado (p. ej. se editó su prompt): no dejar el plan sin salida.
+    return (
+      <div role="status" className="mx-4 my-2 flex flex-wrap items-center gap-3 rounded-lg border border-accent/40 bg-accent-dim px-3 py-2 font-mono text-[11px] text-text-primary">
+        <span>Plan pausado por la guardia, pero ya no hay pasos marcados. Continúa para volver a evaluarlos.</span>
+        <button onClick={onContinue} className="ml-auto rounded border border-ok/40 min-h-6 px-2 py-0.5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent text-ok hover:text-text-primary">continuar</button>
+      </div>
+    );
+  }
+  let flags: { label: string; probability: number; source: string }[] = [];
+  try { flags = JSON.parse(step.guardFlags!); } catch { /* sin detalle */ }
+  return (
+    <div role="alert" className="mx-4 my-2 space-y-2 rounded-lg border border-err/40 bg-err/10 px-3 py-2 font-mono text-[11px] text-text-primary">
+      <p>La guardia detuvo el paso <strong>{step.stepKey ?? step.stepIndex + 1} — {step.description}</strong> antes de lanzarlo:</p>
+      <ul className="list-disc pl-5">
+        {flags.map((f, i) => <li key={i}>{f.label} · {f.source === "jev" ? `JEV ${Math.round(f.probability * 100)} %` : "regla local"}</li>)}
+      </ul>
+      <div className="flex gap-2">
+        <button onClick={() => onApprove(step.id)} className="rounded border border-ok/40 min-h-6 px-2 py-0.5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent text-ok hover:text-text-primary">aprobar este paso</button>
+        <button onClick={onCancel} className="rounded border border-edge min-h-6 px-2 py-0.5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent text-text-secondary hover:text-text-primary">cancelar</button>
+      </div>
+    </div>
+  );
+}
+
 function PauseBanner({ plan, onContinue }: { plan: Plan; onContinue: () => void }) {
-  if (plan.status !== "pending" || !plan.pauseReason) return null;
+  if (plan.status !== "pending" || !plan.pauseReason || plan.pauseReason === "guard") return null;
   const text = plan.pauseReason === "budget"
     ? `Plan pausado por presupuesto: llevas ${formatTokens(plan.usedTokens)} de ${formatTokens(plan.budgetTokens ?? 0)} tokens.`
     : "Plan pausado por cuota de Antigravity. Cambia de cuenta en el panel de cuentas y continúa.";
@@ -1283,7 +1362,7 @@ export function PlanView({
       return;
     }
 
-    if (!["plan:step", "plan:done", "plan:budget", "plan:synthesis"].includes(e.type)) return;
+    if (!["plan:step", "plan:done", "plan:budget", "plan:synthesis", "plan:tier", "plan:guard"].includes(e.type)) return;
     if (e.planId !== plan.id) return;
 
     if (e.type === "plan:step") {
@@ -1299,6 +1378,17 @@ export function PlanView({
       }
     }
 
+    if (e.type === "plan:tier") {
+      setPlan((p) => ({ ...p, tier: e.tier, tierConfidence: e.confidence, tierSource: e.source }));
+    }
+
+    if (e.type === "plan:guard") {
+      setPlan((p) => ({
+        ...p,
+        steps: p.steps.map((s) => (s.id === e.stepId ? { ...s, guardFlags: JSON.stringify(e.flags) } : s)),
+      }));
+    }
+
     if (e.type === "plan:budget") {
       setPlan((p) => ({ ...p, usedTokens: e.usedTokens, budgetTokens: e.budgetTokens }));
     }
@@ -1312,6 +1402,12 @@ export function PlanView({
       setMode("idle");
       setWaitingForNext(false);
       queryClient.invalidateQueries({ queryKey: ["plans"] });
+      if (e.paused === "guard") {
+        fetch(`/api/plans/${e.planId}`)
+          .then((r) => (r.ok ? r.json() : null))
+          .then((p: Plan | null) => { if (p) setPlan(p); })
+          .catch(() => {});
+      }
     }
   }, [lastEvent, plan.id, mode, queryClient]);
 
@@ -1443,6 +1539,15 @@ export function PlanView({
     if (!(await postAction(`steps/${stepId}/retry`))) await reloadPlan();
   }
 
+  async function handleApproveStep(stepId: string) {
+    setMode("running-all");
+    const r = await postAction(`steps/${stepId}/approve`);
+    if (r) {
+      setPlan((p) => ({ ...p, pauseReason: null, status: "running", steps: p.steps.map((s) => (s.id === stepId ? { ...s, guardApproved: 1 } : s)) }));
+    }
+    if (!r) await reloadPlan();
+  }
+
   async function handleStop() {
     if (isGenerating) {
       await fetch(`/api/plans/${plan.id}/cancel-generation`, { method: "POST" });
@@ -1464,9 +1569,11 @@ export function PlanView({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ prompt: newPrompt }),
     });
+    // Igual que el servidor: el prompt nuevo borra banderas/aprobación de la guardia y quita su pausa.
     setPlan((prev) => ({
       ...prev,
-      steps: prev.steps.map((s) => (s.id === step.id ? { ...s, prompt: newPrompt } : s)),
+      pauseReason: prev.pauseReason === "guard" ? null : prev.pauseReason,
+      steps: prev.steps.map((s) => (s.id === step.id ? { ...s, prompt: newPrompt, guardFlags: null, guardApproved: 0 } : s)),
     }));
   }
 
@@ -1522,6 +1629,7 @@ export function PlanView({
   const succeededCount = plan.steps.filter((s) => s.status === "succeeded").length;
   const totalCost = plan.steps.reduce((acc, s) => acc + (s.costUsd ?? 0), 0);
   // Plan has failed/pending steps that can be resumed
+  const criticalUntouched = plan.tier === "critical" && plan.status === "pending" && plan.steps.every((s) => s.status === "pending");
   const canResume = !isRunning && !allDone && (failedCount > 0 || pendingCount > 0);
 
   return (
@@ -1538,6 +1646,7 @@ export function PlanView({
           ← volver
         </button>
         <span className="font-mono text-xs text-text-secondary">/plan</span>
+        <TierBadge plan={plan} />
 
         <div className="ml-auto flex items-center gap-2 flex-wrap justify-end">
           {changedFiles.length > 0 && (
@@ -1574,14 +1683,16 @@ export function PlanView({
           )}
           {!allDone && !isRunning && failedCount === 0 && !plan.pauseReason && plan.status !== "completed" && (
             <>
+              {!criticalUntouched && (
               <button
                 onClick={hasCancelled ? handleResume : handleRunAll}
                 className="font-mono text-[11px] text-ok hover:text-text-primary border border-ok/30 rounded px-2.5 py-1 transition-colors"
               >
                 {plan.status === "cancelled" || plan.status === "failed" || hasCancelled ? "reanudar todo" : "ejecutar todo"}
               </button>
+              )}
               {/* paso a paso no reanuda pasos cancelados; para un plan cancelado solo se ofrece reanudar todo */}
-              {plan.status !== "cancelled" && !hasCancelled && (
+              {plan.status !== "cancelled" && !hasCancelled && !criticalUntouched && (
                 <button
                   onClick={handleRunNext}
                   className="font-mono text-[11px] text-accent hover:text-text-primary border border-accent/30 rounded px-2.5 py-1 transition-colors"
@@ -1631,6 +1742,8 @@ export function PlanView({
       <BudgetBar plan={plan} disabled={isRunning} onSave={handleSettings} />
       {actionError && <p role="alert" className="mx-4 font-mono text-[10px] text-err">{actionError}</p>}
       <PauseBanner plan={plan} onContinue={handleContinue} />
+      <CriticalBanner plan={plan} busy={mode !== "idle"} onApprove={handleRunAll} />
+      <GuardBanner plan={plan} onApprove={handleApproveStep} onCancel={handleStop} onContinue={handleContinue} />
 
       {/* ── Resizable body: [plan+preview] / [chat] ── */}
       <ResizableGroup direction="vertical" className="flex-1 min-h-0">

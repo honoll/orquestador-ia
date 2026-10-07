@@ -21,4 +21,14 @@ describe("esquema F2", () => {
     const s = await db.select().from(schema.planSteps).where(eq(schema.planSteps.id, id)).then((r) => r[0]);
     expect(s).toMatchObject({ stepKey: "s1", dependsOn: "[]", writes: 0, estimatedTokens: 5000 });
   });
+  it("F4: tier en plans y solo-lectura/guardia en plan_steps con defaults", async () => {
+    const planId = randomUUID();
+    await db.insert(schema.plans).values({ id: planId, description: "d", status: "pending", tier: "critical", tierConfidence: 0.91, tierSource: "jev" });
+    const id = randomUUID();
+    await db.insert(schema.planSteps).values({ id, planId, stepIndex: 0, description: "x", adapter: "claude", prompt: "p", status: "pending" });
+    const p = await db.select().from(schema.plans).where(eq(schema.plans.id, planId)).then((r) => r[0]);
+    const s = await db.select().from(schema.planSteps).where(eq(schema.planSteps.id, id)).then((r) => r[0]);
+    expect(p).toMatchObject({ tier: "critical", tierConfidence: 0.91, tierSource: "jev" });
+    expect(s).toMatchObject({ readOnly: 0, guardFlags: null, guardApproved: 0 });
+  });
 });

@@ -70,6 +70,9 @@ CREATE TABLE IF NOT EXISTS plans (
   used_tokens INTEGER NOT NULL DEFAULT 0,
   max_parallel INTEGER NOT NULL DEFAULT 3,
   pause_reason TEXT,
+  tier TEXT,
+  tier_confidence REAL,
+  tier_source TEXT,
   synthesis TEXT,
   synthesis_status TEXT,
   synthesis_error TEXT,
@@ -99,7 +102,10 @@ CREATE TABLE IF NOT EXISTS plan_steps (
   step_key TEXT,
   depends_on TEXT,
   writes INTEGER,
-  estimated_tokens INTEGER
+  estimated_tokens INTEGER,
+  read_only INTEGER NOT NULL DEFAULT 0,
+  guard_flags TEXT,
+  guard_approved INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project_id);
@@ -255,6 +261,12 @@ async function migrate() {
     "ALTER TABLE plan_steps ADD COLUMN depends_on TEXT",
     "ALTER TABLE plan_steps ADD COLUMN writes INTEGER",
     "ALTER TABLE plan_steps ADD COLUMN estimated_tokens INTEGER",
+    "ALTER TABLE plans ADD COLUMN tier TEXT",
+    "ALTER TABLE plans ADD COLUMN tier_confidence REAL",
+    "ALTER TABLE plans ADD COLUMN tier_source TEXT",
+    "ALTER TABLE plan_steps ADD COLUMN read_only INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE plan_steps ADD COLUMN guard_flags TEXT",
+    "ALTER TABLE plan_steps ADD COLUMN guard_approved INTEGER NOT NULL DEFAULT 0",
   ]) {
     try { await client.execute(stmt); } catch { /* column already exists */ }
   }

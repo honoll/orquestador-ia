@@ -133,6 +133,49 @@ Tables: `projects`, `tasks`, `runs`, `plans`, `plan_steps`, `agy_accounts`, `agy
 - 3-column layout: `AdapterPanel` | `Chat` | `ProjectPanel`
 - `PlanView` renders inside `Chat` when a plan is active
 
+## JEV (TypeSafe)
+
+Introduced in F4 (2026-10-06). Decision making for request tiers and writer-step approval.
+
+**JEV Client** (`src/lib/jev.ts`):
+- TypeSafe AI's "System One" model: returns typed decisions instead of text.
+- API: `POST https://api.typesafe.ai/v1/systemone`, `Authorization: Bearer $TYPESAFE_API_KEY`, model `jev-latest`.
+- Configuration: `TYPESAFE_API_KEY` in `.env` (git-ignored; `.env.example` documents it). Loaded server-side with `process.loadEnvFile`.
+- Status: `GET /api/jev/status` returns `{ configured: true|false }`.
+- Behavior: never throws. 10 s timeout, a single retry on 429/529, returns `null` on any failure. If JEV fails: tier → `normal`; guard → local rules.
+- **The key never reaches the workers or the agy login terminal:** `runProcess` (`src/lib/process-runner.ts`) strips `ORCHESTRATOR_SECRET_ENV` (`["TYPESAFE_API_KEY"]`, case-insensitive) from the child env, including from `options.env`. The interactive agy terminal launched by `openAgyTerminal` (`src/lib/agy-terminal.ts`) also receives a filtered env via `terminalEnv()`. Only the server process reads the key.
+- Branch: `f4-jev`.
+
+**Tier System** (`src/server/plan-tier.ts`):
+- Run-time: `POST /api/plans`, before Opus planning.
+- **Question:** Choice: trivial | normal | critical?
+- **Fallback:** confidence < 0.7 or JEV unavailable → normal (source: "fallback").
+- **Stored:** plan.tier, plan.tier_confidence, plan.tier_source (`jev` | `fallback`).
+- **Tiers:**
+  - **trivial** — no Opus; single-step plan with `agy` (Antigravity) + `gemini-3.8-flash-low`. One Noul question: "will this step write?" (unknown → writes). If it only reads, the step is stored with `read_only = 1` (agy runs without `--dangerously-skip-permissions`). Runs immediately (auto-approved).
+  - **normal** — today's behavior: Opus plans, waits for "run".
+  - **critical** — Opus plans a full DAG, then adds a final read-only `review` step (Opus 5.5, `claude` adapter, depends on all leaf steps) that the user must approve and execute. UI shows "Plan crítico" badge and "aprobar y ejecutar" button.
+
+**Guard** (`src/server/plan-guard.ts` + scheduler):
+- Run-time: before launching each unapproved writer step.
+- **Input (same as the worker sees):** the original step prompt first and complete, then each dependency result clipped like `buildStepPrompt` (`DEP_RESULT_MAX_CHARS` = 4000); if the total exceeds `JEV_STATE_MAX_CHARS` (8000) the dependencies are trimmed evenly (never the prompt). The project folder **path** is sent, not its contents.
+- **Questions:** three Noul (probability of "yes"):
+  1. Does the step involve git commit, push, history, or remotes?
+  2. Does it do destructive writes (delete / overwrite in bulk)?
+  3. Does it touch files outside the project or system/user config?
+- **Decision:** any ≥ 0.5 → step not launched; plan paused (`pending` + `pause_reason: "guard"`); flags saved in plan_steps.guard_flags; UI shows "aprobar este paso" or "cancelar"; WS broadcasts `plan:guard`.
+- **Local rules on dependency results, always:** dependency results are agent-produced (untrusted) text, so `localGuard` always runs over them (clipped as the worker sees them) and its flags (source `local`) are merged with JEV's (same id → JEV's flag wins). The prompt itself is judged only by JEV when JEV answers (the regexes do not understand "do not push").
+- **Local rules:** git push/commit/rebase/`reset --hard`/remotes, `git branch -D`; `rm -r`/`-rf`, `git clean -f*`, `Remove-Item -Recurse`, `rmdir /s`/`rd /s`, `del /s`, DROP/TRUNCATE; paths outside the project, sensitive folders, `/etc/`.
+- **Approval:** `POST /api/plans/:planId/steps/:stepId/approve` (409 unless paused + step pending with flags) sets `guard_approved`. Consumed on launch together with `guard_flags`; a retry re-evaluates. **Editing the step prompt clears approval and flags and, if the plan was paused by the guard, clears `pause_reason`.** If the plan is guard-paused with no flagged pending step, `GuardBanner` offers "continuar" (`POST /continue`).
+- **Readers:** never gated by guard.
+- **Read-only steps (`read_only=1`: critical review, read-only trivial):** claude runs without write tools, agy without `--dangerously-skip-permissions`, codex with `--sandbox read-only` instead of `--full-auto` (`buildCodexArgs`). All `ROUTABLE_ADAPTERS` honor `readOnly`, so changing a read-only step's adapter via PATCH is allowed (a future adapter that does not honor it must be rejected there).
+- **Fallback (no JEV):** conservative local regex rules over prompt + dependencies (do NOT understand negations; guard only works well with JEV).
+- **The guard is a speed bump, not a sandbox:** it reduces surprises; it does not stop a writer agent from doing something it did not detect.
+- **Critical-plan approval is enforced in the UI** ("aprobar y ejecutar"); the routes (`run-all`, etc.) do not check it.
+- **Verification:** the "tier normal by fallback" path was verified by tests (mocked JEV), not live.
+
+**Privacy:** step prompts and clipped results are sent to TypeSafe; data retention is undocumented → do not use JEV with client projects until retention policy is reviewed.
+
 ## Antigravity Accounts
 
 Introduced in F1 (2026-10-06). Support for multiple agy accounts with usage tracking and quota management.

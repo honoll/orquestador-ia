@@ -7,6 +7,7 @@ import { defaultBudget, extendBudget, MAX_PARALLEL_LIMIT, toDagSteps, pickRunnab
 import { ROUTABLE_ADAPTERS } from "../../config/models.js";
 import { runPlanDag, cancelPlanRun, isPlanRunning, retrySynthesis } from "../plan-scheduler.js";
 import { broadcast } from "../ws.js";
+import { classifyTier, trivialWrites, makeTrivialStep, addReviewStep, TRIVIAL_ESTIMATED_TOKENS } from "../plan-tier.js";
 
 const app = new Hono();
 
@@ -32,6 +33,12 @@ async function clearSynthesis(planId: string) {
   await db.update(schema.plans)
     .set({ synthesisStatus: null, synthesis: null, synthesisError: null, updatedAt: new Date().toISOString() })
     .where(eq(schema.plans.id, planId));
+}
+
+/** True si el plan ya no existe o la generación fue cancelada mientras corría el segundo plano. */
+async function generationCancelled(planId: string): Promise<boolean> {
+  const p = await getPlan(planId);
+  return !p || p.status === "cancelled";
 }
 
 // Active plan-generation kill functions
@@ -87,8 +94,26 @@ app.post("/", async (c) => {
     const RATE_LIMIT_WAIT_MS = 60_000;
     let generated: GeneratedPlan | null = null;
     let lastErr: any = null;
+    let reviewKey: string | undefined;
 
-    for (let attempt = 0; attempt <= MAX_PLAN_GEN_RETRIES; attempt++) {
+    const tier = await classifyTier(body.description);
+    if (await generationCancelled(planId)) return;
+    await db.update(schema.plans)
+      .set({ tier: tier.tier, tierConfidence: tier.confidence, tierSource: tier.source, updatedAt: new Date().toISOString() })
+      .where(eq(schema.plans.id, planId));
+    broadcast({ type: "plan:tier", planId, ...tier, timestamp: new Date().toISOString() } as any);
+    const trivial = tier.tier === "trivial";
+
+    if (trivial) {
+      const writes = await trivialWrites(body.description);
+      if (await generationCancelled(planId)) return;
+      generated = {
+        steps: [makeTrivialStep(body.description, writes)],
+        estimatedTokens: TRIVIAL_ESTIMATED_TOKENS,
+      };
+    }
+
+    for (let attempt = 0; !trivial && attempt <= MAX_PLAN_GEN_RETRIES; attempt++) {
       try {
         generated = await generatePlan(
           body.description,
@@ -145,6 +170,14 @@ app.post("/", async (c) => {
       return;
     }
 
+    if (await generationCancelled(planId)) return;
+
+    if (tier.tier === "critical") {
+      const withReview = addReviewStep(generated!, body.description);
+      reviewKey = withReview.reviewKey;
+      generated = withReview;
+    }
+
     for (const step of generated!.steps) {
       await db.insert(schema.planSteps).values({
         id: randomUUID(),
@@ -153,6 +186,8 @@ app.post("/", async (c) => {
         stepKey: step.key,
         dependsOn: JSON.stringify(step.dependsOn),
         writes: step.writes ? 1 : 0,
+        // Revisión crítica y trivial que solo lee: el adapter corre sin permisos de escritura.
+        readOnly: step.key === reviewKey || (trivial && !step.writes) ? 1 : 0,
         estimatedTokens: step.estimatedTokens,
         description: step.description,
         adapter: step.adapter,
@@ -183,6 +218,10 @@ app.post("/", async (c) => {
       plan: { ...plan, steps: planSteps },
       timestamp: new Date().toISOString(),
     } as any);
+
+    if (trivial && !(await generationCancelled(planId))) {
+      runPlanDag(planId, cwd, { mode: "all" }).catch((err) => console.error("runPlanDag trivial error:", err));
+    }
   })();
 
   return c.json({ id: planId, status: "generating", description: body.description, steps: [] }, 202);
@@ -228,12 +267,19 @@ app.patch("/:id", async (c) => {
 
 // Edit a step: solo description, adapter, model y prompt (adapter validado). Otros campos se ignoran en silencio.
 app.patch("/:planId/steps/:stepId", async (c) => {
-  const { stepId } = c.req.param();
+  const { planId, stepId } = c.req.param();
   const body = await c.req.json<Record<string, unknown>>().catch(() => ({} as Record<string, unknown>));
-  const set: { description?: string; adapter?: string; model?: string | null; prompt?: string } = {};
+  const set: { description?: string; adapter?: string; model?: string | null; prompt?: string; guardApproved?: number; guardFlags?: string | null } = {};
   if (typeof body.description === "string") set.description = body.description;
-  if (typeof body.prompt === "string") set.prompt = body.prompt;
+  if (typeof body.prompt === "string") {
+    set.prompt = body.prompt;
+    // Un prompt nuevo invalida la aprobación y las banderas de la guardia.
+    set.guardApproved = 0;
+    set.guardFlags = null;
+  }
   if (typeof body.model === "string" || body.model === null) set.model = body.model;
+  // Cambiar el adapter de un paso readOnly es seguro: todos los ROUTABLE_ADAPTERS (claude, codex, agy) honran
+  // readOnly. Si se agrega uno que no lo honre, aquí hay que rechazar (400) ese cambio para pasos readOnly.
   if (body.adapter !== undefined) {
     if (typeof body.adapter !== "string" || !(ROUTABLE_ADAPTERS as readonly string[]).includes(body.adapter)) {
       return c.json({ error: `adapter debe ser uno de: ${ROUTABLE_ADAPTERS.join(", ")}` }, 400);
@@ -244,6 +290,12 @@ app.patch("/:planId/steps/:stepId", async (c) => {
     await db.update(schema.planSteps)
       .set(set)
       .where(eq(schema.planSteps.id, stepId));
+  }
+  if (set.prompt !== undefined) {
+    // Un prompt nuevo ya no es el que detuvo la guardia: el plan sale de la pausa (se vuelve a evaluar al correr).
+    await db.update(schema.plans)
+      .set({ pauseReason: null, updatedAt: new Date().toISOString() })
+      .where(and(eq(schema.plans.id, planId), eq(schema.plans.pauseReason, "guard")));
   }
   const step = await db.select().from(schema.planSteps).where(eq(schema.planSteps.id, stepId)).then((r) => r[0]);
   return c.json(step);
@@ -305,6 +357,21 @@ app.post("/:id/resume", async (c) => {
 
   runPlanDag(id, await planCwd(plan), { mode: "all" }).catch((err) => console.error("runPlanDag resume error:", err));
   return c.json({ ok: true, planId: id }, 202);
+});
+
+// Approve a step flagged by the guard and relaunch the plan
+app.post("/:planId/steps/:stepId/approve", async (c) => {
+  const { planId, stepId } = c.req.param();
+  const plan = await db.select().from(schema.plans).where(eq(schema.plans.id, planId)).then((r) => r[0]);
+  const step = await db.select().from(schema.planSteps).where(eq(schema.planSteps.id, stepId)).then((r) => r[0]);
+  if (!plan || !step || step.planId !== planId) return c.json({ error: "Not found" }, 404);
+  if (isPlanRunning(planId)) return c.json(RUNNING, 409);
+  if (plan.pauseReason !== "guard" || step.status !== "pending" || step.guardFlags == null) {
+    return c.json({ error: "Solo se puede aprobar un paso detenido por la guardia" }, 409);
+  }
+  await db.update(schema.planSteps).set({ guardApproved: 1 }).where(eq(schema.planSteps.id, stepId));
+  runPlanDag(planId, await planCwd(plan), { mode: "all" }).catch((err) => console.error("runPlanDag approve error:", err));
+  return c.json({ ok: true }, 202);
 });
 
 // Retry a single step: reset it to pending and run it (plus remaining pending)
