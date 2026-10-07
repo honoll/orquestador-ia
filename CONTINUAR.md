@@ -1,8 +1,32 @@
 # Orquestador-IA — Continuación y Estado
 
+## F6 — Asistente de voz sin manos ("Platicar") · completado 2026-10-07
+
+**Rama:** `f6-asistente-voz` (pendiente: correcciones de la revisión final y merge a `main`, solo cuando Alejandro lo diga)
+
+Lo que se agregó (detalle técnico en `CLAUDE.md`, sección "Voice assistant (F6)"):
+- **Modo Platicar:** botón en el chat; el detector de voz (Silero, local) escucha, Whisper transcribe, una sesión persistente de agy (solo lectura, un proceso por conversación) responde en streaming, y Piper lo lee oración por oración con prefetch. Interrumpir con Esc, espacio o clic; interruptor de barge-in (umbral estricto 0.8, sin falsas interrupciones con Alexa BT + Blue Snowball); frase máx. 60 s; 3 min de inactividad en la UI y 10 min en el servidor
+- **Memoria por turno:** top 3 notas ≥ 0.55, 6000 caracteres, solo semántica
+- **Planes por voz:** marcador `<<<ACCION plan {...}>>>` (no se lee en voz alta); la confirmación debe EMPEZAR con una palabra de confirmación (decisión de Alejandro); "Va, lo estoy preparando…" inmediato, espera de `plan:ready` en segundo plano y aviso al arrancar/terminar; los críticos piden aprobación en pantalla
+- **Persistencia:** cada turno es un task+run (adapter `agy`) en la conversación; pláticas sin proyecto en "Pláticas sin proyecto"; nota `Orquestador/Platicas/AAAA-MM-DD-HHmm-<slug>.md` (`tipo: platica-orquestador`, ≥ 2 turnos del usuario, menor confianza en la memoria)
+- **Dependencia nueva:** `@ricky0123/vad-web` 0.0.31 + `onnxruntime-web` 1.30.0; los assets (~16.6 MB) se sirven localmente en `/vad/`
+- Uso de agy con fuente `voice` (~11.6k tokens de entrada por turno, casi todo de las instrucciones propias de agy)
+
+Verificado en vivo (2026-10-07): primer delta en 2.5–8.5 s, contexto retenido entre turnos, plan lanzado por voz (falló por `API 500 INTERNAL` de Google, no por el código), 2 notas de plática indexadas. 670 tests, lint 0 errores.
+
+Pendientes:
+- Correcciones de la revisión final de F6 y merge de `f6-asistente-voz` a `main`
+- Menores diferidos (lista en `CLAUDE.md`): "PENDIENTE" en Relacionado sin proyecto, no se vio el aviso "El plan falló", interrumpir no cancela el turno en el servidor, deltas repetidos en el reintento, etc.
+- Si Whisper solo devuelve "Gracias", el micrófono manda silencio: reconectar el Blue Snowball
+- **`npm audit` en la UI: 12 vulnerabilidades preexistentes** (vite/babel/react-router/nanoid); tarea aparte sugerida
+- **Llave de JEV (`TYPESAFE_API_KEY`) sigue pendiente**
+- Siguiente fase: por definir
+
+---
+
 ## F5 — Voz local (Whisper + Piper + ducking) · completado 2026-10-06
 
-**Rama:** `f5-voz-local` (sin merge a `main` todavía; falta la prueba de micrófono de Alejandro)
+**Rama:** `f5-voz-local` (ya integrada a `main`, af3b7a0)
 
 Lo que se agregó (detalle técnico en `CLAUDE.md`, sección "Local voice (F5)"):
 - **Dictado:** botón de micrófono que se mantiene presionado, graba `audio/webm`, ffmpeg → WAV 16 kHz, `whisper-server` local (large-v3-turbo q5_0, puerto 8091, arranque perezoso: primera vez ~40 s, luego ~0.3 s). El texto se **agrega** a la caja del chat y nunca se envía solo
@@ -15,10 +39,9 @@ Verificado en vivo: ida y vuelta Piper → Whisper con el texto exacto ("Hola Al
 
 Pendientes:
 - **Alejandro prueba el micrófono** en el navegador real (dictado, "Escuchar", lectura automática, ducking)
-- Merge de `f5-voz-local` a `main` (y de `f3b-memoria-obsidian` si sigue abierta)
 - Menores diferidos: id en el protocolo del helper, watchdog del helper, exponer el error de compilación en `/status`, POST de ducking encadenados, Vivaldi/Arc/Chromium en la lista de navegadores, lease por cliente, reaplicar el ducking a apps que empiezan a sonar a mitad, whisper adoptado que muere, limpiar `duck-helper-*.exe` viejos, validar `Host` (DNS rebinding)
 - **Llave de JEV (`TYPESAFE_API_KEY`) sigue pendiente:** sin ella los tiers caen a `normal` y la guardia usa solo reglas locales
-- Siguiente fase: por definir (F6)
+- Siguiente fase: F6 (hecha, ver arriba)
 
 ---
 

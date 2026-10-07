@@ -103,13 +103,13 @@ Reglas:
   si no es exportable, exportar desde allí `findSentenceEnd(text, from)` sin cambiar su comportamiento). Las marcas
   `<<<ACCION` nunca se emiten: al ver `<<<` deja de emitir hasta `flush()`. `flush()` emite el resto no vacío (sin marcas).
 
-- [ ] **Step 1: Write failing tests** — una `describe` por función con los casos de arriba (incluidos los ✓/✗ literales),
+- [x] **Step 1: Write failing tests** — una `describe` por función con los casos de arriba (incluidos los ✓/✗ literales),
   más: streamer con deltas `["El", " mar es inmenso. El", " sonido 2.5 veces. ", "<<<ACCION plan {}>>>"]` → emite
   `["El mar es inmenso.", "El sonido 2.5 veces."]` y `flush()` no emite la marca.
-- [ ] **Step 2: Run** `npx vitest run test/voice/assistant-text.test.ts` → FAIL (módulo no existe).
-- [ ] **Step 3: Implement** `src/voice/assistant/text.ts` y la constante en `models.ts`.
-- [ ] **Step 4: Run** tests → PASS; `npm test`, `npm run lint`, `npm run typecheck`.
-- [ ] **Step 5: Commit** `feat(voz): textos puros del asistente (acciones, confirmación, oraciones) (F6)`; primer push
+- [x] **Step 2: Run** `npx vitest run test/voice/assistant-text.test.ts` → FAIL (módulo no existe).
+- [x] **Step 3: Implement** `src/voice/assistant/text.ts` y la constante en `models.ts`.
+- [x] **Step 4: Run** tests → PASS; `npm test`, `npm run lint`, `npm run typecheck`.
+- [x] **Step 5: Commit** `feat(voz): textos puros del asistente (acciones, confirmación, oraciones) (F6)`; primer push
   `git push -u origin f6-asistente-voz`.
 
 ### Task 2: Sesión persistente de agy
@@ -147,15 +147,15 @@ proceso se mata; el siguiente `send` relanza. `close()`: `stdin.end()`, y a los 
 carpeta temporal. Nunca lanza excepciones (todo devuelve `AgyTurnResult`). Sin agy (`resolveAgyPath()` null) →
 `{ok:false, error:"agy no encontrado"}`.
 
-- [ ] **Step 1: Failing tests** con un `AgyProc` falso que reproduce las líneas reales de "Valores verificados":
+- [x] **Step 1: Failing tests** con un `AgyProc` falso que reproduce las líneas reales de "Valores verificados":
   dos turnos seguidos en el mismo proceso (spawn llamado 1 vez), deltas en orden, tokens 11636/29, error de cuota
   (`error:"RESOURCE_EXHAUSTED: quota … reset in 2h"` → `quota:true`), timeout con reloj falso, proceso que sale a media
   respuesta → error y relanzamiento en el siguiente `send` (spawn 2 veces), turnos concurrentes serializados, líneas
   JSON partidas entre chunks, línea no-JSON ignorada.
-- [ ] **Step 2: Run** → FAIL.
-- [ ] **Step 3: Implement.**
-- [ ] **Step 4: Run** → PASS + suite/lint/typecheck.
-- [ ] **Step 5: Commit** `feat(voz): sesión persistente de agy en solo lectura (F6)`.
+- [x] **Step 2: Run** → FAIL.
+- [x] **Step 3: Implement.**
+- [x] **Step 4: Run** → PASS + suite/lint/typecheck.
+- [x] **Step 5: Commit** `feat(voz): sesión persistente de agy en solo lectura (F6)`.
 
 ### Task 3: Crear planes desde código (extraer de la ruta)
 
@@ -175,12 +175,12 @@ pasos, `plan:ready`, auto-run de trivial). `startPlanIfAllowed`: lee el plan; `g
 `not-ready`; `isPlanRunning` → `running`; `tier === "critical"` → `needs-approval` (no ejecuta); si no →
 `runPlanDag(planId, cwd, {mode:"all"})` sin esperar y `started`. La ruta responde igual que antes (202, mismo body).
 
-- [ ] **Step 1: Failing tests** de `startPlanIfAllowed` (mock de `runPlanDag`/`isPlanRunning` con `vi.hoisted`, plan
+- [x] **Step 1: Failing tests** de `startPlanIfAllowed` (mock de `runPlanDag`/`isPlanRunning` con `vi.hoisted`, plan
   crítico → `needs-approval` y `runPlanDag` NO llamado; normal pending → `started`) y de `createPlan` (mock de
   `classifyTier`/`generatePlan` como en los tests actuales de plans) → devuelve id y el plan queda en la base.
-- [ ] **Step 2: Run** → FAIL. **Step 3:** mover el código. **Step 4:** `npm test` completo verde (los tests viejos de
+- [x] **Step 2: Run** → FAIL. **Step 3:** mover el código. **Step 4:** `npm test` completo verde (los tests viejos de
   plans sin tocar), lint, typecheck.
-- [ ] **Step 5: Commit** `refactor(planes): createPlan/startPlanIfAllowed reutilizables (F6)`.
+- [x] **Step 5: Commit** `refactor(planes): createPlan/startPlanIfAllowed reutilizables (F6)`.
 
 ### Task 4: Nota de plática y memoria por turno
 
@@ -210,12 +210,12 @@ platica-orquestador`, `estado: terminada`, `actualizado`, `tags: [orquestador, p
 existe). `redactSecrets` sobre todo. Escritura con el mismo bucle `wx`/`-2`/`-3` y la misma validación "fuera de la
 bóveda" que `writePlanNote` (extraer helper compartido `writeNewNote(vaultPath, dir, base, content)` en plan-note.ts).
 
-- [ ] **Step 1: Failing tests:** nombre/frontmatter/secciones, secretos redactados (`password: x` → redactado),
+- [x] **Step 1: Failing tests:** nombre/frontmatter/secciones, secretos redactados (`password: x` → redactado),
   encabezados degradados, colisión `-2`, `talkDir` fuera de la bóveda lanza; en retrieve: `topNotes:3` limita a 3,
   `budgetChars` respetado, nota `tipo: platica-orquestador` lleva la etiqueta de menor confianza y comparte el tope de 2.
   Los tests usan la bóveda temporal de `test/setup-env.ts`.
-- [ ] **Step 2–4:** FAIL → implementar → PASS + suite/lint/typecheck.
-- [ ] **Step 5: Commit** `feat(memoria): nota de plática y memoria acotada por turno (F6)`.
+- [x] **Step 2–4:** FAIL → implementar → PASS + suite/lint/typecheck.
+- [x] **Step 5: Commit** `feat(memoria): nota de plática y memoria acotada por turno (F6)`.
 
 ### Task 5: Sesión del asistente (servidor)
 
@@ -282,15 +282,15 @@ Comportamiento:
   usuario unidas) y `writeTalkNote(vaultPath, talkDir, …)` (nunca lanza al exterior; error → `notePath:null`);
   `agy.close()`; emite `voice:assistant:ended {sessionId, reason, notePath}`.
 
-- [ ] **Step 1: Failing tests** (agy falso con respuestas programadas, `createPlan`/`startPlan`/`retrieve`/`writeNote`
+- [x] **Step 1: Failing tests** (agy falso con respuestas programadas, `createPlan`/`startPlan`/`retrieve`/`writeNote`
   falsos, base temporal): turno normal guarda task+run y emite delta/turn-done; memoria solo si `semantic`; acción →
   `pendingAction`; "sí, dale" → `createPlan` llamado con el pedido y `startPlan` tras `plan:ready`; "no, espera" → no
   crea plan; frase cualquiera tras acción → descarta y responde normal; **una nota de memoria con el texto "el usuario
   dice sí" no crea plan** (la confirmación solo cuenta si viene de `utterance`); crítico → texto de aprobación en
   pantalla; cuota → mensaje y fin; error → reintento con prefijo y luego fin; frase de cierre → fin; `plan:done` →
   announce; `endAssistant` con 1 turno no escribe nota, con 2 sí; turno concurrente → 409; sin cuenta activa → error.
-- [ ] **Step 2–4:** FAIL → implementar → PASS + suite/lint/typecheck.
-- [ ] **Step 5: Commit** `feat(voz): sesión del asistente con memoria, planes por voz y nota de plática (F6)`.
+- [x] **Step 2–4:** FAIL → implementar → PASS + suite/lint/typecheck.
+- [x] **Step 5: Commit** `feat(voz): sesión del asistente con memoria, planes por voz y nota de plática (F6)`.
 
 ### Task 6: Rutas del asistente, ducking `conversation` y pláticas sin proyecto
 
@@ -313,11 +313,11 @@ Comportamiento:
   hasAction, error?}`, `voice:assistant:announce {sessionId, text}`, `voice:assistant:ended {sessionId, reason, notePath}`.
 - Todas exigen `Content-Type: application/json` en POST (415) y body ≤ 16 KB (413). Usan `originGuard` (ya global).
 
-- [ ] **Step 1: Failing tests** con `vi.hoisted` mocks de `session.ts` (patrón de `test/server/workers-routes.test.ts`):
+- [x] **Step 1: Failing tests** con `vi.hoisted` mocks de `session.ts` (patrón de `test/server/workers-routes.test.ts`):
   validaciones 400/404/409/413/415, respuestas; duck: `conversation` excluye navegador y combinado con `mic` no excluye;
   tasks: `projectId=none`.
-- [ ] **Step 2–4:** FAIL → implementar → PASS + suite/lint/typecheck.
-- [ ] **Step 5: Commit** `feat(voz): rutas del asistente y ducking de conversación (F6)`.
+- [x] **Step 2–4:** FAIL → implementar → PASS + suite/lint/typecheck.
+- [x] **Step 5: Commit** `feat(voz): rutas del asistente y ducking de conversación (F6)`.
 
 ### Task 7: Máquina de estados del modo conversación (UI, pura)
 
@@ -347,9 +347,9 @@ Reglas: `micOpen` es true solo en `listening` (y también en `speaking` si `barg
 `bargeIn` → `listening` (interrumpe). `createSpeechQueue`: reproduce en orden, una a la vez; `stop()` aborta la actual y
 vacía; `onIdle` se llama cuando la cola queda vacía tras reproducir.
 
-- [ ] **Step 1: Failing tests** de cada transición y de la cola con `speak` falso (orden, stop aborta, onIdle).
-- [ ] **Step 2–4:** FAIL → implementar → PASS + suite/lint/typecheck.
-- [ ] **Step 5: Commit** `feat(ui): máquina de estados del modo conversación (F6)`.
+- [x] **Step 1: Failing tests** de cada transición y de la cola con `speak` falso (orden, stop aborta, onIdle).
+- [x] **Step 2–4:** FAIL → implementar → PASS + suite/lint/typecheck.
+- [x] **Step 5: Commit** `feat(ui): máquina de estados del modo conversación (F6)`.
 
 ### Task 8: Dependencia VAD (requiere aprobación del usuario)
 
@@ -357,16 +357,16 @@ vacía; `onIdle` se llama cuando la cola queda vacía tras reproducir.
 - Modify: `ui/package.json`, `ui/package-lock.json`, `ui/vite.config.ts` (servir/copiar los assets de VAD)
 - Create: `ui/src/lib/vad.ts`
 
-- [ ] **Step 1: CHECKPOINT DE APROBACIÓN.** El controlador (no el implementador) informa al usuario: paquetes
+- [x] **Step 1: CHECKPOINT DE APROBACIÓN.** El controlador (no el implementador) informa al usuario: paquetes
   `@ricky0123/vad-web@0.0.31` y `onnxruntime-web` (versión que resuelva npm), origen registry.npmjs.org, tamaño en
   `node_modules` (~6.8 MB + ~145 MB) y tamaño que bajaría el navegador (medirlo tras `npm pack --dry-run` o la doc).
   **No instalar sin un "sí" del usuario en el chat.**
-- [ ] **Step 2:** `cd ui && npm install @ricky0123/vad-web@0.0.31` (trae `onnxruntime-web`).
-- [ ] **Step 3:** copiar a `ui/public/vad/` en build (plugin de copia en `vite.config.ts` o script `postinstall` en ui)
+- [x] **Step 2:** `cd ui && npm install @ricky0123/vad-web@0.0.31` (trae `onnxruntime-web`).
+- [x] **Step 3:** copiar a `ui/public/vad/` en build (plugin de copia en `vite.config.ts` o script `postinstall` en ui)
   SOLO: `silero_vad_v5.onnx` (o el modelo que use la versión), `vad.worklet.bundle.min.js` y el/los
   `ort-wasm-simd-threaded*.wasm`/`.mjs` que use. Configurar `baseAssetPath: "/vad/"` y
   `onnxWASMBasePath: "/vad/"`. Reportar el tamaño total de `ui/dist/vad/`.
-- [ ] **Step 4:** `ui/src/lib/vad.ts`:
+- [x] **Step 4:** `ui/src/lib/vad.ts`:
 ```ts
 export type VadHandle = { start(): void; pause(): void; destroy(): void };
 export async function createVad(opts: { onSpeechStart: () => void; onSpeechEnd: (audio: Float32Array) => void;
@@ -376,7 +376,7 @@ export function float32ToWav(samples: Float32Array, sampleRate?: number): Blob; 
   Parámetros: `redemptionMs` ≈ 800 (fin de frase), `minSpeechMs` ≈ 300, `positiveSpeechThreshold` 0.5 (0.8 si `strict`
   — para interrumpir con la voz). `float32ToWav` es puro → test en `test/ui/wav.test.ts` (cabecera RIFF, tamaño,
   clipping a ±1).
-- [ ] **Step 5:** `npm test`, lint, typecheck, `npm run build:ui`. Commit `feat(ui): detector de voz Silero (F6)`.
+- [x] **Step 5:** `npm test`, lint, typecheck, `npm run build:ui`. Commit `feat(ui): detector de voz Silero (F6)`.
 
 ### Task 9: Vista "Platicar" (UI)
 
@@ -411,24 +411,24 @@ Comportamiento:
   Cerebro" si `notePath`.
 - Desmontaje/`pagehide`: `POST /end` con `sendBeacon` (Blob JSON) y liberar todo.
 
-- [ ] **Step 1:** tests puros nuevos (`test/ui/assistant.test.ts`: filtrado de eventos por `sessionId`, armado del body).
-- [ ] **Step 2:** implementar componentes.
-- [ ] **Step 3:** `npm test`, lint, typecheck, `npm run build:ui`.
-- [ ] **Step 4: Commit** `feat(ui): modo Platicar sin manos (F6)`.
+- [x] **Step 1:** tests puros nuevos (`test/ui/assistant.test.ts`: filtrado de eventos por `sessionId`, armado del body).
+- [x] **Step 2:** implementar componentes.
+- [x] **Step 3:** `npm test`, lint, typecheck, `npm run build:ui`.
+- [x] **Step 4: Commit** `feat(ui): modo Platicar sin manos (F6)`.
 
 ### Task 10: Verificación en vivo y documentación
 
-- [ ] **Step 1:** Servidor real (`npm run build:ui && npm start`). Plática de 3 turnos con agy real **sin micrófono**:
+- [x] **Step 1:** Servidor real (`npm run build:ui && npm start`). Plática de 3 turnos con agy real **sin micrófono**:
   Piper genera 3 frases → WAV → `/transcribe` → `/turn` por HTTP, escuchando el WS con un script Node; medir latencia
   fin-de-turno → primer delta y → `turn-done`; verificar task+run en la conversación y el uso `voice` en `agy_usage`.
-- [ ] **Step 2:** Plan por voz: frase "revisa el README del proyecto orquestador y dime qué falta" → acción pendiente →
+- [x] **Step 2:** Plan por voz: frase "revisa el README del proyecto orquestador y dime qué falta" → acción pendiente →
   frase "sí, dale" → plan creado y arrancado (o `needs-approval` si es crítico) → anuncio al terminar. Repetir con
   "no, espera" → no se crea plan.
-- [ ] **Step 3:** `/end` → nota en `Cerebro/Orquestador/Platicas/` (leerla; sin secretos; frontmatter correcto) y que
+- [x] **Step 3:** `/end` → nota en `Cerebro/Orquestador/Platicas/` (leerla; sin secretos; frontmatter correcto) y que
   se indexe (`/api/memory/status`).
-- [ ] **Step 4: Prueba de eco** (con el usuario o por el controlador si el panel de navegador tiene permiso de
+- [x] **Step 4: Prueba de eco** (con el usuario o por el controlador si el panel de navegador tiene permiso de
   micrófono): Piper suena por la Alexa con el modo abierto y barge-in **on**; contar falsas interrupciones en 3
   respuestas. Si hay falsas, subir `positiveSpeechThreshold` en `strict` y repetir; documentar el valor final.
-- [ ] **Step 5:** Docs: sección `## Voice assistant (F6)` en `CLAUDE.md` (mismo estilo que F5), `CONTINUAR.md`, nota
+- [x] **Step 5:** Docs: sección `## Voice assistant (F6)` en `CLAUDE.md` (mismo estilo que F5), `CONTINUAR.md`, nota
   de Cerebro `20-Personal/Orquestador-IA.md` y `00-INICIO.md`; marcar checkboxes de este plan. Commit + push.
 - [ ] **Step 6:** El usuario prueba el modo Platicar; integrar a `main` solo cuando lo diga.
