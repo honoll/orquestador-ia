@@ -220,7 +220,8 @@ export async function generatePlan(
   const args = buildPlannerArgs(tmpSystemFile);
 
   // Run planner in a neutral temp dir so Claude doesn't auto-load any CLAUDE.md
-  // from the project directory (which would interfere with our system prompt).
+  // from the project directory (which would interfere with our system prompt);
+  // the isolation flags (F3a) in buildPlannerArgs complement this.
   // All project context is already embedded in the user prompt as text.
   const plannerCwd = os.tmpdir();
 

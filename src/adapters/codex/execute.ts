@@ -1,5 +1,6 @@
 import { runProcess } from "../../lib/process-runner.js";
 import { parse } from "./parse.js";
+import { MODEL_CATALOG } from "../../config/models.js";
 import { codexProfile } from "../../lib/worker-profile.js";
 import type { AdapterExecutionContext, AdapterExecutionResult } from "../../lib/types.js";
 
@@ -21,7 +22,7 @@ export function buildCodexArgs(model?: string, opts: { readOnly?: boolean } = {}
 }
 
 export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExecutionResult> {
-  const args = buildCodexArgs(ctx.model, { readOnly: ctx.readOnly });
+  const args = buildCodexArgs(ctx.model || MODEL_CATALOG.codex.defaultModel, { readOnly: ctx.readOnly });
   const isolationEnv = await codexProfile.envForWorker();
 
   const { promise, kill } = runProcess({

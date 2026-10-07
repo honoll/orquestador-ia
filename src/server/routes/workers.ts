@@ -5,6 +5,7 @@ import { openCodexLoginTerminal } from "../../lib/codex-terminal.js";
 const app = new Hono();
 
 app.get("/status", async (c) => {
+  if (c.req.query("fresh") === "1") codexProfile.invalidate();
   const { home, loggedIn } = await codexProfile.status();
   return c.json({ claude: { isolated: true }, agy: { isolated: true }, codex: { isolated: loggedIn, home } });
 });

@@ -22,6 +22,13 @@ describe("GET /status", () => {
     const res = await workersRoute.request("/status");
     expect(await res.json()).toEqual({ claude: { isolated: true }, agy: { isolated: true }, codex: { isolated: true, home: "H" } });
   });
+  it("?fresh=1 invalida el caché antes de consultar; sin él no", async () => {
+    await workersRoute.request("/status");
+    expect(h.invalidate).not.toHaveBeenCalled();
+    await workersRoute.request("/status?fresh=1");
+    expect(h.invalidate).toHaveBeenCalledTimes(1);
+    expect(h.invalidate.mock.invocationCallOrder[0]).toBeLessThan(h.status.mock.invocationCallOrder.at(-1)!);
+  });
   it("sin sesión: codex no aislado, claude/agy siempre true", async () => {
     h.status.mockResolvedValueOnce({ home: "H", loggedIn: false });
     const body = (await (await workersRoute.request("/status")).json()) as { codex: { isolated: boolean }; claude: { isolated: boolean }; agy: { isolated: boolean } };
