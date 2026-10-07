@@ -24,6 +24,7 @@ import jevRoute from "./routes/jev.js";
 import memoryRoute from "./routes/memory.js";
 import voiceRoute from "./routes/voice.js";
 import { whisper } from "../voice/whisper.js";
+import { getDucker } from "../voice/duck.js";
 import { indexVault } from "../memory/vault-index.js";
 import { createOllamaEmbedder } from "../memory/ollama.js";
 import { memoryConfig } from "../memory/config.js";
@@ -97,10 +98,16 @@ try {
 }
 
 // whisper-server (voz, F5) arranca de forma perezosa; se apaga junto con el orquestador.
-process.on("exit", () => whisper.stop());
+// Ducking de audio: restaura al arrancar lo que quedó atenuado por un cierre brusco, y al salir.
+void getDucker().recover();
+process.on("exit", () => {
+  whisper.stop();
+  getDucker().closeHelper();
+});
 for (const sig of ["SIGINT", "SIGTERM"] as const) {
   process.on(sig, () => {
     whisper.stop();
+    getDucker().closeHelper();
     process.exit(sig === "SIGINT" ? 130 : 143);
   });
 }

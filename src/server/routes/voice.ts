@@ -7,6 +7,7 @@ import { toWav16k } from "../../voice/audio.js";
 import { AudioTooLongError, MAX_WAV_BYTES } from "../../voice/limits.js";
 import { synthesize } from "../../voice/piper.js";
 import { toSpeechText } from "../../voice/text.js";
+import { browserProcessNames, duckEnabled, getDucker, type DuckReason } from "../../voice/duck.js";
 
 export const MAX_AUDIO_BYTES = 10 * 1024 * 1024;
 export { MAX_WAV_BYTES };
@@ -22,6 +23,7 @@ app.get("/status", (c) => {
   return c.json({
     whisper: { available: fs.existsSync(cfg.whisperExe) && fs.existsSync(cfg.whisperModel), state: whisper.status() },
     piper: { available: fs.existsSync(cfg.piperExe) && fs.existsSync(cfg.voiceModel), voice: cfg.voiceName },
+    duck: { supported: getDucker().supported(), enabled: duckEnabled() },
   });
 });
 
@@ -61,6 +63,26 @@ app.post("/speak", limitBody(MAX_SPEAK_BODY_BYTES, "Texto demasiado grande (máx
   const wav = await synthesize(speech);
   if (!wav) return c.json({ error: "Piper no está disponible o falló la síntesis" }, 503);
   return c.body(new Uint8Array(wav), 200, { "Content-Type": "audio/wav" });
+});
+
+const MAX_DUCK_BODY_BYTES = 1024;
+
+app.post("/duck", limitBody(MAX_DUCK_BODY_BYTES, "Cuerpo demasiado grande"), async (c) => {
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "JSON inválido" }, 400);
+  }
+  const b = (body && typeof body === "object" ? body : {}) as { reason?: unknown; on?: unknown };
+  if (b.reason !== "mic" && b.reason !== "speak") return c.json({ error: "reason debe ser mic o speak" }, 400);
+  if (typeof b.on !== "boolean") return c.json({ error: "on debe ser booleano" }, 400);
+  const reason: DuckReason = b.reason;
+  const ducker = getDucker();
+  const st = b.on
+    ? await ducker.acquire(reason, browserProcessNames(c.req.header("user-agent")))
+    : await ducker.release(reason);
+  return c.json({ supported: st.supported, active: st.active });
 });
 
 export default app;

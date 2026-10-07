@@ -10,6 +10,11 @@ const h = vi.hoisted(() => ({
   toWav: vi.fn(async (_b: Buffer): Promise<Buffer> => Buffer.from("WAV")),
   synth: vi.fn(async (_t: string): Promise<Buffer | null> => Buffer.from("RIFFDATA")),
   dir: "",
+  ducker: {
+    supported: vi.fn(() => true),
+    acquire: vi.fn(async (_r: string, _b: string[]) => ({ supported: true, active: ["mic"] })),
+    release: vi.fn(async (_r: string) => ({ supported: true, active: [] })),
+  },
 }));
 
 vi.mock("../../src/voice/config.js", async () => {
@@ -29,6 +34,10 @@ vi.mock("../../src/voice/config.js", async () => {
 vi.mock("../../src/voice/whisper.js", () => ({ whisper: { status: h.status, transcribe: h.transcribe, stop: vi.fn() } }));
 vi.mock("../../src/voice/audio.js", () => ({ toWav16k: h.toWav }));
 const { AudioTooLongError } = await import("../../src/voice/limits.js");
+vi.mock("../../src/voice/duck.js", async () => {
+  const actual = await vi.importActual<typeof import("../../src/voice/duck.js")>("../../src/voice/duck.js");
+  return { ...actual, getDucker: () => h.ducker };
+});
 vi.mock("../../src/voice/piper.js", () => ({ synthesize: h.synth }));
 
 h.dir = fs.mkdtempSync(path.join(os.tmpdir(), "voz-route-"));
@@ -49,13 +58,13 @@ const post = (p: string, body: string | Uint8Array, type: string) =>
 describe("GET /status", () => {
   it("nada instalado -> no disponible", async () => {
     const b = await (await voiceRoute.request("/status")).json();
-    expect(b).toEqual({ whisper: { available: false, state: "stopped" }, piper: { available: false, voice: "es_MX-test" } });
+    expect(b).toEqual({ whisper: { available: false, state: "stopped" }, piper: { available: false, voice: "es_MX-test" }, duck: { supported: true, enabled: true } });
   });
   it("todo instalado -> disponible y refleja el estado", async () => {
     ["w.exe", "w.bin", "p.exe", "v.onnx"].forEach(touch);
     h.status.mockReturnValue("ready");
     const b = await (await voiceRoute.request("/status")).json();
-    expect(b).toEqual({ whisper: { available: true, state: "ready" }, piper: { available: true, voice: "es_MX-test" } });
+    expect(b).toEqual({ whisper: { available: true, state: "ready" }, piper: { available: true, voice: "es_MX-test" }, duck: { supported: true, enabled: true } });
   });
 });
 
@@ -137,5 +146,34 @@ describe("POST /speak", () => {
   it("503 si Piper falla", async () => {
     h.synth.mockResolvedValueOnce(null);
     expect((await speak({ text: "hola" })).status).toBe(503);
+  });
+});
+
+describe("POST /duck", () => {
+  const duck = (body: string, ua?: string) =>
+    voiceRoute.request("/duck", {
+      method: "POST",
+      body,
+      headers: { "Content-Type": "application/json", ...(ua ? { "User-Agent": ua } : {}) },
+    });
+  it("on:true adquiere con los procesos del navegador del User-Agent", async () => {
+    const r = await duck('{"reason":"speak","on":true}', "Mozilla/5.0 Firefox/130.0");
+    expect(r.status).toBe(200);
+    expect(await r.json()).toEqual({ supported: true, active: ["mic"] });
+    expect(h.ducker.acquire).toHaveBeenCalledWith("speak", ["firefox"]);
+  });
+  it("on:false libera", async () => {
+    const r = await duck('{"reason":"mic","on":false}');
+    expect(await r.json()).toEqual({ supported: true, active: [] });
+    expect(h.ducker.release).toHaveBeenCalledWith("mic");
+  });
+  it.each([['{"reason":"x","on":true}'], ['{"reason":"mic","on":"yes"}'], ['{"reason":"mic"}'], ["null"], ["no json"]])(
+    "rechaza %s con 400",
+    async (b) => {
+      expect((await duck(b)).status).toBe(400);
+    },
+  );
+  it("cuerpo enorme -> 413", async () => {
+    expect((await duck(JSON.stringify({ reason: "mic", on: true, pad: "x".repeat(5000) }))).status).toBe(413);
   });
 });
