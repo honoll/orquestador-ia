@@ -36,10 +36,21 @@ describe("buildCodexArgs", () => {
   it("lista exacta de funciones apagadas", () => {
     expect(CODEX_DISABLED_FEATURES).toEqual(["plugins", "apps", "hooks", "browser_use", "computer_use", "image_generation", "skill_search", "multi_agent", "goals", "tool_suggest", "personality"]);
   });
-  it("escritor: --full-auto + aislamiento + modelo + stdin", () => {
-    expect(buildCodexArgs("gpt-5.5")).toEqual(["exec", "--json", "--full-auto", "--skip-git-repo-check", ...iso, "-m", "gpt-5.5", "-"]);
+  it("escritor (win32): workspace-write + never + sandbox elevado, sin --full-auto", () => {
+    const args = buildCodexArgs("gpt-5.5", { platform: "win32" });
+    expect(args).toEqual(["exec", "--json", "--sandbox", "workspace-write", "-c", "approval_policy='never'", "-c", "windows.sandbox='elevated'", "--skip-git-repo-check", ...iso, "-m", "gpt-5.5", "-"]);
+    expect(args).not.toContain("--full-auto");
   });
-  it("readOnly: sandbox de solo lectura + aislamiento", () => {
-    expect(buildCodexArgs(undefined, { readOnly: true })).toEqual(["exec", "--json", "--sandbox", "read-only", "--skip-git-repo-check", ...iso, "-"]);
+  it("escritor (no win32): sin windows.sandbox", () => {
+    expect(buildCodexArgs("gpt-5.5", { platform: "linux" })).toEqual(["exec", "--json", "--sandbox", "workspace-write", "-c", "approval_policy='never'", "--skip-git-repo-check", ...iso, "-m", "gpt-5.5", "-"]);
+  });
+  it("readOnly: sandbox de solo lectura + never + aislamiento (en cualquier plataforma)", () => {
+    const want = ["exec", "--json", "--sandbox", "read-only", "-c", "approval_policy='never'", "--skip-git-repo-check", ...iso, "-"];
+    expect(buildCodexArgs(undefined, { readOnly: true, platform: "win32" })).toEqual(want);
+    expect(buildCodexArgs(undefined, { readOnly: true, platform: "linux" })).toEqual(want);
+  });
+  it("los valores -c no necesitan comillas bajo cmd.exe (literales TOML con comilla simple)", async () => {
+    const { quoteWindowsArg } = await vi.importActual<typeof import("../../src/lib/process-runner.js")>("../../src/lib/process-runner.js");
+    for (const v of ["approval_policy='never'", "windows.sandbox='elevated'"]) expect(quoteWindowsArg(v)).toBe(v);
   });
 });

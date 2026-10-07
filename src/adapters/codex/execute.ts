@@ -8,14 +8,20 @@ import type { AdapterExecutionContext, AdapterExecutionResult } from "../../lib/
  * codex exec [OPTIONS] [PROMPT]
  * - "-" como prompt: codex lo lee de stdin (evita problemas de escape en la shell).
  * - --json: eventos JSONL por stdout. -m: modelo.
- * - --full-auto: aprueba solo + sandbox con escritura (sin esto codex solo lee).
+ * - Escritor: --sandbox workspace-write + approval_policy never. NO usar --full-auto: está deprecado y, con
+ *   --ignore-user-config, dejaba al escritor en solo lectura. En Windows además windows.sandbox elevated.
+ * - Los valores de -c usan literales TOML con comillas simples ('never'): sin comillas dobles que cmd.exe/quoteWindowsArg puedan alterar.
  * - readOnly: --sandbox read-only (verificado en `codex exec --help`: read-only | workspace-write | danger-full-access).
  * - Aislamiento (F3a): --ignore-user-config + --disable de funciones que inflan el contexto (spike: 17.3k -> 10.7k tokens base).
  */
 export const CODEX_DISABLED_FEATURES: readonly string[] = ["plugins", "apps", "hooks", "browser_use", "computer_use", "image_generation", "skill_search", "multi_agent", "goals", "tool_suggest", "personality"];
 
-export function buildCodexArgs(model?: string, opts: { readOnly?: boolean } = {}): string[] {
-  const args = ["exec", "--json", ...(opts.readOnly ? ["--sandbox", "read-only"] : ["--full-auto"]), "--skip-git-repo-check", "--ignore-user-config", ...CODEX_DISABLED_FEATURES.flatMap((f) => ["--disable", f])];
+export function buildCodexArgs(model?: string, opts: { readOnly?: boolean; platform?: NodeJS.Platform } = {}): string[] {
+  const platform = opts.platform ?? process.platform;
+  const sandbox = opts.readOnly
+    ? ["--sandbox", "read-only", "-c", "approval_policy='never'"]
+    : ["--sandbox", "workspace-write", "-c", "approval_policy='never'", ...(platform === "win32" ? ["-c", "windows.sandbox='elevated'"] : [])];
+  const args = ["exec", "--json", ...sandbox, "--skip-git-repo-check", "--ignore-user-config", ...CODEX_DISABLED_FEATURES.flatMap((f) => ["--disable", f])];
   if (model) args.push("-m", model);
   args.push("-");
   return args;
