@@ -13,11 +13,13 @@ import {
   buildAssistantSystemPrompt, buildTurnMessage, extractAction, isClosingPhrase, isConfirmation,
 } from "./text.js";
 import { saveTurn } from "./persist.js";
-import { clearPlanSignals, handlePlanEvent, waitPlanReady } from "./plan-events.js";
+import { disposeAllPlanWatchers, handlePlanEvent, watchPlanReady } from "./plan-events.js";
 
 export type AssistantDeps = {
   agy?: () => ReturnType<typeof createAgySession>;
   now?: () => number;
+  /** Espera máxima de plan:ready tras confirmar (10 min por defecto). */
+  planReadyTimeoutMs?: number;
   createPlan?: typeof realCreatePlan;
   startPlan?: typeof startPlanIfAllowed;
   retrieve?: typeof retrieveMemory;
@@ -40,6 +42,7 @@ const SUMMARY_PROMPT = "Resume esta plática en 3 a 5 oraciones, en español, pa
 const TEXT_QUOTA = "Se acabó la cuota de esta cuenta de Antigravity; cámbiala en el panel.";
 const TEXT_LOST = "Perdí la conexión con Antigravity.";
 const TEXT_BYE = "¡Hasta luego!";
+const TEXT_PREPARING = "Va, lo estoy preparando; te aviso cuando arranque.";
 const TEXT_STARTED = "Listo, arranqué el plan. Te aviso cuando termine.";
 const TEXT_CRITICAL = "Lo preparé, pero es un plan crítico: apruébalo en la pantalla.";
 const TEXT_PLAN_FAILED = "No pude crear el plan.";
@@ -52,6 +55,9 @@ type Session = {
   projectId: string | null;
   deps: Required<AssistantDeps>;
   agy: Agy;
+  /** Todo agy que lanzó la sesión: al terminar se cierran todos. */
+  agys: Set<Agy>;
+  warmed: boolean;
   busy: boolean;
   ended: boolean;
   pending: { pedido: string; projectId: string | null } | null;
@@ -107,19 +113,43 @@ async function sendRecorded(s: Session, agy: Agy, text: string, onDelta: (d: str
   return r;
 }
 
-async function launchPlan(s: Session, action: { pedido: string; projectId: string | null }): Promise<string> {
+/** Segundo plano tras confirmar: crea el plan, espera plan:ready, lo arranca y lo anuncia (si la sesión sigue). */
+async function prepareAndStart(s: Session, action: { pedido: string; projectId: string | null }): Promise<void> {
+  const watcher = watchPlanReady(s.deps.planReadyTimeoutMs);
+  let text = TEXT_PLAN_FAILED;
   try {
     const { id } = await s.deps.createPlan({ description: action.pedido, projectId: action.projectId });
     s.plans.push({ id, description: action.pedido });
-    if (!(await waitPlanReady(id))) return TEXT_PLAN_FAILED;
-    const result = await s.deps.startPlan(id);
-    if (result === "started" || result === "running") return TEXT_STARTED;
-    if (result === "needs-approval") return TEXT_CRITICAL;
-    return TEXT_PLAN_FAILED;
+    const waited = await watcher.wait(id);
+    if (waited === "aborted") return;
+    if (waited === "ready") {
+      // El usuario confirmó: se arranca aunque la sesión ya haya terminado (solo no se anuncia).
+      const result = await s.deps.startPlan(id);
+      if (result === "started" || result === "running") text = TEXT_STARTED;
+      else if (result === "needs-approval") text = TEXT_CRITICAL;
+    }
   } catch (err) {
-    console.error("[voz] no se pudo crear el plan:", (err as Error)?.message);
-    return TEXT_PLAN_FAILED;
+    console.error("[voz] no se pudo crear/arrancar el plan:", (err as Error)?.message);
+  } finally {
+    watcher.dispose();
   }
+  if (!s.ended) emit({ type: "voice:assistant:announce", sessionId: s.id, text });
+}
+
+function closeQuietly(agy: Agy) {
+  try {
+    agy.close();
+  } catch {
+    /* ya cerrado */
+  }
+}
+
+/** agy nuevo registrado en la sesión; si ya terminó, nace cerrado. */
+function newAgy(s: Session): Agy {
+  const agy = s.deps.agy();
+  s.agys.add(agy);
+  if (s.ended) closeQuietly(agy);
+  return agy;
 }
 
 /* ---------- turnos ---------- */
@@ -160,8 +190,9 @@ async function resolveProject(s: Session, name: string | null): Promise<string |
 async function finishTurn(
   s: Session,
   turnId: string,
-  p: { utterance: string; speech: string; hasAction: boolean; ok: boolean; error?: string; r?: AgyTurnResult; emitDelta: boolean },
+  p: { utterance: string; speech: string; hasAction: boolean; ok: boolean; error?: string; r?: AgyTurnResult; emitDelta: boolean; final?: boolean },
 ) {
+  if (s.ended && !p.final) return;
   if (p.emitDelta) emit({ type: "voice:assistant:delta", sessionId: s.id, turnId, delta: p.speech });
   const now = s.deps.now();
   await saveTurn({
@@ -190,14 +221,21 @@ function historyPrefix(s: Session, projects: Project[]): string {
 async function normalTurn(s: Session, turnId: string, utterance: string) {
   const memory = await memoryFor(s, utterance);
   const message = buildTurnMessage(utterance, memory);
-  const onDelta = (delta: string) => emit({ type: "voice:assistant:delta", sessionId: s.id, turnId, delta });
+  const onDelta = (delta: string) => {
+    if (!s.ended) emit({ type: "voice:assistant:delta", sessionId: s.id, turnId, delta });
+  };
 
   let r = await sendRecorded(s, s.agy, message, onDelta);
+  // Sesión terminada a media llamada: el turno se resuelve en silencio (sin reintento ni eventos).
+  if (s.ended) return;
   if (!r.ok && !r.quota) {
     // Un reintento: agy nuevo, con la plática reciente como texto.
-    s.agy.close();
-    s.agy = s.deps.agy();
-    r = await sendRecorded(s, s.agy, historyPrefix(s, await listProjects()) + message, onDelta);
+    closeQuietly(s.agy);
+    const projects = await listProjects();
+    if (s.ended) return;
+    s.agy = newAgy(s);
+    r = await sendRecorded(s, s.agy, historyPrefix(s, projects) + message, onDelta);
+    if (s.ended) return;
   }
 
   if (!r.ok) {
@@ -219,7 +257,8 @@ async function normalTurn(s: Session, turnId: string, utterance: string) {
 async function runTurn(s: Session, turnId: string, utterance: string) {
   try {
     if (isClosingPhrase(utterance)) {
-      await finishTurn(s, turnId, { utterance, speech: TEXT_BYE, hasAction: false, ok: true, emitDelta: true });
+      await finishTurn(s, turnId, { utterance, speech: TEXT_BYE, hasAction: false, ok: true, emitDelta: true, final: true });
+      s.busy = false; // el resumen de la nota necesita agy libre
       await endAssistant(s.id, "phrase");
       return;
     }
@@ -227,7 +266,8 @@ async function runTurn(s: Session, turnId: string, utterance: string) {
       const action = s.pending;
       s.pending = null;
       if (isConfirmation(utterance)) {
-        const speech = await launchPlan(s, action);
+        void prepareAndStart(s, action);
+        const speech = TEXT_PREPARING;
         s.turns.push({ user: utterance, assistant: speech });
         await finishTurn(s, turnId, { utterance, speech, hasAction: false, ok: true, emitDelta: true });
         return;
@@ -236,7 +276,7 @@ async function runTurn(s: Session, turnId: string, utterance: string) {
     await normalTurn(s, turnId, utterance);
   } catch (err) {
     console.error("[voz] turno fallido:", (err as Error)?.message);
-    emit({
+    if (!s.ended) emit({
       type: "voice:assistant:turn-done", sessionId: s.id, turnId, speech: TEXT_LOST, hasAction: false,
       error: (err as Error)?.message ?? "error",
     });
@@ -258,6 +298,7 @@ export async function startAssistant(
   const full: Required<AssistantDeps> = {
     agy: deps.agy ?? (() => createAgySession()),
     now: deps.now ?? Date.now,
+    planReadyTimeoutMs: deps.planReadyTimeoutMs ?? 10 * 60_000,
     createPlan: deps.createPlan ?? realCreatePlan,
     startPlan: deps.startPlan ?? startPlanIfAllowed,
     retrieve: deps.retrieve ?? retrieveMemory,
@@ -269,6 +310,8 @@ export async function startAssistant(
     projectId: input.projectId,
     deps: full,
     agy: full.agy(),
+    agys: new Set(),
+    warmed: false,
     busy: false,
     ended: false,
     pending: null,
@@ -278,6 +321,7 @@ export async function startAssistant(
     idleTimer: null,
     unsub: () => {},
   };
+  s.agys.add(s.agy);
   s.unsub = onBroadcast((e) => handlePlanEvent(s, e, emit));
   current = s;
   touch(s);
@@ -286,7 +330,7 @@ export async function startAssistant(
   void (async () => {
     const projects = await listProjects();
     await sendRecorded(s, s.agy, buildAssistantSystemPrompt(projects) + "\n\nResponde solo: Listo.", () => {});
-  })().catch(() => {});
+  })().catch(() => {}).finally(() => { s.warmed = true; });
 
   return { sessionId: s.id, conversationId: s.conversationId };
 }
@@ -307,7 +351,8 @@ export async function assistantTurn(
 
 async function summarize(s: Session, reason: string): Promise<string> {
   const fallback = s.turns.slice(0, 3).map((t) => t.user.trim().replace(/[.!?]+$/, "")).join(". ") + ".";
-  if (reason === "error" || !s.agy.alive()) return fallback;
+  // Nunca con un turno en curso o el calentamiento pendiente: la cola respawnearía agy tras cerrarlo.
+  if (reason === "error" || s.busy || !s.warmed || !s.agy.alive()) return fallback;
   try {
     const r = await withTimeout(sendRecorded(s, s.agy, SUMMARY_PROMPT, () => {}), SUMMARY_TIMEOUT_MS);
     const text = r && r.ok ? extractAction(r.text).speech : "";
@@ -346,16 +391,9 @@ export async function endAssistant(
     }
   }
 
-  try {
-    s.agy.close();
-  } catch {
-    /* ya cerrado */
-  }
+  for (const a of s.agys) closeQuietly(a);
   s.unsub();
-  if (current === s) {
-    current = null;
-    clearPlanSignals();
-  }
+  if (current === s) current = null;
   emit({ type: "voice:assistant:ended", sessionId: s.id, reason, notePath });
   return { notePath };
 }
@@ -368,14 +406,10 @@ export function activeAssistant(): { sessionId: string; conversationId: string }
 export function shutdownAssistant(): void {
   const s = current;
   current = null;
-  clearPlanSignals();
+  disposeAllPlanWatchers();
   if (!s) return;
   s.ended = true;
   if (s.idleTimer) clearTimeout(s.idleTimer);
   s.unsub();
-  try {
-    s.agy.close();
-  } catch {
-    /* ya cerrado */
-  }
+  for (const a of s.agys) closeQuietly(a);
 }

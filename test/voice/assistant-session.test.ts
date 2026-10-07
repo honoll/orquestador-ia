@@ -93,6 +93,18 @@ function setup(over: { script?: Res[] | ((msg: string, n: number) => Res); [k: s
   return { agy, createPlan, startPlan, retrieve, writeNote, deps };
 }
 
+const PROPOSE = '¿Lo arranco? <<<ACCION plan {"pedido":"X","proyecto":null}>>>';
+const announces = () => types("voice:assistant:announce").map((e) => e.text);
+const confirm = async (sid: string) => {
+  const t0 = types("voice:assistant:turn-done").length;
+  const r = await session.assistantTurn(sid, "dale");
+  if ("error" in r) throw new Error(r.error);
+  await turnDone(r.turnId);
+  expect(types("voice:assistant:turn-done").length).toBe(t0 + 1);
+  return types("voice:assistant:turn-done").find((e) => e.turnId === r.turnId);
+};
+const ready = () => broadcast({ type: "plan:ready", planId: "plan-1", plan: {}, timestamp: "t" } as any);
+
 describe("startAssistant", () => {
   it("sin cuenta activa: error 409", async () => {
     await db.delete(schema.agyAccounts);
@@ -159,6 +171,7 @@ describe("assistantTurn", () => {
     const second = await session.assistantTurn(sessionId, "dos");
     expect(second).toMatchObject({ status: 409 });
     release();
+    if ("turnId" in first) await turnDone(first.turnId);
   });
 
   it("sesión desconocida: 404", async () => {
@@ -192,7 +205,7 @@ describe("assistantTurn", () => {
     expect(agy.sent[1]).toBe("hola");
   });
 
-  it("acción propuesta; 'sí, dale' crea el plan con el pedido y lo arranca tras plan:ready", async () => {
+  it("acción propuesta; 'sí, dale' responde al instante y arranca el plan al llegar plan:ready", async () => {
     const reply = 'Puedo revisarlo. ¿Lo arranco? <<<ACCION plan {"pedido":"Revisa el login","proyecto":"orquestador-ia"}>>>';
     const { deps, createPlan, startPlan, agy } = setup({ script: [{ text: "Listo." }, { text: reply }, { text: "no debería usarse" }] });
     const { sessionId } = await session.startAssistant({ projectId: null }, deps);
@@ -200,30 +213,31 @@ describe("assistantTurn", () => {
     expect(d1.hasAction).toBe(true);
     expect(d1.speech).not.toContain("<<<");
 
-    const r = await session.assistantTurn(sessionId, "sí, dale");
-    if ("error" in r) throw new Error(r.error);
+    const d2 = await confirm(sessionId); // no espera a plan:ready
+    expect(d2.speech).toBe("Va, lo estoy preparando; te aviso cuando arranque.");
     await waitFor(() => createPlan.mock.calls.length === 1);
     expect(createPlan).toHaveBeenCalledWith({ description: "Revisa el login", projectId: "p1" });
     expect(startPlan).not.toHaveBeenCalled();
-    broadcast({ type: "plan:ready", planId: "plan-1", plan: {}, timestamp: "t" } as any);
-    await turnDone(r.turnId);
+    // el turno ya terminó: se puede seguir hablando (no hay 409)
+    const d3 = await say(sessionId, "qué hora es");
+    expect(d3.speech).toBe("no debería usarse");
+    ready();
+    await waitFor(() => announces().length > 0);
     expect(startPlan).toHaveBeenCalledWith("plan-1");
-    expect(types("voice:assistant:turn-done").find((e) => e.turnId === r.turnId).speech).toBe(
-      "Listo, arranqué el plan. Te aviso cuando termine.",
-    );
-    expect(agy.sent).toHaveLength(2); // calentamiento + propuesta; la confirmación no pasa por agy
+    expect(announces()).toEqual(["Listo, arranqué el plan. Te aviso cuando termine."]);
+    expect(agy.sent).toHaveLength(3); // calentamiento + propuesta + "qué hora es"; la confirmación no pasa por agy
   });
 
   it("plan:ready emitido antes de que createPlan responda también cuenta", async () => {
     const createPlan = vi.fn(async () => {
-      broadcast({ type: "plan:ready", planId: "plan-1", plan: {}, timestamp: "t" } as any);
+      ready();
       return { id: "plan-1" };
     });
-    const reply = '¿Lo arranco? <<<ACCION plan {"pedido":"X","proyecto":null}>>>';
-    const { deps, startPlan } = setup({ createPlan, script: [{ text: "Listo." }, { text: reply }] });
+    const { deps, startPlan } = setup({ createPlan, script: [{ text: "Listo." }, { text: PROPOSE }] });
     const { sessionId } = await session.startAssistant({ projectId: null }, deps);
     await say(sessionId, "haz X");
-    await say(sessionId, "dale");
+    await confirm(sessionId);
+    await waitFor(() => announces().length > 0);
     expect(startPlan).toHaveBeenCalledWith("plan-1");
   });
 
@@ -263,34 +277,78 @@ describe("assistantTurn", () => {
     expect(createPlan).not.toHaveBeenCalled();
   });
 
-  it("plan crítico: pide aprobar en pantalla", async () => {
+  it("plan crítico: anuncia que se apruebe en pantalla", async () => {
     const startPlan = vi.fn(async () => "needs-approval" as const);
-    const reply = '¿Lo arranco? <<<ACCION plan {"pedido":"X","proyecto":null}>>>';
-    const { deps } = setup({ startPlan, script: [{ text: "Listo." }, { text: reply }] });
+    const { deps } = setup({ startPlan, script: [{ text: "Listo." }, { text: PROPOSE }] });
     const { sessionId } = await session.startAssistant({ projectId: null }, deps);
     await say(sessionId, "haz X");
-    const p = session.assistantTurn(sessionId, "dale");
-    await waitFor(() => true);
+    await confirm(sessionId);
+    await waitFor(() => types("voice:assistant:turn-done").length === 2);
     await new Promise((r) => setTimeout(r, 20));
-    broadcast({ type: "plan:ready", planId: "plan-1", plan: {}, timestamp: "t" } as any);
-    const r = await p;
-    if ("error" in r) throw new Error(r.error);
-    await turnDone(r.turnId);
-    expect(types("voice:assistant:turn-done").find((e) => e.turnId === r.turnId).speech).toBe(
-      "Lo preparé, pero es un plan crítico: apruébalo en la pantalla.",
-    );
+    ready();
+    await waitFor(() => announces().length > 0);
+    expect(announces()).toEqual(["Lo preparé, pero es un plan crítico: apruébalo en la pantalla."]);
   });
 
-  it("createPlan falla: 'No pude crear el plan.'", async () => {
+  it("createPlan falla: anuncia 'No pude crear el plan.'", async () => {
     const createPlan = vi.fn(async () => {
       throw new Error("x");
     });
-    const reply = '¿Lo arranco? <<<ACCION plan {"pedido":"X","proyecto":null}>>>';
-    const { deps } = setup({ createPlan, script: [{ text: "Listo." }, { text: reply }] });
+    const { deps, startPlan } = setup({ createPlan, script: [{ text: "Listo." }, { text: PROPOSE }] });
     const { sessionId } = await session.startAssistant({ projectId: null }, deps);
     await say(sessionId, "haz X");
-    const d = await say(sessionId, "dale");
-    expect(d.speech).toBe("No pude crear el plan.");
+    await confirm(sessionId);
+    await waitFor(() => announces().length > 0);
+    expect(announces()).toEqual(["No pude crear el plan."]);
+    expect(startPlan).not.toHaveBeenCalled();
+  });
+
+  it("plan:error o vencimiento de plan:ready: 'No pude crear el plan.' sin arrancar nada", async () => {
+    const a = setup({ script: [{ text: "Listo." }, { text: PROPOSE }] });
+    const s1 = await session.startAssistant({ projectId: null }, a.deps);
+    await say(s1.sessionId, "haz X");
+    await confirm(s1.sessionId);
+    await new Promise((r) => setTimeout(r, 20));
+    broadcast({ type: "plan:error", planId: "plan-1", error: "x", timestamp: "t" } as any);
+    await waitFor(() => announces().length > 0);
+    expect(announces()).toEqual(["No pude crear el plan."]);
+    expect(a.startPlan).not.toHaveBeenCalled();
+
+    events.length = 0;
+    const b = setup({ planReadyTimeoutMs: 30, script: [{ text: "Listo." }, { text: PROPOSE }] });
+    const s2 = await session.startAssistant({ projectId: null }, b.deps);
+    await say(s2.sessionId, "haz X");
+    await confirm(s2.sessionId);
+    await waitFor(() => announces().length > 0);
+    expect(announces()).toEqual(["No pude crear el plan."]);
+    expect(b.startPlan).not.toHaveBeenCalled();
+  });
+
+  it("sesión terminada mientras se prepara: el plan se arranca igual pero no se anuncia", async () => {
+    const { deps, startPlan } = setup({ script: [{ text: "Listo." }, { text: PROPOSE }] });
+    const { sessionId } = await session.startAssistant({ projectId: null }, deps);
+    await say(sessionId, "haz X");
+    await confirm(sessionId);
+    await session.endAssistant(sessionId, "user");
+    ready();
+    await waitFor(() => startPlan.mock.calls.length === 1);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(startPlan).toHaveBeenCalledWith("plan-1");
+    expect(announces()).toEqual([]);
+  });
+
+  it("la espera de plan:ready no deja oyentes tras ready/timeout", async () => {
+    const { deps } = setup({ planReadyTimeoutMs: 20, script: [{ text: "Listo." }, { text: PROPOSE }] });
+    const { sessionId } = await session.startAssistant({ projectId: null }, deps);
+    await say(sessionId, "haz X");
+    await confirm(sessionId);
+    await waitFor(() => announces().length > 0);
+    await session.endAssistant(sessionId, "user");
+    // tras terminar no queda ningún oyente de la sesión: ready ya no provoca nada
+    const startPlan2 = deps.startPlan as ReturnType<typeof vi.fn>;
+    ready();
+    await new Promise((r) => setTimeout(r, 20));
+    expect(startPlan2).not.toHaveBeenCalled();
   });
 
   it("cuota: mensaje fijo, run failed y fin de sesión", async () => {
@@ -356,12 +414,11 @@ describe("anuncios de planes", () => {
     const { deps, ...rest } = setup({ script });
     const { sessionId } = await session.startAssistant({ projectId: null }, deps);
     await say(sessionId, "haz X");
-    const p = session.assistantTurn(sessionId, "dale");
+    await confirm(sessionId);
     await new Promise((r) => setTimeout(r, 20));
-    broadcast({ type: "plan:ready", planId: "plan-1", plan: {}, timestamp: "t" } as any);
-    const r = await p;
-    if ("error" in r) throw new Error(r.error);
-    await turnDone(r.turnId);
+    ready();
+    await waitFor(() => announces().length > 0);
+    events.length = 0; // descarta el anuncio de arranque
     return { sessionId, ...rest };
   }
 
@@ -452,5 +509,93 @@ describe("endAssistant y nota", () => {
     await vi.advanceTimersByTimeAsync(10 * 60_000 + 10);
     expect(types("voice:assistant:ended")[0]).toMatchObject({ reason: "idle" });
     expect(session.activeAssistant()).toBeNull();
+  });
+});
+
+describe("sesión terminada con un turno en curso", () => {
+  function gatedAgy() {
+    let release: () => void = () => {};
+    const gate = new Promise<void>((r) => (release = r));
+    const made: { closed: boolean; sent: string[]; closeCalls: number }[] = [];
+    let spawns = 0;
+    const factory = () => {
+      spawns++;
+      const mine = { closed: false, sent: [] as string[], closeCalls: 0 };
+      made.push(mine);
+      return {
+        send: async (text: string, _d: (s: string) => void) => {
+          mine.sent.push(text);
+          if (made.length === 1 && mine.sent.length === 2) {
+            await gate; // el turno del usuario
+            // close() hace fallar el turno en curso con un error que no es de cuota
+            return full({ ok: false, error: "agy dejó de responder" });
+          }
+          return full({ text: "Listo." });
+        },
+        alive: () => !mine.closed,
+        close: () => {
+          mine.closed = true;
+          mine.closeCalls++;
+          release();
+        },
+      };
+    };
+    return { factory, made, spawns: () => spawns };
+  }
+
+  async function endMidTurn(how: (sid: string, deps: any) => Promise<void>) {
+    const g = gatedAgy();
+    const { deps } = setup({ agy: g.factory });
+    const { sessionId } = await session.startAssistant({ projectId: null }, deps);
+    await waitFor(() => g.made[0].sent.length === 1);
+    await new Promise((r) => setTimeout(r, 20)); // calentamiento terminado
+    const r = await session.assistantTurn(sessionId, "hola");
+    if ("error" in r) throw new Error(r.error);
+    await waitFor(() => g.made[0].sent.length === 2);
+    await how(sessionId, deps);
+    await new Promise((r2) => setTimeout(r2, 60));
+    return { g, turnId: r.turnId, sessionId };
+  }
+
+  it("terminar a media llamada: sin reintento, sin turn-done y todo agy cerrado", async () => {
+    const { g } = await endMidTurn(async (sid) => {
+      await session.endAssistant(sid, "user");
+    });
+    expect(g.spawns()).toBe(1);
+    expect(types("voice:assistant:turn-done")).toHaveLength(0);
+    expect(g.made.every((m) => m.closed)).toBe(true);
+    expect(await db.select().from(schema.tasks)).toHaveLength(0);
+  });
+
+  it("una sesión nueva a media llamada: no se lanza agy de más y todo queda cerrado", async () => {
+    const { g } = await endMidTurn(async (_sid, deps) => {
+      await session.startAssistant({ projectId: null }, deps);
+    });
+    // agy 1 (sesión vieja) y agy 2 (sesión nueva); ninguno extra por reintento
+    expect(g.spawns()).toBe(2);
+    expect(g.made[0].closed).toBe(true);
+    expect(types("voice:assistant:turn-done")).toHaveLength(0);
+  });
+
+  it("shutdown a media llamada: silencio y agy cerrado", async () => {
+    const { g } = await endMidTurn(async () => {
+      session.shutdownAssistant();
+    });
+    expect(g.spawns()).toBe(1);
+    expect(g.made.every((m) => m.closed)).toBe(true);
+    expect(types("voice:assistant:turn-done")).toHaveLength(0);
+  });
+
+  it("el resumen de la nota no se pide con un turno en curso (no respawnea agy)", async () => {
+    const g = gatedAgy();
+    const { deps, writeNote } = setup({ agy: g.factory });
+    const { sessionId } = await session.startAssistant({ projectId: null }, deps);
+    await waitFor(() => g.made[0].sent.length === 1);
+    await new Promise((r) => setTimeout(r, 20));
+    // dos turnos reales no son posibles con el agy bloqueado; se usa la sesión ya terminada vía fallback
+    const r = await session.endAssistant(sessionId, "user");
+    expect(r).toEqual({ notePath: null });
+    expect(writeNote).not.toHaveBeenCalled();
+    expect(g.spawns()).toBe(1);
   });
 });
