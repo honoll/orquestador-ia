@@ -1,13 +1,15 @@
 import { describe, it, expect } from "vitest";
-import { buildCodexArgs } from "../../src/adapters/codex/execute.js";
+import { buildCodexArgs, CODEX_DISABLED_FEATURES } from "../../src/adapters/codex/execute.js";
 
-describe("codex execute: args", () => {
-  it("por defecto escribe (--full-auto) y lee el prompt de stdin", () => {
-    expect(buildCodexArgs("gpt-x")).toEqual(["exec", "--json", "--full-auto", "--skip-git-repo-check", "-m", "gpt-x", "-"]);
+describe("buildCodexArgs", () => {
+  const iso = ["--ignore-user-config", ...CODEX_DISABLED_FEATURES.flatMap((f) => ["--disable", f])];
+  it("lista exacta de funciones apagadas", () => {
+    expect(CODEX_DISABLED_FEATURES).toEqual(["plugins", "apps", "hooks", "browser_use", "computer_use", "image_generation", "skill_search", "multi_agent", "goals", "tool_suggest", "personality"]);
   });
-  it("readOnly usa --sandbox read-only en lugar de --full-auto", () => {
-    const a = buildCodexArgs(undefined, { readOnly: true });
-    expect(a).not.toContain("--full-auto");
-    expect(a).toEqual(["exec", "--json", "--sandbox", "read-only", "--skip-git-repo-check", "-"]);
+  it("escritor: --full-auto + aislamiento + modelo + stdin", () => {
+    expect(buildCodexArgs("gpt-5.5")).toEqual(["exec", "--json", "--full-auto", "--skip-git-repo-check", ...iso, "-m", "gpt-5.5", "-"]);
+  });
+  it("readOnly: sandbox de solo lectura + aislamiento", () => {
+    expect(buildCodexArgs(undefined, { readOnly: true })).toEqual(["exec", "--json", "--sandbox", "read-only", "--skip-git-repo-check", ...iso, "-"]);
   });
 });
