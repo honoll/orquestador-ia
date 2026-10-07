@@ -135,6 +135,17 @@ describe("createDucker", () => {
     expect(helpers[0].sent[2]).toEqual({ cmd: "apply", level: 0.2, exclude: ["firefox"] });
   });
 
+  it("conversation excluye el navegador; con mic no excluye", async () => {
+    const { ducker, helpers } = setup();
+    await ducker.acquire("conversation", ["firefox", "evil.exe"]);
+    expect(helpers[0].sent[0]).toEqual({ cmd: "apply", level: 0.2, exclude: ["firefox"] });
+    await ducker.acquire("mic");
+    expect(helpers[0].sent[1]).toEqual({ cmd: "apply", level: 0.2, exclude: [] });
+    const st = await ducker.release("mic");
+    expect(st.active).toEqual(["conversation"]);
+    expect(helpers[0].sent[2]).toEqual({ cmd: "apply", level: 0.2, exclude: ["firefox"] });
+  });
+
   it("sin motivos -> restore y borra el archivo", async () => {
     const { ducker, helpers, files } = setup();
     await ducker.acquire("mic");

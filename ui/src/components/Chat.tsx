@@ -11,6 +11,7 @@ import { PlanView, type Plan } from "./PlanView";
 import { GitHubCloneModal } from "./GitHubCloneModal";
 import { FileContextPicker, buildFileContext } from "./FileContextPicker";
 import { MicButton } from "./MicButton";
+import { ConversationView, type ConversationResult } from "./ConversationView";
 import { SpeakButton, AutoReadToggle } from "./SpeakButton";
 import { autoSpeak, stopSpeech } from "../lib/voice";
 import { appendTranscript } from "../lib/voice-utils";
@@ -104,6 +105,8 @@ export function Chat() {
   const [attachedFiles, setAttachedFiles] = useState<{ path: string; content: string; truncated: boolean }[]>([]);
   const [activeShellJobId, setActiveShellJobId] = useState<string | null>(null);
   const [analyzingFiles, setAnalyzingFiles] = useState(false);
+  const [talking, setTalking] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -164,6 +167,29 @@ export function Chat() {
       // silently fail
     }
   }, []);
+
+  // Al terminar «Platicar»: abre la conversación en el chat y avisa si se guardó la nota.
+  const handleTalkClosed = useCallback((r: ConversationResult) => {
+    setTalking(false);
+    if (r.conversationId) {
+      setConversation(r.conversationId);
+      void loadConversation(r.conversationId);
+      queryClient.invalidateQueries({ queryKey: ["conversations"] });
+      queryClient.invalidateQueries({ queryKey: ["tasks"] });
+    }
+    if (r.notePath) setToast("Nota guardada en Cerebro");
+    // Plan de voz que espera aprobación (sin JEV o crítico): se abre en PlanView para aprobarlo/ejecutarlo.
+    if (r.approvalPlanId) {
+      queryClient.invalidateQueries({ queryKey: ["plans"] });
+      setActivePlanId(r.approvalPlanId);
+    }
+  }, [setConversation, loadConversation, queryClient, setActivePlanId]);
+
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 6000);
+    return () => clearTimeout(t);
+  }, [toast]);
 
   useEffect(() => {
     if (conversationId && conversationId !== loadedConversation) {
@@ -563,6 +589,12 @@ export function Chat() {
 
   return (
     <div className="flex flex-col h-full bg-surface-0">
+      {talking && <ConversationView projectId={selectedProjectId} onClose={handleTalkClosed} />}
+      {toast && (
+        <div role="status" className="fixed bottom-4 left-1/2 z-[60] -translate-x-1/2 rounded-lg border border-edge-strong bg-surface-2 px-4 py-2 font-mono text-[11px] text-text-primary shadow-lg">
+          {toast}
+        </div>
+      )}
       {/* Header bar */}
       <div className="flex items-center gap-4 px-6 h-12 border-b border-edge shrink-0">
         <select
@@ -840,6 +872,16 @@ export function Chat() {
                   }, 0);
                 }}
               />
+              <button
+                type="button"
+                onClick={() => setTalking(true)}
+                disabled={!!activeRunId || analyzingFiles || talking}
+                aria-label="Platicar con el asistente por voz"
+                title="Plática por voz sin manos"
+                className="shrink-0 min-h-6 rounded-sm border border-edge px-2 font-mono text-[10px] text-text-secondary transition-colors hover:text-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-30"
+              >
+                Platicar
+              </button>
               {/* File attach button — only when a project is selected */}
               {selectedProjectId && !activeRunId && (
                 <button

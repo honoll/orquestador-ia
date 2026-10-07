@@ -214,3 +214,37 @@ describe("buildMemorySection", () => {
     expect(s.match(/<<<FIN #abc123>>>/g)).toHaveLength(2);
   });
 });
+
+describe("opciones por turno y notas de plática", () => {
+  it("topNotes limita el número de notas", async () => {
+    for (let i = 0; i < 6; i++) write(`n${i}.md`, `# N ${i}\ngatos maullan ${i}`);
+    await indexVault({ vaultPath: vault, embedder: fakeEmbedder });
+    const r = await retrieveMemory({ query: "gatos maullan", embedder: fakeEmbedder, topNotes: 3 });
+    expect(r.notes).toHaveLength(3);
+  });
+
+  it("budgetChars se respeta", async () => {
+    for (let i = 0; i < 3; i++) write(`b${i}.md`, `# B ${i}\n${"gatos maullan ".repeat(200)}`);
+    await indexVault({ vaultPath: vault, embedder: fakeEmbedder });
+    const r = await retrieveMemory({ query: "gatos maullan", embedder: fakeEmbedder, budgetChars: 300 });
+    expect(r.notes.reduce((s, n) => s + n.excerpt.length, 0)).toBeLessThanOrEqual(300);
+  });
+
+  it("tipo platica-orquestador es de menor confianza y comparte el tope de 2 con las de plan", async () => {
+    write("P/plan0.md", "---\ntipo: plan-orquestador\n---\n# Plan 0\ngatos maullan 0");
+    write("P/pl1.md", "---\ntipo: platica-orquestador\n---\n# Pl 1\ngatos maullan 1");
+    write("P/pl2.md", "---\ntipo: platica-orquestador\n---\n# Pl 2\ngatos maullan 2");
+    write("gatos.md", "# Gatos\ngatos maullan");
+    await indexVault({ vaultPath: vault, embedder: fakeEmbedder });
+    const r = await retrieveMemory({ query: "gatos maullan", embedder: fakeEmbedder });
+    expect(r.notes.filter((n) => n.planNote)).toHaveLength(2);
+    expect(buildMemorySection(r, "n").match(/generada por el orquestador \(menor confianza\)/g)).toHaveLength(2);
+  });
+
+  it("una plática no es la nota del proyecto", async () => {
+    write("P/pl.md", "---\ntipo: platica-orquestador\nruta: C:/p\n---\n# Pl\nhola");
+    await indexVault({ vaultPath: vault, embedder: fakeEmbedder });
+    const r = await retrieveMemory({ query: "q", project: { name: "pl", path: "C:/p" }, embedder: null });
+    expect(r.notes).toEqual([]);
+  });
+});

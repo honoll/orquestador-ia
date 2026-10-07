@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
+import { createContext, useContext, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
 interface WsEvent {
@@ -16,12 +16,15 @@ interface WsContextValue {
   connected: boolean;
   lastEvent: WsEvent | null;
   logs: Map<string, string>;
+  /** Escucha TODOS los eventos, uno por uno y sin perder ninguno (a diferencia de lastEvent). */
+  subscribe: (listener: (event: WsEvent) => void) => () => void;
 }
 
 const WsContext = createContext<WsContextValue>({
   connected: false,
   lastEvent: null,
   logs: new Map(),
+  subscribe: () => () => {},
 });
 
 export function useWs() {
@@ -32,6 +35,13 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
   const [connected, setConnected] = useState(false);
   const [lastEvent, setLastEvent] = useState<WsEvent | null>(null);
   const logsRef = useRef(new Map<string, string>());
+  const listenersRef = useRef(new Set<(event: WsEvent) => void>());
+  const subscribe = useCallback((l: (event: WsEvent) => void) => {
+    listenersRef.current.add(l);
+    return () => {
+      listenersRef.current.delete(l);
+    };
+  }, []);
   const [, forceUpdate] = useState(0);
   const queryClient = useQueryClient();
 
@@ -54,6 +64,11 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
       ws.onmessage = (e) => {
         try {
           const event: WsEvent = JSON.parse(e.data);
+          for (const l of listenersRef.current) {
+            try { l(event); } catch { /* un oyente roto no debe tumbar a los demás */ }
+          }
+          // Los deltas del asistente llegan a ráfagas: solo van a los suscriptores (ni lastEvent ni logs).
+          if (event.type === "voice:assistant:delta") return;
           setLastEvent(event);
 
           if (event.type === "log" && event.runId && event.data && event.stream === "stdout") {
@@ -120,7 +135,7 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
   }, [queryClient]);
 
   return (
-    <WsContext.Provider value={{ connected, lastEvent, logs: logsRef.current }}>
+    <WsContext.Provider value={{ connected, lastEvent, logs: logsRef.current, subscribe }}>
       {children}
     </WsContext.Provider>
   );

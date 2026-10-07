@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { randomUUID } from "node:crypto";
-import { eq, desc, and, or } from "drizzle-orm";
+import { eq, desc, and, or, isNull } from "drizzle-orm";
 import { db, schema } from "../../db/index.js";
 import { runTask } from "../runner.js";
 
@@ -33,9 +33,9 @@ app.get("/conversations", async (c) => {
   const projectId = c.req.query("projectId");
   if (!projectId) return c.json([]);
 
-  // Get all tasks ordered by creation time (ascending so first task = title)
+  // "none" = pláticas sin proyecto (p. ej. las del asistente de voz)
   const allTasks = await db.select().from(schema.tasks)
-    .where(eq(schema.tasks.projectId, projectId))
+    .where(projectId === "none" ? isNull(schema.tasks.projectId) : eq(schema.tasks.projectId, projectId))
     .orderBy(schema.tasks.createdAt);
 
   // Group by conversation_id: title from first message, status/updatedAt from latest

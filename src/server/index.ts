@@ -23,6 +23,8 @@ import workersRoute from "./routes/workers.js";
 import jevRoute from "./routes/jev.js";
 import memoryRoute from "./routes/memory.js";
 import voiceRoute from "./routes/voice.js";
+import voiceAssistantRoute from "./routes/voice-assistant.js";
+import { shutdownAssistant } from "../voice/assistant/session.js";
 import { originGuard } from "./origin-guard.js";
 import { whisper } from "../voice/whisper.js";
 import { getDucker } from "../voice/duck.js";
@@ -62,6 +64,7 @@ app.route("/api/accounts", accountsRoute);
 app.route("/api/workers", workersRoute);
 app.route("/api/jev", jevRoute);
 app.route("/api/memory", memoryRoute);
+app.route("/api/voice/assistant", voiceAssistantRoute);
 app.route("/api/voice", voiceRoute);
 
 app.get(
@@ -104,11 +107,13 @@ try {
 // Ducking de audio: restaura al arrancar lo que quedó atenuado por un cierre brusco, y al salir.
 void getDucker().recover();
 process.on("exit", () => {
+  shutdownAssistant();
   whisper.stop();
   getDucker().closeHelper();
 });
 for (const sig of ["SIGINT", "SIGTERM"] as const) {
   process.on(sig, () => {
+    shutdownAssistant();
     whisper.stop();
     getDucker().closeHelper();
     process.exit(sig === "SIGINT" ? 130 : 143);

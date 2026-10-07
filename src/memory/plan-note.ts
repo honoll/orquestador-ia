@@ -19,12 +19,12 @@ export interface PlanNoteInput {
 }
 
 const pad = (n: number) => String(n).padStart(2, "0");
-const ymd = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-const oneLine = (s: string) => s.replace(/\s+/g, " ").trim();
+export const ymd = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+export const oneLine = (s: string) => s.replace(/\s+/g, " ").trim();
 /** Cadena YAML en comillas simples: las `\` de Windows quedan literales y `'` se duplica. */
-const yamlSingle = (s: string) => `'${s.replace(/'/g, "''")}'`;
+export const yamlSingle = (s: string) => `'${s.replace(/'/g, "''")}'`;
 /** Sin sintaxis activa de Obsidian: `<%` (Templater) ni embeds `![[…]]`. */
-const inert = (s: string) => s.replace(/<%/g, "<\\%").replace(/(^|[^\\])!\[\[/g, "$1\\![[");
+export const inert = (s: string) => s.replace(/<%/g, "<\\%").replace(/(^|[^\\])!\[\[/g, "$1\\![[");
 const cell = (s: string) => inert(oneLine(s)).replace(/\|/g, "\\|");
 const FENCE = /^\s*(`{3,}|~{3,})/;
 /**
@@ -32,7 +32,7 @@ const FENCE = /^\s*(`{3,}|~{3,})/;
  * para quedar bajo la sección, los separadores `---` se vuelven `—`, y un bloque de código sin cerrar
  * se cierra. Dentro de los bloques de código no se toca nada salvo `<%`.
  */
-const neutralize = (s: string) => {
+export const neutralize = (s: string) => {
   const out: string[] = [];
   let fence: string | null = null;
   for (const l of s.split(/\r?\n/)) {
@@ -54,7 +54,7 @@ const wikiTarget = (s: string) =>
   oneLine(s).replace(/\]\]/g, ")").replace(/\[\[/g, "(").replace(/[|#^]/g, "-");
 const wikiAlias = (s: string) => inert(oneLine(s).replace(/\]\]/g, ")").replace(/\[\[/g, "(").replace(/\|/g, "-"));
 /** Enlace wiki seguro: por ruta (sin `.md`) con el título como alias; o por nombre si no hay ruta. */
-const link = (title: string, notePath?: string | null) =>
+export const link = (title: string, notePath?: string | null) =>
   notePath ? `[[${wikiTarget(notePath.replace(/\.md$/i, ""))}|${wikiAlias(title)}]]` : `[[${wikiTarget(title)}]]`;
 const list = (items: string[]) => (items.length ? items.map((i) => `- ${inert(oneLine(i))}`).join("\n") : "- (ninguno)");
 
@@ -105,15 +105,13 @@ export function buildPlanNote(input: PlanNoteInput): { fileName: string; content
   return { fileName, content: redactSecrets(content) };
 }
 
-/** Escribe la nota como archivo nuevo dentro de <vault>/<writeDir>. Nunca sobrescribe (agrega -2, -3…). */
-export function writePlanNote(vaultPath: string, writeDir: string, input: PlanNoteInput): string {
+/** Escribe un archivo nuevo en <vault>/<dir>. Nunca sobrescribe (agrega -2, -3…). Devuelve la ruta relativa POSIX. */
+export function writeNewNote(vaultPath: string, dirName: string, base: string, content: string): string {
   const root = path.resolve(vaultPath);
-  const dir = path.resolve(root, writeDir);
+  const dir = path.resolve(root, dirName);
   const rel = path.relative(root, dir);
   if (!rel || rel.startsWith("..") || path.isAbsolute(rel)) throw new Error("writeDir fuera de la bóveda");
   fs.mkdirSync(dir, { recursive: true });
-  const { fileName, content } = buildPlanNote(input);
-  const base = fileName.replace(/\.md$/, "");
   for (let n = 1; ; n++) {
     const name = n === 1 ? `${base}.md` : `${base}-${n}.md`;
     try {
@@ -123,4 +121,10 @@ export function writePlanNote(vaultPath: string, writeDir: string, input: PlanNo
       if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
     }
   }
+}
+
+/** Escribe la nota como archivo nuevo dentro de <vault>/<writeDir>. Nunca sobrescribe (agrega -2, -3…). */
+export function writePlanNote(vaultPath: string, writeDir: string, input: PlanNoteInput): string {
+  const { fileName, content } = buildPlanNote(input);
+  return writeNewNote(vaultPath, writeDir, fileName.replace(/\.md$/, ""), content);
 }

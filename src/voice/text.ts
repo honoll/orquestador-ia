@@ -66,6 +66,29 @@ function firstSentences(text: string, n: number): string {
   return found.join(" ");
 }
 
+/**
+ * Para texto en streaming: índice (exclusivo, tras los cierres) del primer fin de oración a partir
+ * de `from`, o -1 si todavía no hay uno confirmado. Un fin es [.?!…]+ (más cierres) seguido de
+ * espacio/salto de línea; no cuenta el final del texto (puede venir más), ni decimales ("2.5"),
+ * ni abreviaturas. No exige mayúscula después, a diferencia del resumen.
+ */
+export function findSentenceEnd(text: string, from = 0): number {
+  let i = from;
+  while (i < text.length) {
+    if (!TERMINATORS.has(text[i])) { i++; continue; }
+    let j = i;
+    while (j < text.length && TERMINATORS.has(text[j])) j++;
+    const lastTerm = j - 1;
+    while (j < text.length && CLOSERS.has(text[j])) j++;
+    const boundary = j < text.length && isSpace(text[j]);
+    const abbreviation = text[lastTerm] === "." && j === lastTerm + 1 &&
+      (() => { const w = wordBefore(text, i); return w === "." || ABBREVIATIONS.has(w); })();
+    if (boundary && !abbreviation) return j;
+    i = j;
+  }
+  return -1;
+}
+
 /** Markdown -> texto que se puede leer en voz alta. Puro. */
 export function toSpeechText(markdown: string, opts: { summary?: boolean } = {}): string {
   let t = markdown.slice(0, INPUT_MAX_CHARS).replace(/\r\n?/g, "\n");

@@ -150,7 +150,7 @@ export async function deleteAccount(id: string): Promise<void> {
 export async function recordAgyCall(
   accountId: string,
   result: AdapterExecutionResult,
-  source: "chat" | "plan" | "analysis",
+  source: "chat" | "plan" | "analysis" | "voice",
   now: number = Date.now(),
   startedAt: number = now,
 ): Promise<void> {
