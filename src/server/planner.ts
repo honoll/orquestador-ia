@@ -2,7 +2,7 @@ import { runProcess } from "../lib/process-runner.js";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import { CLAUDE_ISOLATION_ARGS } from "../adapters/claude/execute.js";
+import { CLAUDE_ISOLATION_ARGS, READ_ONLY_DISALLOWED_TOOLS } from "../adapters/claude/execute.js";
 import { validateDag } from "./plan-dag.js";
 import { MODEL_CATALOG, PLANNER_MODEL, ROUTABLE_ADAPTERS, type AdapterType } from "../config/models.js";
 
@@ -202,13 +202,14 @@ export interface GeneratePlanOptions {
   memory?: string;
 }
 
+/** El planner solo devuelve JSON: corre sin herramientas de escritura, red ni shell. */
 export function buildPlannerArgs(systemPromptFile: string): string[] {
   return [
     "--print", "-",
     "--output-format", "stream-json",
     "--verbose",
     ...CLAUDE_ISOLATION_ARGS,
-    "--dangerously-skip-permissions",
+    "--disallowedTools", READ_ONLY_DISALLOWED_TOOLS,
     "--model", PLANNER_MODEL,
     "--system-prompt-file", systemPromptFile,
   ];
