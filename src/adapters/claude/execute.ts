@@ -5,12 +5,20 @@ import type { AdapterExecutionContext, AdapterExecutionResult } from "../../lib/
 /** Tools que la síntesis (readOnly) no puede usar: escriben, ejecutan o salen a la red. */
 export const READ_ONLY_DISALLOWED_TOOLS = "Bash Edit Write NotebookEdit WebFetch WebSearch";
 
+/**
+ * Aislamiento de la configuración global (medido en el spike de F3a): sin estas banderas Claude cargaba el
+ * CLAUDE.md global del usuario e ignoraba el del proyecto. Solo fuentes project/local, sin MCP ni slash commands.
+ */
+export const CLAUDE_ISOLATION_ARGS: readonly string[] = [
+  "--setting-sources", "project,local", "--strict-mcp-config", "--disable-slash-commands",
+];
+
 export function buildClaudeArgs(model?: string, sessionId?: string, opts: { readOnly?: boolean } = {}): string[] {
-  const args = ["--print", "-", "--output-format", "stream-json", "--verbose"];
+  const args = ["--print", "-", "--output-format", "stream-json", "--verbose", ...CLAUDE_ISOLATION_ARGS];
   if (opts.readOnly) {
     // Sin --dangerously-skip-permissions las tools que piden permiso se niegan solas en modo print; además se
-    // niegan explícitamente (claude --help: lista separada por espacios o comas) y no se carga ningún MCP.
-    args.push("--disallowedTools", READ_ONLY_DISALLOWED_TOOLS, "--strict-mcp-config");
+    // niegan explícitamente (claude --help: lista separada por espacios o comas). MCP ya queda fuera por el aislamiento.
+    args.push("--disallowedTools", READ_ONLY_DISALLOWED_TOOLS);
   } else {
     args.push("--dangerously-skip-permissions");
   }
