@@ -46,6 +46,7 @@ const TEXT_BYE = "¡Hasta luego!";
 const TEXT_PREPARING = "Va, lo estoy preparando; te aviso cuando arranque.";
 const TEXT_STARTED = "Listo, arranqué el plan. Te aviso cuando termine.";
 const TEXT_CRITICAL = "Lo preparé, pero es un plan crítico: apruébalo en la pantalla.";
+const TEXT_NEEDS_APPROVAL = "Lo preparé; apruébalo en la pantalla para arrancarlo.";
 const TEXT_PLAN_FAILED = "No pude crear el plan.";
 
 type Agy = ReturnType<typeof createAgySession>;
@@ -122,6 +123,7 @@ async function sendRecorded(s: Session, agy: Agy, text: string, onDelta: (d: str
 async function prepareAndStart(s: Session, action: { pedido: string; projectId: string }): Promise<void> {
   const watcher = watchPlanReady(s.deps.planReadyTimeoutMs);
   let text = TEXT_PLAN_FAILED;
+  let approvalPlanId: string | null = null;
   try {
     // Un plan de voz siempre corre en la carpeta de su proyecto: sin ella no se crea (nunca process.cwd()).
     if (!(await projectRow(action.projectId))?.path) throw new Error("el proyecto del plan ya no existe o no tiene carpeta");
@@ -131,16 +133,25 @@ async function prepareAndStart(s: Session, action: { pedido: string; projectId: 
     if (waited === "aborted") return;
     if (waited === "ready") {
       // El usuario confirmó: se arranca aunque la sesión ya haya terminado (solo no se anuncia).
-      const result = await s.deps.startPlan(id);
+      // Sin JEV (tier por fallback) no se arranca solo: queda pendiente para aprobarlo en pantalla (I6).
+      const result = await s.deps.startPlan(id, { requireJev: true });
       if (result === "started" || result === "running") text = TEXT_STARTED;
-      else if (result === "needs-approval") text = TEXT_CRITICAL;
+      else if (result === "needs-approval" || result === "needs-jev-approval") {
+        text = result === "needs-approval" ? TEXT_CRITICAL : TEXT_NEEDS_APPROVAL;
+        approvalPlanId = id;
+      }
     }
   } catch (err) {
     console.error("[voz] no se pudo crear/arrancar el plan:", (err as Error)?.message);
   } finally {
     watcher.dispose();
   }
-  if (!s.ended) emit({ type: "voice:assistant:announce", sessionId: s.id, text });
+  if (!s.ended) {
+    emit({
+      type: "voice:assistant:announce", sessionId: s.id, text,
+      ...(approvalPlanId ? { planId: approvalPlanId, needsApproval: true } : {}),
+    });
+  }
 }
 
 function closeQuietly(agy: Agy) {

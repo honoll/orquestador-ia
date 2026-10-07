@@ -92,3 +92,24 @@ describe("createPlan", () => {
     expect(h.runPlanDag).not.toHaveBeenCalled();
   });
 });
+
+describe("startPlanIfAllowed con requireJev (I6: voz sin JEV)", () => {
+  it("tier por fallback o sin fuente: needs-jev-approval sin ejecutar", async () => {
+    const a = await mk({ tier: "normal", tierSource: "fallback" });
+    expect(await startPlanIfAllowed(a, { requireJev: true })).toBe("needs-jev-approval");
+    const b = await mk({ tier: "normal", tierSource: null });
+    expect(await startPlanIfAllowed(b, { requireJev: true })).toBe("needs-jev-approval");
+    expect(h.runPlanDag).not.toHaveBeenCalled();
+  });
+  it("tier de JEV: normal arranca y crítico pide aprobación", async () => {
+    const n = await mk({ tier: "normal", tierSource: "jev" });
+    expect(await startPlanIfAllowed(n, { requireJev: true })).toBe("started");
+    const c = await mk({ tier: "critical", tierSource: "jev" });
+    expect(await startPlanIfAllowed(c, { requireJev: true })).toBe("needs-approval");
+    expect(h.runPlanDag).toHaveBeenCalledTimes(1);
+  });
+  it("sin la opción el comportamiento no cambia", async () => {
+    const id = await mk({ tier: "normal", tierSource: "fallback" });
+    expect(await startPlanIfAllowed(id)).toBe("started");
+  });
+});

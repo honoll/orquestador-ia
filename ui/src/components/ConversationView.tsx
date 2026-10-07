@@ -31,6 +31,8 @@ import { micErrorMessage } from "../lib/voice-utils";
 export interface ConversationResult {
   conversationId: string | null;
   notePath: string | null;
+  /** Último plan de voz que quedó esperando aprobación en pantalla (el chat lo abre en PlanView). */
+  approvalPlanId?: string | null;
 }
 
 interface Line {
@@ -114,6 +116,7 @@ export function ConversationView({
     let interruptedSeq = -1;
     let turnSentences = 0;
     let lineId = 0;
+    let approvalPlanId: string | null = null;
     const lease = duckLease("conversation");
 
     const addLine = (who: Line["who"], text: string, append = false) => {
@@ -190,7 +193,7 @@ export function ConversationView({
       if (closed) return;
       closed = true;
       releaseResources();
-      onCloseRef.current({ conversationId, notePath });
+      onCloseRef.current({ conversationId, notePath, approvalPlanId });
     };
 
     const fail = (message: string, endRemote: boolean) => {
@@ -342,6 +345,7 @@ export function ConversationView({
       }
       if (ev.type === "announce") {
         addLine("asistente", ev.text);
+        if (ev.needsApproval && ev.planId) approvalPlanId = ev.planId;
         if (convRef.current.phase === "listening") dispatch({ type: "announce" });
         else dispatch({ type: "speakQueued" });
         queue.enqueue(ev.text);
@@ -378,7 +382,7 @@ export function ConversationView({
       end: () => dispatch({ type: "end" }),
       dismiss: () => {
         closed = true;
-        onCloseRef.current({ conversationId, notePath: null });
+        onCloseRef.current({ conversationId, notePath: null, approvalPlanId });
       },
       rebuildVad: () => {
         if (!vad || closed || !stream) return;

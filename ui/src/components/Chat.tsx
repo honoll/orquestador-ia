@@ -178,7 +178,12 @@ export function Chat() {
       queryClient.invalidateQueries({ queryKey: ["tasks"] });
     }
     if (r.notePath) setToast("Nota guardada en Cerebro");
-  }, [setConversation, loadConversation, queryClient]);
+    // Plan de voz que espera aprobación (sin JEV o crítico): se abre en PlanView para aprobarlo/ejecutarlo.
+    if (r.approvalPlanId) {
+      queryClient.invalidateQueries({ queryKey: ["plans"] });
+      setActivePlanId(r.approvalPlanId);
+    }
+  }, [setConversation, loadConversation, queryClient, setActivePlanId]);
 
   useEffect(() => {
     if (!toast) return;

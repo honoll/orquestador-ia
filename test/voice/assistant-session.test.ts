@@ -44,7 +44,7 @@ function fakeAgyFactory(script: Res[] | ((msg: string, n: number) => Res)) {
 
 type Ev = {
   type: string; sessionId?: string; turnId?: string; speech: string; text: string; delta?: string; reason?: string;
-  notePath?: string | null; hasAction?: boolean; error?: string; pedido?: string;
+  notePath?: string | null; hasAction?: boolean; error?: string; pedido?: string; planId?: string; needsApproval?: boolean;
 };
 type Deps = AssistantDeps;
 type NoteFn = (vault: string, dir: string, input: TalkNoteInput) => string;
@@ -106,7 +106,7 @@ function setup(over: Over = {}) {
   const { script, ...rest } = over;
   const agy = fakeAgyFactory(script ?? [{ text: "Listo." }]);
   const createPlan = vi.fn(async (_i: { description: string; projectId?: string | null }) => ({ id: "plan-1" }));
-  const startPlan = vi.fn(async (_id: string) => "started" as "started" | "needs-approval" | "not-ready" | "running");
+  const startPlan = vi.fn(async (_id: string, _o?: { requireJev?: boolean }) => "started" as Awaited<ReturnType<NonNullable<Deps["startPlan"]>>>);
   const retrieve = vi.fn(async () => ({ notes: [], source: "none" as const }));
   const writeNote = rest.writeNote ?? vi.fn<NoteFn>(() => "Orquestador/Platicas/nota.md");
   const deps = { agy: agy.factory, createPlan, startPlan, retrieve, ...rest, writeNote } as unknown as Deps;
@@ -244,7 +244,7 @@ describe("assistantTurn", () => {
     expect(d3.speech).toBe("no debería usarse");
     ready();
     await waitFor(() => announces().length > 0);
-    expect(startPlan).toHaveBeenCalledWith("plan-1");
+    expect(startPlan).toHaveBeenCalledWith("plan-1", { requireJev: true });
     expect(announces()).toEqual(["Listo, arranqué el plan. Te aviso cuando termine."]);
     expect(agy.sent).toHaveLength(3); // calentamiento + propuesta + "qué hora es"; la confirmación no pasa por agy
   });
@@ -259,7 +259,7 @@ describe("assistantTurn", () => {
     await say(sessionId, "haz X");
     await confirm(sessionId);
     await waitFor(() => announces().length > 0);
-    expect(startPlan).toHaveBeenCalledWith("plan-1");
+    expect(startPlan).toHaveBeenCalledWith("plan-1", { requireJev: true });
   });
 
   it("'no, espera' no crea plan y la frase tras una acción se trata como turno normal", async () => {
@@ -354,7 +354,7 @@ describe("assistantTurn", () => {
     ready();
     await waitFor(() => startPlan.mock.calls.length === 1);
     await new Promise((r) => setTimeout(r, 20));
-    expect(startPlan).toHaveBeenCalledWith("plan-1");
+    expect(startPlan).toHaveBeenCalledWith("plan-1", { requireJev: true });
     expect(announces()).toEqual([]);
   });
 
@@ -848,5 +848,45 @@ describe("I3: sin carpeta de proyecto no hay plan de voz", () => {
     const d = await say(sessionId, "haz X");
     expect(d.hasAction).toBe(false);
     expect(d.speech).toContain("¿En qué proyecto lo hago?");
+  });
+});
+
+describe("I6: sin JEV el plan de voz espera aprobación en pantalla", () => {
+  it("startPlan se pide con requireJev y 'needs-jev-approval' se anuncia con el planId", async () => {
+    const startPlan = vi.fn(async (_id: string, _o?: { requireJev?: boolean }) => "needs-jev-approval" as const);
+    const { deps } = setup({ startPlan, script: [{ text: "Listo." }, { text: PROPOSE }] });
+    const { sessionId } = await session.startAssistant({ projectId: null }, deps);
+    await say(sessionId, "haz X");
+    await confirm(sessionId);
+    await new Promise((r) => setTimeout(r, 20));
+    ready();
+    await waitFor(() => announces().length > 0);
+    expect(startPlan).toHaveBeenCalledWith("plan-1", { requireJev: true });
+    expect(announces()).toEqual(["Lo preparé; apruébalo en la pantalla para arrancarlo."]);
+    expect(types("voice:assistant:announce")[0]).toMatchObject({ planId: "plan-1", needsApproval: true });
+  });
+
+  it("plan crítico conserva su texto y también marca needsApproval", async () => {
+    const startPlan = vi.fn(async (_id: string, _o?: { requireJev?: boolean }) => "needs-approval" as const);
+    const { deps } = setup({ startPlan, script: [{ text: "Listo." }, { text: PROPOSE }] });
+    const { sessionId } = await session.startAssistant({ projectId: null }, deps);
+    await say(sessionId, "haz X");
+    await confirm(sessionId);
+    await new Promise((r) => setTimeout(r, 20));
+    ready();
+    await waitFor(() => announces().length > 0);
+    expect(announces()).toEqual(["Lo preparé, pero es un plan crítico: apruébalo en la pantalla."]);
+    expect(types("voice:assistant:announce")[0]).toMatchObject({ planId: "plan-1", needsApproval: true });
+  });
+
+  it("un plan arrancado no pide aprobación", async () => {
+    const { deps } = setup({ script: [{ text: "Listo." }, { text: PROPOSE }] });
+    const { sessionId } = await session.startAssistant({ projectId: null }, deps);
+    await say(sessionId, "haz X");
+    await confirm(sessionId);
+    await new Promise((r) => setTimeout(r, 20));
+    ready();
+    await waitFor(() => announces().length > 0);
+    expect(types("voice:assistant:announce")[0].needsApproval).toBeUndefined();
   });
 });

@@ -168,3 +168,10 @@ describe("aviso de error hablado (I4)", () => {
     }
   });
 });
+
+describe("announce con plan por aprobar (I6)", () => {
+  it("pasa planId y needsApproval", () => {
+    expect(parseAssistantEvent({ type: "voice:assistant:announce", sessionId: "s", text: "Lo preparé", planId: "p1", needsApproval: true }, "s"))
+      .toEqual({ type: "announce", sessionId: "s", text: "Lo preparé", planId: "p1", needsApproval: true });
+  });
+});

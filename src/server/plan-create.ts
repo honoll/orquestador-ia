@@ -230,12 +230,20 @@ export async function createPlan(input: { description: string; projectId?: strin
   return { id: planId };
 }
 
-/** Arranca un plan desde código. Los planes críticos exigen aprobación explícita (la UI), nunca se lanzan aquí. */
-export async function startPlanIfAllowed(planId: string): Promise<"started" | "needs-approval" | "not-ready" | "running"> {
+/**
+ * Arranca un plan desde código. Los planes críticos exigen aprobación explícita (la UI), nunca se lanzan aquí.
+ * `requireJev` (planes de voz): si el tier no lo decidió JEV (fallback o sin fuente) tampoco se lanza →
+ * "needs-jev-approval"; el plan queda pendiente para aprobarlo en pantalla.
+ */
+export async function startPlanIfAllowed(
+  planId: string,
+  opts: { requireJev?: boolean } = {},
+): Promise<"started" | "needs-approval" | "needs-jev-approval" | "not-ready" | "running"> {
   const plan = await getPlan(planId);
   if (!plan || plan.status === "generating" || plan.status === "failed") return "not-ready";
   if (isPlanRunning(planId)) return "running";
   if (plan.tier === "critical") return "needs-approval";
+  if (opts.requireJev && plan.tierSource !== "jev") return "needs-jev-approval";
   runPlanDag(planId, await planCwd(plan), { mode: "all" }).catch((err) => console.error("runPlanDag error:", err));
   return "started";
 }

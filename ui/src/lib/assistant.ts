@@ -4,7 +4,7 @@
 export type AssistantEvent =
   | { type: "delta"; sessionId: string; turnId: string; delta: string }
   | { type: "turn-done"; sessionId: string; turnId: string; speech: string; hasAction: boolean; error?: string }
-  | { type: "announce"; sessionId: string; text: string }
+  | { type: "announce"; sessionId: string; text: string; planId?: string; needsApproval?: boolean }
   | { type: "ended"; sessionId: string; reason: string; notePath: string | null };
 
 const str = (v: unknown): v is string => typeof v === "string";
@@ -31,7 +31,11 @@ export function parseAssistantEvent(raw: unknown, sessionId: string): AssistantE
       };
     case "voice:assistant:announce":
       if (!str(e.text) || !e.text.trim()) return null;
-      return { type: "announce", sessionId, text: e.text };
+      return {
+        type: "announce", sessionId, text: e.text,
+        // Plan de voz que espera aprobación en pantalla: la vista lo abre al cerrar la plática.
+        ...(str(e.planId) && e.planId && e.needsApproval === true ? { planId: e.planId, needsApproval: true } : {}),
+      };
     case "voice:assistant:ended":
       return {
         type: "ended",
