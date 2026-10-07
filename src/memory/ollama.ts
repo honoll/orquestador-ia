@@ -25,7 +25,8 @@ export function createOllamaEmbedder(opts: Opts = {}): Embedder {
         const res = await fetchImpl(`${url}/api/embed`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ model, input: texts }),
+          // keep_alive: el modelo queda cargado 30 min (la primera consulta de un plan no paga la carga).
+          body: JSON.stringify({ model, input: texts, keep_alive: "30m" }),
           signal: ctrl.signal,
         });
         if (!res.ok) return null;

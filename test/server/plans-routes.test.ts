@@ -3,6 +3,8 @@ import { randomUUID } from "node:crypto";
 
 const h = vi.hoisted(() => ({ runPlanDag: vi.fn(async () => {}), running: new Set<string>(), retrySynthesis: vi.fn(async () => true), cancelPlanRun: vi.fn(() => true),
   gate: null as Promise<void> | null,
+  events: [] as Record<string, unknown>[],
+  embedderOpts: [] as Record<string, unknown>[],
   indexVault: vi.fn(async () => ({ scanned: 0, updated: 0, removed: 0, chunks: 0, failed: false })),
   retrieveMemory: vi.fn(async () => ({
     notes: [{ path: "Proyectos/x.md", title: "x", score: 0.8, projectNote: true, excerpt: "EXTRACTO-SECRETO" }],
@@ -29,6 +31,23 @@ vi.mock("../../src/memory/vault-index.js", async () => {
 vi.mock("../../src/memory/retrieve.js", async () => {
   const actual = await vi.importActual<typeof import("../../src/memory/retrieve.js")>("../../src/memory/retrieve.js");
   return { ...actual, retrieveMemory: h.retrieveMemory };
+});
+vi.mock("../../src/server/ws.js", () => ({
+  broadcast: (e: Record<string, unknown>) => { h.events.push(e); },
+  addClient: () => {},
+  removeClient: () => {},
+}));
+vi.mock("../../src/memory/ollama.js", async () => {
+  const actual = await vi.importActual<typeof import("../../src/memory/ollama.js")>("../../src/memory/ollama.js");
+  return {
+    ...actual,
+    createOllamaEmbedder: (o: Record<string, unknown> = {}) => {
+      h.embedderOpts.push(o);
+      const fn = async () => null;
+      (fn as unknown as { opts: unknown }).opts = o;
+      return fn;
+    },
+  };
 });
 vi.mock("../../src/server/plan-scheduler.js", () => ({
   runPlanDag: h.runPlanDag,
@@ -299,6 +318,27 @@ describe("rutas de planes (F2)", () => {
     const opts = (h.generatePlan.mock.calls[0] as any[])[3];
     expect(opts.memory).toContain("EXTRACTO-SECRETO");
     expect(opts.memory).toContain("Proyectos/x.md");
+  });
+
+  it("avisa plan:memory loading antes de indexar y la consulta usa timeout de 10 s", async () => {
+    h.events.length = 0;
+    h.indexVault.mockClear();
+    h.retrieveMemory.mockClear();
+    let eventsAtIndex: Record<string, unknown>[] = [];
+    h.indexVault.mockImplementationOnce(async () => {
+      eventsAtIndex = [...h.events];
+      return { scanned: 0, updated: 0, removed: 0, chunks: 0, failed: false };
+    });
+    const r = await req("/", "POST", { description: "agrega logout" });
+    const { id } = (await r.json()) as { id: string };
+    await vi.waitFor(async () => expect((await getPlanRow(id)).status).toBe("pending"));
+    expect(eventsAtIndex.filter((e) => e.type === "plan:memory")).toEqual([
+      expect.objectContaining({ type: "plan:memory", planId: id, source: "loading" }),
+    ]);
+    const mem = h.events.filter((e) => e.type === "plan:memory" && e.planId === id).map((e) => e.source);
+    expect(mem).toEqual(["loading", "semantic"]);
+    const call = (h.retrieveMemory.mock.calls[0] as unknown as [{ embedder: { opts: Record<string, unknown> } }])[0];
+    expect(call.embedder.opts).toMatchObject({ timeoutMs: 10_000 });
   });
 
   it("si la indexación falla o se cuelga, el planner sigue sin bloquearse", async () => {

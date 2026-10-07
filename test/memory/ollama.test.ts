@@ -11,7 +11,7 @@ describe("createOllamaEmbedder", () => {
     expect(await emb(["a", "b"])).toEqual([[1, 2], [3, 4]]);
     const [url, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toBe("http://x:1/api/embed");
-    expect(JSON.parse(init.body as string)).toEqual({ model: "m", input: ["a", "b"] });
+    expect(JSON.parse(init.body as string)).toEqual({ model: "m", input: ["a", "b"], keep_alive: "30m" });
   });
 
   it("error HTTP, JSON sin embeddings, cantidad distinta, excepcion y timeout -> null", async () => {

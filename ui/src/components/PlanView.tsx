@@ -203,7 +203,8 @@ export interface Plan {
   synthesisStatus: "running" | "succeeded" | "failed" | null;
   synthesisError: string | null;
   memoryNotes?: string | null;
-  memorySource?: "semantic" | "project-only" | "none" | null;
+  /** "loading" solo llega por WS (plan:memory) mientras se indexa y recupera; no se guarda. */
+  memorySource?: "semantic" | "project-only" | "none" | "loading" | null;
   memoryNotePath?: string | null;
 }
 
@@ -303,6 +304,12 @@ function GeneratingView({
       <div className="px-6 pt-6 pb-2 max-w-3xl mx-auto w-full">
         <p className="font-mono text-[10px] uppercase tracking-widest text-text-tertiary mb-1">analizando tarea</p>
         <p className="text-sm text-text-primary leading-relaxed">{plan.description}</p>
+        {plan.memorySource === "loading" && (
+          <p role="status" className="mt-2 flex items-center gap-1.5 font-mono text-[11px] text-text-secondary">
+            <span aria-hidden="true" className="h-1 w-1 rounded-full bg-accent animate-pulse-dot" />
+            cargando memoria…
+          </p>
+        )}
       </div>
 
       {/* Animated adapter icons */}
