@@ -62,6 +62,9 @@ async function embedAll(embedder: Embedder, texts: string[]): Promise<number[][]
 
 let inFlight: Promise<IndexReport> | null = null;
 
+/** true mientras hay una corrida de indexado en curso. */
+export function isIndexing(): boolean { return inFlight !== null; }
+
 /** Indexa la bóveda; si ya hay una corrida en curso devuelve esa misma promesa. */
 export function indexVault(opts: { vaultPath: string; embedder: Embedder }): Promise<IndexReport> {
   if (inFlight) return inFlight;
