@@ -151,11 +151,11 @@ The 168k Codex step mentioned in F2 was caused by global config leakage. With wo
 - **`agy` is spawned directly (`agy.exe`, `shell:false`) with the prompt as NDJSON on stdin.** It is resolved via `AGY_PATH` or `%LOCALAPPDATA%\agy\bin\agy.exe` (not PATH).
 - **Attachments pipeline**: attached files are pre-analyzed by agy via `POST /api/analyze` before reaching the main adapter. The analysis runs agy in read-only mode (no `--dangerously-skip-permissions`).
 - **Codex sandbox modes (`buildCodexArgs`, all with `-c approval_policy='never'`):** read-only steps `--sandbox read-only`; writers with the worker profile (logged-in isolated `CODEX_HOME`) `--sandbox danger-full-access` (parity with claude/agy `--dangerously-skip-permissions`; protection = F4 guard + project cwd; reason: MSIX virtualization of AppData breaks the Windows elevated sandbox setup for a second `CODEX_HOME`); writers without the profile `--sandbox workspace-write` (+ `-c windows.sandbox='elevated'` on win32). `--full-auto` is deprecated and left the writer read-only with `--ignore-user-config`.
-- **Headless flags**: Claude uses `--dangerously-skip-permissions` (except `readOnly` runs like the plan synthesis, see Plan System), Codex uses `--json`. These are required — interactive prompts break the runner.
+- **Headless flags**: Claude uses `--dangerously-skip-permissions` (except `readOnly` runs like the plan synthesis, see Plan System, and the planner, which runs with `--tools ""` + `--disallowedTools` and no skip-permissions — F3b), Codex uses `--json`. These are required — interactive prompts break the runner.
 
 ### Database Schema (`src/db/schema.ts`)
 
-Tables: `projects`, `tasks`, `runs`, `plans`, `plan_steps`, `agy_accounts`, `agy_usage`. Tasks belong to a project and a `conversation_id` (UUID grouping multi-turn exchanges). Runs belong to tasks and store raw output, parsed result, session IDs, cost, and tokens.
+Tables: `projects`, `tasks`, `runs`, `plans`, `plan_steps`, `agy_accounts`, `agy_usage`, `vault_notes`, `vault_chunks`, `vault_meta` (F3b, see below). Tasks belong to a project and a `conversation_id` (UUID grouping multi-turn exchanges). Runs belong to tasks and store raw output, parsed result, session IDs, cost, and tokens.
 
 ### Frontend State
 
@@ -163,6 +163,41 @@ Tables: `projects`, `tasks`, `runs`, `plans`, `plan_steps`, `agy_accounts`, `agy
 - `WebSocketProvider` — single WS connection, event routing, log accumulation
 - 3-column layout: `AdapterPanel` | `Chat` | `ProjectPanel`
 - `PlanView` renders inside `Chat` when a plan is active
+
+## Obsidian memory (F3b)
+
+Introduced in F3b (2026-10-06, branch `f3b-memoria-obsidian`). The planner gets relevant notes from the user's Obsidian vault (Cerebro), and every completed plan leaves a note there.
+
+**Modules (`src/memory/`):**
+- `config.ts` — `memoryConfig()`: vault path, Ollama URL, model, write dir (`Orquestador/Planes`).
+- `markdown.ts` — `parseFrontmatter` (minimal YAML: `k: v`, `k: [a, b]`; single-quoted values keep `\` literally and `''` → `'`), `chunkNote` (by headings, ≤ `CHUNK_MAX_CHARS`), `redactSecrets`, `slugify`.
+- `ollama.ts` — `createOllamaEmbedder` (`POST /api/embed` with `keep_alive: "30m"`; never throws, `null` on any failure/timeout; validates vectors) and `ollamaHealth`.
+- `vault-index.ts` — `indexVault` (incremental by mtime; concurrent calls share one run; skips `.`-folders, `adjuntos`, `attachments`, `_resources`; an unreadable folder does not delete its indexed notes).
+- `retrieve.ts` — `retrieveMemory` and `buildMemorySection`.
+- `plan-note.ts` — `buildPlanNote` / `writePlanNote`.
+- Routes `src/server/routes/memory.ts`: `GET /api/memory/status` (notes, chunks, last indexed, Ollama health, model, indexing), `POST /api/memory/reindex` (409 if already indexing).
+
+**Variables:** `CEREBRO_PATH` (default `%USERPROFILE%\Documents\Cerebro`), `OLLAMA_URL` (default `http://127.0.0.1:11434`), `MEMORY_EMBED_MODEL` (default `bge-m3`). Documented in `.env.example`.
+
+**Schema:** `vault_notes` (`path` PK relative to the vault, `title`, `mtime_ms`, `frontmatter` JSON, `indexed_at`), `vault_chunks` (`id`, `path`, `heading` path "Title > H2 > H3", `chunk_index`, `text`, `embedding` = base64 Float32Array), `vault_meta` (`key`/`value`: `model` and `dim` of the stored embeddings — if either changes, the whole index is wiped and rebuilt). `plans` gained `memory_notes` (JSON, without excerpts), `memory_source` (`semantic` | `project-only` | `none`) and `memory_note_path`.
+
+**Constants:** `CHUNK_MAX_CHARS` 1500, `EMBED_BATCH` 16, `MEMORY_TOP_NOTES` 5, `MEMORY_BUDGET_CHARS` 24 000 (~6k tokens, shared evenly across notes), `MEMORY_MIN_SCORE` 0.55 (chosen with 3 real queries: relevant notes scored 0.57–0.67, noise 0.50–0.52; the project note is kept even below it), `MEMORY_MAX_PLAN_NOTES` 2. Index wait before a plan: 20 s; retrieval query timeout: 10 s.
+
+**Retrieval:** query = the plan request; cosine over all chunks; best chunk per note. The project note always goes first: frontmatter `ruta` equal to the project path (normalized: `\`→`/`, repeated `/` collapsed, case-insensitive), else title equal to the project name; notes with `tipo: plan-orquestador` are never the project note, and among several matches `tipo: proyecto` wins. Without Ollama/model → only the project note (`project-only`, UI "memoria limitada"). Trivial plans (no Opus) use no memory. Plan notes written by the orchestrator are re-indexed like any note but marked in the prompt as "generada por el orquestador (menor confianza)" and capped at 2 per plan.
+
+**Indexing triggers:** at server start (background), before each non-trivial plan (incremental, max 20 s wait), and `POST /api/memory/reindex` (UI "reindexar").
+
+**Events:** `plan:memory { planId, source, notes? }` — first `source: "loading"` (UI shows "cargando memoria…" while indexing/retrieving), then the final source and notes without excerpts; `plan:memory-note { planId, path }` after the plan note is written; `memory:indexed { report }` after a manual reindex.
+
+**Writing to the vault:** only new files under `<vault>/Orquestador/Planes/` (`flag: "wx"`, `-2`, `-3`… on collision; `writeDir` outside the vault throws); existing notes are never modified. One note per completed plan (`savePlanNote` in the scheduler; a failure never fails the plan): frontmatter `tipo: plan-orquestador`, `estado`, `ruta` (YAML single quotes), `actualizado`, `tags`, `tier`, `tokens`; sections Pedido, Pasos, Resultado, Decisiones, Aprendizajes (from the synthesis `<<<MEMORIA>>>` block, items clipped to 300 chars), Memoria usada, Relacionado. Links are by path with alias, `[[path/without/.md|Title]]` (`]]`, `[[`, `|`, `#`, `^` sanitized). Untrusted text in Pedido/Resultado: headings demoted 3 levels (`# x` → `#### x`), `---` → `—`, unclosed code fences closed, `<%` and `![[` escaped. `redactSecrets` runs over the whole note. The vault's obsidian-git plugin versions the new notes.
+
+**Test rule:** `test/setup-env.ts` sets a temp `CEREBRO_PATH` per test file and `OLLAMA_URL=http://127.0.0.1:9` as a fallback. Never point tests at the real vault: during F3b, tests wrote 16 notes into the real `Cerebro/Orquestador/Planes` (deleted; fixed with the temp `CEREBRO_PATH`). Tests never call real Ollama — inject a fake `Embedder`.
+
+**Trust boundary:** memory goes only to the planner prompt, fenced as `<<<NOTA path #nonce>>>` … `<<<FIN #nonce>>>` and declared data, not instructions. Every excerpt passes through `redactSecrets` (PEM private keys, credentials in URLs, `Bearer` tokens, `password|passwd|pass|pwd|contraseña|secret|token|api_key` with `:`/`=`, "la contraseña es X", known token shapes, and UPPERCASE env-style `*_KEY|TOKEN|SECRET|PASSWORD=` — case-sensitive so `monkey: banana` survives). The planner runs **without tools**: `--tools ""` disables every built-in tool (including Read/Glob/Grep, so injected vault text cannot make it read `~/.ssh` or `.env` by absolute path), `--disallowedTools` = `READ_ONLY_DISALLOWED_TOOLS` is a second layer, `--strict-mcp-config` gives no MCP servers, and there is no `--dangerously-skip-permissions`; and its system prompt says to copy into a step prompt only the memory facts that step needs, never credentials, keys, IPs or personal data.
+
+**Privacy flow (explicit):** memory excerpts → Anthropic (Opus planner). The planner may copy facts into step prompts → those reach OpenAI (codex), Google (agy) and, as guard state, TypeSafe (JEV). Step results → Opus synthesis → the plan note in the vault. Redaction is a regex filter, not a guarantee.
+
+**Expected behavior:** the local guard may pause a writer step because the planner copied a sensitive path from memory (e.g. `.ssh` from a server note) — this is the guard working (a false positive without JEV), approve it if the step is fine.
 
 ## JEV (TypeSafe)
 

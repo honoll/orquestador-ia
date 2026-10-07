@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { fetchMemoryStatus, obsidianUrl, type MemoryStatusData } from "../lib/memory-api";
 import { useWs } from "../context/WebSocketProvider";
 import { useAppState } from "../context/AppStateContext";
 import { parseStreamingText } from "../lib/parse-stream";
@@ -201,6 +202,18 @@ export interface Plan {
   synthesis: string | null;
   synthesisStatus: "running" | "succeeded" | "failed" | null;
   synthesisError: string | null;
+  memoryNotes?: string | null;
+  /** "loading" solo llega por WS (plan:memory) mientras se indexa y recupera; no se guarda. */
+  memorySource?: "semantic" | "project-only" | "none" | "loading" | null;
+  memoryNotePath?: string | null;
+}
+
+interface MemoryNoteView { path: string; title: string; score: number; projectNote: boolean }
+
+function parseMemoryNotes(raw: unknown): MemoryNoteView[] {
+  if (Array.isArray(raw)) return raw as MemoryNoteView[];
+  if (typeof raw !== "string" || !raw) return [];
+  try { const v = JSON.parse(raw); return Array.isArray(v) ? v : []; } catch { return []; }
 }
 
 // ─── adapter styling ───────────────────────────────────────────────────────────
@@ -291,6 +304,12 @@ function GeneratingView({
       <div className="px-6 pt-6 pb-2 max-w-3xl mx-auto w-full">
         <p className="font-mono text-[10px] uppercase tracking-widest text-text-tertiary mb-1">analizando tarea</p>
         <p className="text-sm text-text-primary leading-relaxed">{plan.description}</p>
+        {plan.memorySource === "loading" && (
+          <p role="status" className="mt-2 flex items-center gap-1.5 font-mono text-[11px] text-text-secondary">
+            <span aria-hidden="true" className="h-1 w-1 rounded-full bg-accent animate-pulse-dot" />
+            cargando memoria…
+          </p>
+        )}
       </div>
 
       {/* Animated adapter icons */}
@@ -1288,6 +1307,40 @@ function PauseBanner({ plan, onContinue }: { plan: Plan; onContinue: () => void 
   );
 }
 
+function MemoryCard({ plan }: { plan: Plan }) {
+  const { data } = useQuery<MemoryStatusData>({ queryKey: ["memory-status"], queryFn: fetchMemoryStatus, refetchInterval: 60_000 });
+  const notes = parseMemoryNotes(plan.memoryNotes);
+  const limited = plan.memorySource === "project-only";
+  const notePath = plan.status === "completed" ? plan.memoryNotePath : null;
+  if (notes.length === 0 && !limited && !notePath) return null;
+  return (
+    <section aria-label="Memoria de Cerebro" className="mb-4 space-y-2 font-mono text-[11px] text-text-secondary">
+      {limited && <p role="status" className="text-accent">memoria limitada (Ollama no disponible)</p>}
+      {notes.length > 0 && (
+        <details className="rounded border border-edge bg-surface-1 px-3 py-2">
+          <summary className="min-h-6 cursor-pointer text-text-tertiary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">memoria usada ({notes.length})</summary>
+          <ul className="mt-2 space-y-1">
+            {notes.map((n) => (
+              <li key={n.path} className="break-words">
+                <span className="text-text-primary">{n.title}</span> · <span className="text-text-tertiary">{n.path}</span> · {Math.round(n.score * 100)} %
+                {n.projectNote && <span className="ml-1 rounded border border-accent/40 px-1 text-accent">proyecto</span>}
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+      {notePath && (
+        <p className="break-words">
+          {data ? (
+            <a href={obsidianUrl(data.vaultName, notePath)} className="underline decoration-dotted underline-offset-2 text-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">nota en Cerebro</a>
+          ) : <span>nota en Cerebro</span>}
+          {" "}<span className="text-text-tertiary">{notePath}</span>
+        </p>
+      )}
+    </section>
+  );
+}
+
 function SynthesisCard({ plan, onRetry }: { plan: Plan; onRetry: () => void }) {
   if (!plan.synthesisStatus) return null;
   return (
@@ -1359,6 +1412,15 @@ export function PlanView({
     // Generation failed/cancelled
     if (e.type === "plan:error" && e.planId === plan.id) {
       setPlan((prev) => ({ ...prev, status: "failed" }));
+      return;
+    }
+
+    if (e.type === "plan:memory" && e.planId === plan.id) {
+      setPlan((p) => ({ ...p, memorySource: e.source, memoryNotes: JSON.stringify(e.notes ?? []) }));
+      return;
+    }
+    if (e.type === "plan:memory-note" && e.planId === plan.id) {
+      setPlan((p) => ({ ...p, memoryNotePath: e.path }));
       return;
     }
 
@@ -1759,6 +1821,7 @@ export function PlanView({
                 {/* Plan description + diagram + stats */}
                 <p className="font-mono text-[10px] uppercase tracking-widest text-text-tertiary mb-1">plan</p>
                 <p className="text-sm text-text-primary leading-relaxed mb-4">{plan.description}</p>
+                <MemoryCard plan={plan} />
                 <SynthesisCard plan={plan} onRetry={handleRetrySynthesis} />
                 <PlanSummary plan={plan} />
                 {plan.steps.length > 0 && (

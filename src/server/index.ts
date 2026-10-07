@@ -21,6 +21,10 @@ import usageRoute from "./routes/usage.js";
 import accountsRoute from "./routes/accounts.js";
 import workersRoute from "./routes/workers.js";
 import jevRoute from "./routes/jev.js";
+import memoryRoute from "./routes/memory.js";
+import { indexVault } from "../memory/vault-index.js";
+import { createOllamaEmbedder } from "../memory/ollama.js";
+import { memoryConfig } from "../memory/config.js";
 
 // Llaves locales (p. ej. TYPESAFE_API_KEY) en .env, que está en .gitignore.
 try { process.loadEnvFile(path.resolve(import.meta.dirname, "../../.env")); } catch { /* sin .env */ }
@@ -51,6 +55,7 @@ app.route("/api/usage", usageRoute);
 app.route("/api/accounts", accountsRoute);
 app.route("/api/workers", workersRoute);
 app.route("/api/jev", jevRoute);
+app.route("/api/memory", memoryRoute);
 
 app.get(
   "/ws",
@@ -77,3 +82,13 @@ const server = serve({ fetch: app.fetch, port: PORT, hostname: "127.0.0.1" }, (i
 });
 
 injectWebSocket(server);
+
+// Indexa la memoria (Cerebro) en segundo plano; nunca bloquea ni tumba el arranque.
+try {
+  const cfg = memoryConfig();
+  void indexVault({ vaultPath: cfg.vaultPath, embedder: createOllamaEmbedder(cfg), model: cfg.model })
+    .then((r) => log.info({ report: r }, "índice de memoria listo"))
+    .catch((err) => log.warn({ err: String(err?.message ?? err) }, "índice de memoria omitido"));
+} catch (err) {
+  log.warn({ err: String((err as Error)?.message ?? err) }, "índice de memoria omitido");
+}

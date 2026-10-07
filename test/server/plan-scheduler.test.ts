@@ -5,7 +5,7 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 
 const h = vi.hoisted(() => {
-  const state = { current: 0, max: 0, calls: [] as { type: string; key: string; prompt: string; start: number; end: number; readOnly?: boolean; model?: string }[], fail: new Set<string>(), tokens: 100, delayMs: 40, withKill: false, killed: 0, onStart: null as null | (() => void), delayByKey: {} as Record<string, number>, accountThrows: false };
+  const state = { current: 0, max: 0, calls: [] as { type: string; key: string; prompt: string; start: number; end: number; readOnly?: boolean; model?: string }[], fail: new Set<string>(), tokens: 100, delayMs: 40, withKill: false, killed: 0, onStart: null as null | (() => void), delayByKey: {} as Record<string, number>, accountThrows: false, synthText: null as string | null };
   const ok = (summary: string) => ({
     exitCode: 0, signal: null, timedOut: false, stdout: "", stderr: "", summary, sessionId: null, model: null,
     costUsd: 0, inputTokens: state.tokens, outputTokens: 0, errorMessage: null, errorFamily: null, retryNotBefore: null,
@@ -27,7 +27,7 @@ const h = vi.hoisted(() => {
       state.current--;
       state.calls.push({ type, key, prompt: ctx.prompt, start, end: Date.now(), readOnly: ctx.readOnly, model: ctx.model });
       if (state.fail.has(key)) return { ...ok(""), exitCode: 1, errorMessage: "boom", errorFamily: "unknown" };
-      return ok(`resultado-${key}`);
+      return ok(key === "synth" && state.synthText ? state.synthText : `resultado-${key}`);
     },
   });
   return { state, events: [] as any[], adapters: { claude: make("claude"), codex: make("codex"), agy: make("agy") } as Record<string, any> };
@@ -57,9 +57,11 @@ const { createAccount } = await import("../../src/server/agy-accounts.js");
 const { eq } = await import("drizzle-orm");
 
 const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "sched-"));
+const vault = fs.mkdtempSync(path.join(os.tmpdir(), "sched-vault-"));
+process.env.CEREBRO_PATH = vault;
 beforeAll(async () => { await migrationDone; });
 beforeEach(() => {
-  Object.assign(h.state, { current: 0, max: 0, calls: [], tokens: 100, delayMs: 40, withKill: false, killed: 0, onStart: null, delayByKey: {}, accountThrows: false });
+  Object.assign(h.state, { current: 0, max: 0, calls: [], tokens: 100, delayMs: 40, withKill: false, killed: 0, onStart: null, delayByKey: {}, accountThrows: false, synthText: null });
   h.state.fail.clear();
   h.events.length = 0;
 });
@@ -255,5 +257,45 @@ describe("planificador", () => {
     const ok = await mkPlan([{ key: "s1" }, { key: "s2" }]);
     await runPlanDag(ok, cwd, { mode: "next" });
     expect(doneEvents(ok)).toHaveLength(0);
+  });
+  it("la síntesis con bloque MEMORIA guarda solo la respuesta, escribe la nota y emite plan:memory-note", async () => {
+    h.state.synthText = ["Todo listo.", "<<<MEMORIA>>>", '{"decisiones":["usar sqlite"],"aprendizajes":["probar antes"]}', "<<<FIN MEMORIA>>>"].join("\n");
+    const id = await mkPlan([{ key: "s1" }]);
+    await runPlanDag(id, cwd);
+    const row = await plan(id);
+    expect(row).toMatchObject({ status: "completed", synthesis: "Todo listo.", synthesisStatus: "succeeded" });
+    expect(row.memoryNotePath).toMatch(/^Orquestador\/Planes\/.+\.md$/);
+    const note = fs.readFileSync(path.join(vault, row.memoryNotePath!), "utf-8");
+    expect(note).toContain("usar sqlite");
+    expect(note).toContain("probar antes");
+    expect(note).toContain("Todo listo.");
+    expect(h.events.some((e) => e.type === "plan:memory-note" && e.planId === id && e.path === row.memoryNotePath)).toBe(true);
+  });
+
+  it("la nota enlaza por ruta la memoria usada y la nota del proyecto", async () => {
+    const memoryNotes = JSON.stringify([
+      { path: "20-Personal/Orquestador-IA.md", title: "Orquestador-IA", score: 0.9, projectNote: true },
+      { path: "Infra/Servidor.md", title: "Servidor", score: 0.7, projectNote: false },
+    ]);
+    const id = await mkPlan([{ key: "s1" }], { memoryNotes });
+    await runPlanDag(id, cwd);
+    const row = await plan(id);
+    const note = fs.readFileSync(path.join(vault, row.memoryNotePath!), "utf-8");
+    expect(note).toContain("- [[Infra/Servidor|Servidor]]");
+    expect(note).toMatch(/## Relacionado\n- \[\[20-Personal\/Orquestador-IA\|Orquestador-IA\]\]/);
+  });
+
+  it("si escribir la nota falla, el plan igual queda completed", async () => {
+    const blocker = path.join(os.tmpdir(), `sched-file-${randomUUID()}`);
+    fs.writeFileSync(blocker, "x");
+    const prev = process.env.CEREBRO_PATH;
+    process.env.CEREBRO_PATH = blocker; // un archivo, no un directorio: mkdir falla
+    try {
+      const id = await mkPlan([{ key: "s1" }]);
+      await runPlanDag(id, cwd);
+      expect(await plan(id)).toMatchObject({ status: "completed", synthesisStatus: "succeeded", memoryNotePath: null });
+    } finally {
+      process.env.CEREBRO_PATH = prev;
+    }
   });
 });

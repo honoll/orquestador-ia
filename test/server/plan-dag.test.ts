@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   validateDag, toDagSteps, pickRunnable, hasReadyAgyStep, defaultBudget, extendBudget, budgetExceeded,
-  buildStepPrompt, buildSynthesisPrompt, DEP_RESULT_MAX_CHARS, type DagStep,
+  buildStepPrompt, buildSynthesisPrompt, splitSynthesis, DEP_RESULT_MAX_CHARS, type DagStep,
 } from "../../src/server/plan-dag.js";
 
 const st = (key: string, o: Partial<DagStep> = {}): DagStep => ({
@@ -158,5 +158,54 @@ describe("prompts", () => {
     const p = buildSynthesisPrompt("arregla el login", [{ key: "s1", description: "leer", adapter: "agy", result: "R1" }], "n0nce");
     expect(p).toContain("<<<PEDIDO #n0nce>>>\narregla el login\n<<<FIN #n0nce>>>");
     expect(p).toContain("<<<RESULTADO s1 #n0nce>>>\n### s1 — leer (agy)\nR1\n<<<FIN #n0nce>>>");
+  });
+});
+
+describe("splitSynthesis / bloque MEMORIA", () => {
+  const block = (json: string) => ["<<<MEMORIA>>>", json, "<<<FIN MEMORIA>>>"].join("\n");
+  it("separa el bloque JSON y lo quita de la respuesta", () => {
+    const r = splitSynthesis(`Respuesta.\n\n${block('{"decisiones":["a"],"aprendizajes":["b","c"]}')}\n`);
+    expect(r.answer).toBe("Respuesta.");
+    expect(r.memory).toEqual({ decisiones: ["a"], aprendizajes: ["b", "c"] });
+  });
+  it("sin bloque deja la respuesta intacta", () => {
+    expect(splitSynthesis("Solo texto")).toEqual({ answer: "Solo texto", memory: null });
+  });
+  it("con JSON inválido: memory null y sin marcadores", () => {
+    const r = splitSynthesis(`Hola\n${block("no es json")}`);
+    expect(r.memory).toBeNull();
+    expect(r.answer).toBe("Hola");
+  });
+  it("limita a 5 elementos de texto por lista", () => {
+    const r = splitSynthesis(`X\n${block('{"decisiones":["1","2","3","4","5","6"],"aprendizajes":[]}')}`);
+    expect(r.memory!.decisiones).toHaveLength(5);
+  });
+  it("un marcador citado a mitad del texto conserva la respuesta completa sin marcadores", () => {
+    const r = splitSynthesis("Antes <<<MEMORIA>>> citado y despues <<<FIN MEMORIA>>> mas texto");
+    expect(r.memory).toBeNull();
+    expect(r.answer).toBe("Antes  citado y despues  mas texto");
+  });
+  it("marcador citado y bloque real al final: solo cuenta el del final", () => {
+    const r = splitSynthesis(`Mira <<<MEMORIA>>> aqui.\n${block('{"decisiones":["d"],"aprendizajes":[]}')}`);
+    expect(r.memory).toEqual({ decisiones: ["d"], aprendizajes: [] });
+    expect(r.answer).toContain("Mira <<<MEMORIA>>> aqui.");
+  });
+  it("bloque sin cierre: respuesta completa sin marcadores y memory null", () => {
+    const r = splitSynthesis('Hola\n<<<MEMORIA>>>\n{"decisiones":[]}');
+    expect(r.memory).toBeNull();
+    expect(r.answer).not.toContain("<<<");
+  });
+  it("recorta cada elemento a 300 caracteres", () => {
+    const r = splitSynthesis(`X\n${block(JSON.stringify({ decisiones: ["a".repeat(500)], aprendizajes: [] }))}`);
+    expect(r.memory!.decisiones[0]).toHaveLength(300);
+  });
+  it("la síntesis pide el contenido de MEMORIA en español de México", () => {
+    expect(buildSynthesisPrompt("x", [], "n")).toMatch(/Spanish \(Mexico\), at most 5/);
+  });
+  it("la síntesis pide el bloque al final", () => {
+    const p = buildSynthesisPrompt("x", [], "n");
+    expect(p).toContain("<<<MEMORIA>>>");
+    expect(p).toContain("<<<FIN MEMORIA>>>");
+    expect(p).toContain('{"decisiones":');
   });
 });

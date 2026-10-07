@@ -74,6 +74,9 @@ CREATE TABLE IF NOT EXISTS plans (
   tier TEXT,
   tier_confidence REAL,
   tier_source TEXT,
+  memory_notes TEXT,
+  memory_source TEXT,
+  memory_note_path TEXT,
   synthesis TEXT,
   synthesis_status TEXT,
   synthesis_error TEXT,
@@ -150,6 +153,30 @@ CREATE TABLE IF NOT EXISTS agy_usage (
 );
 
 CREATE INDEX IF NOT EXISTS idx_agy_usage_account_at ON agy_usage(account_id, at);
+
+CREATE TABLE IF NOT EXISTS vault_notes (
+  path TEXT PRIMARY KEY,
+  title TEXT NOT NULL,
+  mtime_ms INTEGER NOT NULL,
+  frontmatter TEXT,
+  indexed_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS vault_chunks (
+  id TEXT PRIMARY KEY,
+  path TEXT NOT NULL REFERENCES vault_notes(path),
+  heading TEXT NOT NULL,
+  chunk_index INTEGER NOT NULL,
+  text TEXT NOT NULL,
+  embedding TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_vault_chunks_path ON vault_chunks(path);
+
+CREATE TABLE IF NOT EXISTS vault_meta (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
 `;
 
 const statements = SCHEMA_SQL.split(";").map((s) => s.trim()).filter(Boolean);
@@ -265,6 +292,9 @@ async function migrate() {
     "ALTER TABLE plans ADD COLUMN tier TEXT",
     "ALTER TABLE plans ADD COLUMN tier_confidence REAL",
     "ALTER TABLE plans ADD COLUMN tier_source TEXT",
+    "ALTER TABLE plans ADD COLUMN memory_notes TEXT",
+    "ALTER TABLE plans ADD COLUMN memory_source TEXT",
+    "ALTER TABLE plans ADD COLUMN memory_note_path TEXT",
     "ALTER TABLE plan_steps ADD COLUMN read_only INTEGER NOT NULL DEFAULT 0",
     "ALTER TABLE plan_steps ADD COLUMN guard_flags TEXT",
     "ALTER TABLE plan_steps ADD COLUMN guard_approved INTEGER NOT NULL DEFAULT 0",

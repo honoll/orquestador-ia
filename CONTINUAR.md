@@ -1,5 +1,41 @@
 # Orquestador-IA — Continuación y Estado
 
+## F3b — Memoria en Obsidian (Cerebro) · completado 2026-10-06
+
+**Rama:** `f3b-memoria-obsidian` (sin merge a `main` todavía)
+
+Lo que se agregó:
+- **Índice semántico de toda la bóveda** con Ollama local + `bge-m3` (`src/memory/`): trozos por encabezado (≤ 1500 caracteres), lotes de 16, incremental por fecha de modificación, tablas `vault_notes`, `vault_chunks` y `vault_meta` (modelo y dimensión: si cambian, se reindexa todo). Se indexa al arrancar, antes de cada plan no trivial y con el botón "reindexar"
+- **Recuperación para el planner:** pedido = consulta; top 5 notas con umbral 0.55 y ~24 000 caracteres en total; la nota del proyecto siempre va primero (por `ruta:` o por nombre; nunca una nota de plan; entre varias, `tipo: proyecto`). Sin Ollama → solo la nota del proyecto ("memoria limitada"). Los planes triviales no usan memoria
+- **Frontera de confianza:** la memoria va solo al prompt de Opus como planner, cercada con nonce y marcada como datos; cada extracto pasa por `redactSecrets`; el planner corre **sin herramientas** y se le pide copiar a cada paso solo lo que ese paso necesita, nunca credenciales, llaves, IPs ni datos personales
+- **Nota por plan completado** en `Cerebro/Orquestador/Planes/AAAA-MM-DD-<tema>.md`: frontmatter (`tipo: plan-orquestador`, `ruta` en comillas simples YAML…), pedido, pasos, resultado, decisiones y aprendizajes (del bloque `<<<MEMORIA>>>` de la síntesis, sin llamada extra), memoria usada y relacionado con enlaces por ruta `[[ruta|Título]]`. Nunca sobrescribe ni toca notas existentes. Las notas de plan se reindexan con menor confianza (máximo 2 por plan)
+- **UI:** "cargando memoria…" mientras se genera el plan, panel "memoria usada" (notas, relevancia, insignia de proyecto), enlace `obsidian://` a la nota escrita e indicador del índice con "reindexar"
+- **Eventos WS:** `plan:memory` (`loading` y luego el resultado), `plan:memory-note`, `memory:indexed`
+
+Resultados en vivo (2026-10-06):
+- Bóveda real: **407 notas → 1709 trozos**; primera indexación **54.7 s**, segunda **0 s** (incremental)
+- Calidad de recuperación: consultas de Minecraft y Ecuaciones 5/5 pertinentes (0.57–0.67); "panel de cuentas" traía ruido en 0.50–0.52 → umbral 0.55
+- Plan real "servidor Minecraft Onza": memoria semántica trajo Minecraft (66 %), Minecraft-Onza-Hostinger (65 %), ONZA (59 %), AaronPack (59 %) e Indice-documentos (58 %); Opus metió datos reales en el prompt del escritor; la guardia local lo pausó por mencionar `.ssh` (dato de la nota) y se aprobó; plan completo en **9.9k tokens**; nota escrita en `Orquestador/Planes` (bóveda 407 → 408)
+
+Incidente y corrección:
+- En la tarea 4 los tests escribieron **16 notas en la bóveda real** (carpeta nueva `Orquestador/Planes`, ya borrada; las 407 notas quedaron intactas). Corrección: `test/setup-env.ts` usa un `CEREBRO_PATH` temporal por archivo de test y `OLLAMA_URL=http://127.0.0.1:9` como respaldo
+
+Correcciones de la revisión final:
+- **A** Planner sin herramientas (`--tools ""` apaga todas, incluso Read/Glob/Grep; `--disallowedTools` como segunda capa; sin `--dangerously-skip-permissions`)
+- **B** `redactSecrets` más amplio (PEM, credenciales en URL, Bearer, pass/pwd/passwd, "la contraseña es…") y más preciso (variables de entorno solo en mayúsculas); extractos redactados; regla de copia en el prompt del planner
+- **C** Nota del proyecto nunca es una nota de plan; `ruta` en comillas simples; notas de plan marcadas y máximo 2
+- **D** `keep_alive: "30m"`, consulta con timeout de 10 s, evento `loading`
+- **E** Enlaces por ruta; encabezados bajados en vez de escapados (ya no aparece `\##`); bloques de código cerrados; `<%` y `![[` escapados
+- **F** Modelo y dimensión del índice en `vault_meta`
+
+Pendientes:
+- Merge de `f3b-memoria-obsidian` a `main`
+- Verificar en vivo tras las correcciones (nota nueva con enlaces por ruta y encabezados bajados; "cargando memoria…")
+- Privacidad: los extractos llegan a Anthropic y lo que el planner copie a los pasos llega a OpenAI/Google y a TypeSafe (guardia); no usar con notas de clientes sin revisar
+- Siguiente fase: F5 (voz)
+
+---
+
 ## F2 — Plan como DAG en paralelo y síntesis de Opus · completado 2026-10-06
 
 **Rama:** `f2-dag-paralelo`

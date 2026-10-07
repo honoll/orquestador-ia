@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { AccountsPanel } from "./components/AccountsPanel";
 import { WorkerIsolationNotice } from "./components/WorkerIsolationNotice";
+import { MemoryStatus } from "./components/MemoryStatus";
 import { AdapterPanel } from "./components/AdapterPanel";
 import { Chat } from "./components/Chat";
 import { HudBar } from "./components/HudBar";
@@ -32,6 +33,7 @@ export default function App() {
               <AdapterPanel />
               <AccountsPanel />
               <WorkerIsolationNotice />
+              <MemoryStatus />
             </div>
           </aside>
         </ResizablePanel>

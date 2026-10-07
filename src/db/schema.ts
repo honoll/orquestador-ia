@@ -45,6 +45,10 @@ export const plans = sqliteTable("plans", {
   tier: text("tier", { enum: ["trivial", "normal", "critical"] }),
   tierConfidence: real("tier_confidence"),
   tierSource: text("tier_source", { enum: ["jev", "fallback"] }),
+  // Memoria de Cerebro usada al planear: notas (JSON sin extracto), origen y nota del proyecto.
+  memoryNotes: text("memory_notes"),
+  memorySource: text("memory_source", { enum: ["semantic", "project-only", "none"] }),
+  memoryNotePath: text("memory_note_path"),
   synthesis: text("synthesis"),
   synthesisStatus: text("synthesis_status", { enum: ["running", "succeeded", "failed"] }),
   synthesisError: text("synthesis_error"),
@@ -144,4 +148,29 @@ export const agyUsage = sqliteTable("agy_usage", {
   inputTokens: integer("input_tokens").notNull().default(0),
   outputTokens: integer("output_tokens").notNull().default(0),
   source: text("source").notNull(),
+});
+
+/** Notas de la bóveda de Obsidian indexadas (ruta relativa con "/"). */
+export const vaultNotes = sqliteTable("vault_notes", {
+  path: text("path").primaryKey(),
+  title: text("title").notNull(),
+  mtimeMs: integer("mtime_ms").notNull(),
+  frontmatter: text("frontmatter"),
+  indexedAt: text("indexed_at").notNull(),
+});
+
+/** Metadatos del índice de la bóveda: `model` y `dim` de los embeddings guardados. */
+export const vaultMeta = sqliteTable("vault_meta", {
+  key: text("key").primaryKey(),
+  value: text("value").notNull(),
+});
+
+/** Trozos de cada nota con su embedding (base64 de Float32Array). */
+export const vaultChunks = sqliteTable("vault_chunks", {
+  id: text("id").primaryKey(),
+  path: text("path").notNull().references(() => vaultNotes.path),
+  heading: text("heading").notNull(),
+  chunkIndex: integer("chunk_index").notNull(),
+  text: text("text").notNull(),
+  embedding: text("embedding").notNull(),
 });
