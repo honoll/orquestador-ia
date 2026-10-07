@@ -15,7 +15,7 @@ export interface MemoryNote {
   title: string;
   score: number;
   projectNote: boolean;
-  /** Nota `tipo: plan-orquestador` escrita por el orquestador (menor confianza). */
+  /** Nota `tipo: plan-orquestador` o `platica-orquestador` escrita por el orquestador (menor confianza). */
   planNote?: boolean;
   excerpt: string;
 }
@@ -39,7 +39,7 @@ function normPath(p: string): string {
 
 /** Notas que el propio orquestador escribió al terminar un plan (menor confianza). */
 export const MEMORY_MAX_PLAN_NOTES = 2;
-const PLAN_NOTE_TIPO = "plan-orquestador";
+const PLAN_NOTE_TIPOS = new Set(["plan-orquestador", "platica-orquestador"]);
 
 function frontmatterOf(n: { frontmatter: string | null }): Record<string, unknown> {
   try { return JSON.parse(n.frontmatter ?? "{}") as Record<string, unknown>; } catch { return {}; }
@@ -65,7 +65,11 @@ export async function retrieveMemory(opts: {
   query: string;
   project?: { name: string; path: string } | null;
   embedder: Embedder | null;
+  topNotes?: number;
+  budgetChars?: number;
 }): Promise<MemoryResult> {
+  const topNotes = opts.topNotes ?? MEMORY_TOP_NOTES;
+  const budgetChars = opts.budgetChars ?? MEMORY_BUDGET_CHARS;
   const noteRows = await db.select().from(schema.vaultNotes);
   const chunkRows: ChunkRow[] = await db.select().from(schema.vaultChunks).orderBy(asc(schema.vaultChunks.path), asc(schema.vaultChunks.chunkIndex));
   const byPath = new Map<string, ChunkRow[]>();
@@ -75,7 +79,7 @@ export async function retrieveMemory(opts: {
   }
 
   const tipoOf = new Map(noteRows.map((n) => [n.path, frontmatterOf(n).tipo]));
-  const isPlanNote = (p: string) => tipoOf.get(p) === PLAN_NOTE_TIPO;
+  const isPlanNote = (p: string) => PLAN_NOTE_TIPOS.has(tipoOf.get(p) as string);
 
   // Nota del proyecto: frontmatter `ruta` igual a la ruta; si no, título igual al nombre.
   // Nunca una nota de plan del orquestador; entre varias, la de `tipo: proyecto`.
@@ -125,7 +129,7 @@ export async function retrieveMemory(opts: {
       .filter(([p, e]) => p !== projectRow?.path && titles.has(p) && e.score >= MEMORY_MIN_SCORE)
       .sort((a, b) => b[1].score - a[1].score)
       .filter(([p]) => !isPlanNote(p) || ++planNotes <= MEMORY_MAX_PLAN_NOTES)
-      .slice(0, MEMORY_TOP_NOTES - picks.length);
+      .slice(0, Math.max(0, topNotes - picks.length));
     for (const [p, e] of ranked) {
       picks.push({
         row: titles.get(p)!,
@@ -137,7 +141,7 @@ export async function retrieveMemory(opts: {
   }
 
   // Presupuesto: reparto parejo por nota; lo que una nota no usa queda para las siguientes.
-  let remaining = MEMORY_BUDGET_CHARS;
+  let remaining = budgetChars;
   const notes: MemoryNote[] = picks.map((p, i) => {
     const share = Math.floor(remaining / (picks.length - i));
     const excerpt = excerptOf(p.chunks, share);

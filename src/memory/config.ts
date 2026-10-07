@@ -6,11 +6,13 @@ export function memoryConfig(env: NodeJS.ProcessEnv = process.env): {
   ollamaUrl: string;
   model: string;
   writeDir: string;
+  talkDir: string;
 } {
   return {
     vaultPath: env.CEREBRO_PATH || path.join(env.USERPROFILE || os.homedir(), "Documents", "Cerebro"),
     ollamaUrl: env.OLLAMA_URL || "http://127.0.0.1:11434",
     model: env.MEMORY_EMBED_MODEL || "bge-m3",
     writeDir: "Orquestador/Planes",
+    talkDir: "Orquestador/Platicas",
   };
 }
