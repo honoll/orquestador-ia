@@ -61,11 +61,13 @@ export interface SpeechState {
   /** Identificador de lo que se está pidiendo/reproduciendo, o null. */
   id: string | null;
   phase: "idle" | "loading" | "playing";
+  /** Quién inició la reproducción en curso (para que apagar la lectura automática no corte una manual). */
+  origin: "auto" | "manual" | null;
   /** Error de la última reproducción y de qué id fue. */
   error: { id: string; message: string } | null;
 }
 
-let speech: SpeechState = { id: null, phase: "idle", error: null };
+let speech: SpeechState = { id: null, phase: "idle", origin: null, error: null };
 const speechListeners = new Set<() => void>();
 let abort: AbortController | null = null;
 let audio: HTMLAudioElement | null = null;
@@ -96,18 +98,18 @@ export function stopSpeech() {
   abort?.abort();
   abort = null;
   cleanupAudio();
-  setSpeech({ ...speech, id: null, phase: "idle" });
+  setSpeech({ ...speech, id: null, phase: "idle", origin: null });
 }
 
 /** Reproduce `text`; detiene cualquier otra reproducción. Una sola a la vez. */
-export async function playSpeech(id: string, text: string, summary: boolean) {
+export async function playSpeech(id: string, text: string, summary: boolean, origin: "auto" | "manual" = "manual") {
   stopSpeech();
   const ctrl = new AbortController();
   abort = ctrl;
-  setSpeech({ id, phase: "loading", error: null });
+  setSpeech({ id, phase: "loading", origin, error: null });
   const fail = (message: string) => {
     cleanupAudio();
-    setSpeech({ id: null, phase: "idle", error: { id, message } });
+    setSpeech({ id: null, phase: "idle", origin: null, error: { id, message } });
   };
   try {
     const blob = await fetchSpeech(text, summary, ctrl.signal);
@@ -117,12 +119,12 @@ export async function playSpeech(id: string, text: string, summary: boolean) {
     audio.onended = () => {
       if (abort === ctrl) abort = null;
       cleanupAudio();
-      setSpeech({ ...speech, id: null, phase: "idle" });
+      setSpeech({ ...speech, id: null, phase: "idle", origin: null });
     };
     audio.onerror = () => fail("No se pudo reproducir el audio.");
     await audio.play();
     if (ctrl.signal.aborted) return;
-    setSpeech({ id, phase: "playing", error: null });
+    setSpeech({ id, phase: "playing", origin, error: null });
   } catch (err) {
     if (ctrl.signal.aborted) return;
     const name = (err as { name?: string }).name;
@@ -140,11 +142,15 @@ export function toggleSpeech(id: string, text: string, summary: boolean) {
   else void playSpeech(id, text, summary);
 }
 
-/** Lectura automática: solo una vez por id, y solo si está activada. */
-export function autoSpeak(id: string, text: string) {
-  if (!getAutoRead() || autoRead.has(id) || !text.trim()) return;
-  autoRead.add(id);
-  void playSpeech(id, text, true);
+/**
+ * Lectura automática: solo una vez por `dedupeKey`, y solo si está activada.
+ * `playId` es el mismo id que usa el SpeakButton de esa respuesta, para que el botón
+ * refleje, detenga y muestre los errores de la lectura automática.
+ */
+export function autoSpeak(playId: string, text: string, dedupeKey: string = playId) {
+  if (!getAutoRead() || autoRead.has(dedupeKey) || !text.trim()) return;
+  autoRead.add(dedupeKey);
+  void playSpeech(playId, text, true, "auto");
 }
 
 export function useSpeech(): SpeechState {
@@ -177,7 +183,7 @@ export function getAutoRead(): boolean {
 export function setAutoRead(on: boolean) {
   autoReadOn = on;
   writeAutoRead(safeStorage(), on);
-  if (!on) stopSpeech();
+  if (!on && speech.origin === "auto") stopSpeech();
   autoReadListeners.forEach((l) => l());
 }
 
@@ -248,8 +254,11 @@ export function useVoiceRecorder(onText: (text: string) => void) {
       return;
     }
     let stream: MediaStream;
+    const askedAt = Date.now();
     try {
-      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+      });
     } catch (err) {
       starting.current = false;
       if (mounted.current) setError(micErrorMessage(err));
@@ -258,6 +267,12 @@ export function useVoiceRecorder(onText: (text: string) => void) {
     starting.current = false;
     if (!mounted.current) {
       stream.getTracks().forEach((t) => t.stop());
+      return;
+    }
+    if (wantStop.current && Date.now() - askedAt > MIN_RECORDING_MS) {
+      // El diálogo de permiso hizo que se soltara el botón: no es una grabación "corta".
+      stream.getTracks().forEach((t) => t.stop());
+      setError("Permiso concedido; mantén presionado de nuevo para dictar.");
       return;
     }
     streamRef.current = stream;
@@ -273,6 +288,8 @@ export function useVoiceRecorder(onText: (text: string) => void) {
     const chunks: Blob[] = [];
     rec.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
     rec.onerror = () => {
+      // Tras `error` llega `stop`: se ignora para no transcribir ni pisar el mensaje.
+      rec.onstop = null;
       release();
       recorderRef.current = null;
       setPhase("idle");
@@ -311,7 +328,16 @@ export function useVoiceRecorder(onText: (text: string) => void) {
     startedAt.current = Date.now();
     setElapsed(0);
     setPhase("recording");
-    rec.start();
+    try {
+      rec.start();
+    } catch (err) {
+      rec.onstop = null;
+      release();
+      recorderRef.current = null;
+      setPhase("idle");
+      setError(micErrorMessage(err));
+      return;
+    }
     timer.current = setInterval(() => {
       const ms = Date.now() - startedAt.current;
       setElapsed(ms);

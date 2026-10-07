@@ -14,7 +14,7 @@ export function SpeakButton({ id, text }: { id: string; text: string }) {
     <span className="inline-flex items-center gap-2">
       <button
         type="button"
-        disabled={unavailable !== null || empty}
+        disabled={(unavailable !== null || empty) && !active}
         aria-pressed={active}
         aria-label={active ? "Detener la lectura en voz alta" : "Escuchar esta respuesta"}
         title={unavailable ?? (active ? "Detener la lectura" : "Escuchar esta respuesta")}
@@ -38,6 +38,7 @@ export function AutoReadToggle() {
       type="button"
       role="switch"
       aria-checked={on}
+      aria-label="Leer en voz alta automáticamente"
       disabled={unavailable !== null}
       title={unavailable ?? "Lee en voz alta un resumen corto cuando termina una respuesta o un plan"}
       onClick={() => setAutoRead(!on)}
@@ -45,7 +46,7 @@ export function AutoReadToggle() {
         on ? "text-accent" : "text-text-tertiary hover:text-text-secondary"
       }`}
     >
-      leer en voz alta automáticamente: {on ? "sí" : "no"}
+      leer en voz alta: {on ? "sí" : "no"}
     </button>
   );
 }

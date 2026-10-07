@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { useVoiceRecorder, useVoiceStatus } from "../lib/voice";
 import { dictationUnavailableReason, formatElapsed, transcribingLabel } from "../lib/voice-utils";
 
@@ -12,11 +13,16 @@ export function MicButton({ onText, disabled = false }: { onText: (text: string)
   const off = disabled || unavailable !== null || phase === "transcribing";
   const recording = phase === "recording";
 
-  const label = recording ? "Grabando… suelta para transcribir" : "Mantén presionado para dictar";
-  const title = unavailable ?? (disabled ? "No disponible en este momento" : label);
+  // Un botón deshabilitado deja de recibir pointerup/keyup/blur: si se apaga a media grabación, se detiene.
+  useEffect(() => {
+    if (off && phase === "recording") stop();
+  }, [off, phase, stop]);
+
+  const label = "Dictar (mantén presionado)";
+  const title = unavailable ?? (disabled ? "No disponible en este momento" : recording ? "Grabando… suelta para transcribir" : label);
 
   return (
-    <span className="inline-flex shrink-0 items-center gap-2">
+    <span className="inline-flex min-w-0 items-center gap-2">
       <button
         type="button"
         disabled={off}
@@ -26,11 +32,13 @@ export function MicButton({ onText, disabled = false }: { onText: (text: string)
         onPointerDown={(e) => {
           if (e.button !== 0 || off) return;
           e.preventDefault();
+          // Con captura, pointerup llega aunque el mouse salga del botón de 24 px.
+          try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* sin captura: cae a pointercancel */ }
           void start();
         }}
         onPointerUp={stop}
-        onPointerLeave={stop}
         onPointerCancel={stop}
+        onLostPointerCapture={stop}
         onContextMenu={(e) => e.preventDefault()}
         onKeyDown={(e) => {
           if ((e.key === " " || e.key === "Enter") && !off) {
@@ -45,18 +53,18 @@ export function MicButton({ onText, disabled = false }: { onText: (text: string)
           }
         }}
         onBlur={stop}
-        className={`min-h-6 min-w-6 select-none touch-none rounded-sm border px-1.5 font-mono text-sm leading-none transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-30 ${
+        className={`min-h-6 min-w-6 shrink-0 select-none touch-none rounded-sm border px-1.5 font-mono text-sm leading-none transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-30 ${
           recording ? "border-err text-err" : "border-edge text-text-tertiary hover:text-text-secondary"
         }`}
       >
         <span aria-hidden="true">{recording ? "●" : "🎤"}</span>
       </button>
-      <span role="status" aria-live="polite" className="font-mono text-[10px] text-text-secondary">
+      <span role="status" aria-live="polite" className="min-w-0 max-w-[40vw] break-words font-mono text-[10px] text-text-secondary">
         {recording && <span className="text-err">grabando {formatElapsed(elapsed)}</span>}
         {phase === "transcribing" && transcribingLabel(status?.whisper.state)}
       </span>
       {error && (
-        <span role="alert" className="max-w-64 break-words font-mono text-[10px] text-err">{error}</span>
+        <span role="alert" className="min-w-0 max-w-[40vw] break-words font-mono text-[10px] text-err">{error}</span>
       )}
     </span>
   );

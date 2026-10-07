@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { MicButton } from "./MicButton";
 import { SpeakButton, AutoReadToggle } from "./SpeakButton";
-import { autoSpeak } from "../lib/voice";
+import { autoSpeak, stopSpeech } from "../lib/voice";
 import { appendTranscript } from "../lib/voice-utils";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { fetchMemoryStatus, obsidianUrl, type MemoryStatusData } from "../lib/memory-api";
@@ -1391,6 +1391,8 @@ export function PlanView({
   onClose: () => void;
 }) {
   const { lastEvent, logs } = useWs();
+  const mountedAt = useRef(Date.now());
+  useEffect(() => () => stopSpeech(), []);
   const queryClient = useQueryClient();
   const [plan, setPlan] = useState<Plan>(initialPlan);
   const [mode, setMode] = useState<"idle" | "running-all" | "step-by-step">("idle");
@@ -1478,7 +1480,12 @@ export function PlanView({
 
     if (e.type === "plan:synthesis") {
       // Solo síntesis que terminan en esta sesión (llegan por WebSocket), nunca al cargar un plan.
-      if (e.status === "succeeded" && typeof e.synthesis === "string") autoSpeak(`synthesis:${plan.id}:${e.timestamp ?? ""}`, e.synthesis);
+      // Ignora eventos anteriores al montaje (síntesis que llegó mientras se estaba en otra vista).
+      const evAt = e.timestamp ? Date.parse(e.timestamp) : NaN;
+      const fresh = Number.isNaN(evAt) || evAt >= mountedAt.current;
+      if (fresh && e.status === "succeeded" && typeof e.synthesis === "string") {
+        autoSpeak(`synthesis:${plan.id}`, e.synthesis, `synthesis:${plan.id}:${e.timestamp ?? ""}`);
+      }
       setPlan((p) => ({ ...p, synthesisStatus: e.status, synthesis: e.synthesis ?? p.synthesis, synthesisError: e.error ?? null }));
     }
 

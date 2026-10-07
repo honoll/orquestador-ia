@@ -12,7 +12,7 @@ import { GitHubCloneModal } from "./GitHubCloneModal";
 import { FileContextPicker, buildFileContext } from "./FileContextPicker";
 import { MicButton } from "./MicButton";
 import { SpeakButton, AutoReadToggle } from "./SpeakButton";
-import { autoSpeak } from "../lib/voice";
+import { autoSpeak, stopSpeech } from "../lib/voice";
 import { appendTranscript } from "../lib/voice-utils";
 
 interface SlashCommand {
@@ -238,7 +238,7 @@ export function Chat() {
           (logs.get(activeRunId) ? parseStreamingText(logs.get(activeRunId)!, run.adapter) : "") ||
           "(sin respuesta)";
         // Solo respuestas que terminan en esta sesión (nunca el historial cargado).
-        if (run.status === "succeeded" && run.summary) autoSpeak(`run:${activeRunId}`, finalContent);
+        if (run.status === "succeeded" && run.summary) autoSpeak(`msg:${activeRunId}`, finalContent);
         setMessages((prev) => {
           const filtered = prev.filter((m) => m.runId !== activeRunId);
           return [
@@ -265,6 +265,9 @@ export function Chat() {
 
     return () => clearInterval(interval);
   }, [activeRunId, logs, queryClient]);
+
+  // Al salir de la vista, no dejar sonando una lectura sin control para detenerla.
+  useEffect(() => () => stopSpeech(), []);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -542,6 +545,7 @@ export function Chat() {
   }
 
   function handleNewChat() {
+    stopSpeech();
     newChat();
     setMessages([]);
     setLoadedConversation(null);
@@ -703,7 +707,7 @@ export function Chat() {
                         error
                       </span>
                     )}
-                    {msg.status !== "failed" && (
+                    {msg.status !== "failed" && msg.content !== "(sin respuesta)" && (
                       <SpeakButton id={`msg:${msg.runId ?? i}`} text={msg.content} />
                     )}
                   </div>
