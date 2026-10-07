@@ -145,3 +145,22 @@ export const agyUsage = sqliteTable("agy_usage", {
   outputTokens: integer("output_tokens").notNull().default(0),
   source: text("source").notNull(),
 });
+
+/** Notas de la bóveda de Obsidian indexadas (ruta relativa con "/"). */
+export const vaultNotes = sqliteTable("vault_notes", {
+  path: text("path").primaryKey(),
+  title: text("title").notNull(),
+  mtimeMs: integer("mtime_ms").notNull(),
+  frontmatter: text("frontmatter"),
+  indexedAt: text("indexed_at").notNull(),
+});
+
+/** Trozos de cada nota con su embedding (base64 de Float32Array). */
+export const vaultChunks = sqliteTable("vault_chunks", {
+  id: text("id").primaryKey(),
+  path: text("path").notNull().references(() => vaultNotes.path),
+  heading: text("heading").notNull(),
+  chunkIndex: integer("chunk_index").notNull(),
+  text: text("text").notNull(),
+  embedding: text("embedding").notNull(),
+});

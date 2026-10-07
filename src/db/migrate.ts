@@ -150,6 +150,25 @@ CREATE TABLE IF NOT EXISTS agy_usage (
 );
 
 CREATE INDEX IF NOT EXISTS idx_agy_usage_account_at ON agy_usage(account_id, at);
+
+CREATE TABLE IF NOT EXISTS vault_notes (
+  path TEXT PRIMARY KEY,
+  title TEXT NOT NULL,
+  mtime_ms INTEGER NOT NULL,
+  frontmatter TEXT,
+  indexed_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS vault_chunks (
+  id TEXT PRIMARY KEY,
+  path TEXT NOT NULL REFERENCES vault_notes(path),
+  heading TEXT NOT NULL,
+  chunk_index INTEGER NOT NULL,
+  text TEXT NOT NULL,
+  embedding TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_vault_chunks_path ON vault_chunks(path);
 `;
 
 const statements = SCHEMA_SQL.split(";").map((s) => s.trim()).filter(Boolean);
