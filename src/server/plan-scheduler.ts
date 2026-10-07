@@ -334,6 +334,7 @@ async function savePlanNote(
       usedTokens: plan.usedTokens,
       projectName: notes.find((n) => n.projectNote)?.title ?? project?.name ?? null,
       projectPath: project?.path ?? null,
+      projectNotePath: notes.find((n) => n.projectNote)?.path ?? null,
       steps: rows.map((r, i) => ({ key: r.stepKey ?? `s${i + 1}`, description: r.description, adapter: r.adapter, status: r.status })),
       answer,
       memory,

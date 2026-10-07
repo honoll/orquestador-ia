@@ -272,6 +272,19 @@ describe("planificador", () => {
     expect(h.events.some((e) => e.type === "plan:memory-note" && e.planId === id && e.path === row.memoryNotePath)).toBe(true);
   });
 
+  it("la nota enlaza por ruta la memoria usada y la nota del proyecto", async () => {
+    const memoryNotes = JSON.stringify([
+      { path: "20-Personal/Orquestador-IA.md", title: "Orquestador-IA", score: 0.9, projectNote: true },
+      { path: "Infra/Servidor.md", title: "Servidor", score: 0.7, projectNote: false },
+    ]);
+    const id = await mkPlan([{ key: "s1" }], { memoryNotes });
+    await runPlanDag(id, cwd);
+    const row = await plan(id);
+    const note = fs.readFileSync(path.join(vault, row.memoryNotePath!), "utf-8");
+    expect(note).toContain("- [[Infra/Servidor|Servidor]]");
+    expect(note).toMatch(/## Relacionado\n- \[\[20-Personal\/Orquestador-IA\|Orquestador-IA\]\]/);
+  });
+
   it("si escribir la nota falla, el plan igual queda completed", async () => {
     const blocker = path.join(os.tmpdir(), `sched-file-${randomUUID()}`);
     fs.writeFileSync(blocker, "x");
