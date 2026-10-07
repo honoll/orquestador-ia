@@ -48,3 +48,4 @@ export const ROUTABLE_ADAPTERS: readonly AdapterType[] = ["claude", "codex", "ag
 
 /** Modelo barato para el pre-análisis de archivos adjuntos (vía agy). */
 export const AGY_ANALYSIS_MODEL = "gemini-3.8-flash-low";
+export const AGY_VOICE_MODEL = "gemini-3.8-flash-low";
