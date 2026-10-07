@@ -11,7 +11,9 @@ Fecha: 2026-10-06 · Estado: aprobado en conversación · Base: F3a en `main` (m
 3. **Recuperación:** consulta = pedido; similitud coseno contra todos los trozos; top **5** notas (mejores trozos)
    dentro de **~6k tokens** (~24 000 caracteres); **siempre** la nota del proyecto (por `ruta:` del frontmatter o por
    nombre). La memoria va al prompt de **Opus como planner**, marcada como datos no confiables; los trabajadores no
-   la reciben directa. Sin Ollama o sin modelo → solo la nota del proyecto y aviso "memoria limitada".
+   la reciben directa, **pero sí lo que el planner copie a los prompts de los pasos** (por eso el planner corre sin
+   herramientas, los extractos pasan por el filtro de secretos y se le pide copiar solo lo que cada paso necesita,
+   nunca credenciales, llaves, IPs ni datos personales). Sin Ollama o sin modelo → solo la nota del proyecto y aviso "memoria limitada".
    Planes triviales (sin Opus) no usan memoria.
 4. **Escritura (A): una nota por plan completado** `Cerebro/Orquestador/Planes/AAAA-MM-DD-<tema>.md` con frontmatter
    de la bóveda (`tipo: plan-orquestador`, `estado: terminado`, `ruta`, `actualizado`, `tags`, tier, tokens), pedido,
