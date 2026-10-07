@@ -114,7 +114,7 @@ process.on("exit", () => {
 for (const sig of ["SIGINT", "SIGTERM"] as const) {
   process.on(sig, () => {
     shutdownAssistant();
-  whisper.stop();
+    whisper.stop();
     getDucker().closeHelper();
     process.exit(sig === "SIGINT" ? 130 : 143);
   });

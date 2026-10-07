@@ -45,7 +45,7 @@ beforeEach(() => { h.runPlanDag.mockClear(); h.running.clear(); h.events.length 
 
 async function mk(extra: Record<string, unknown> = {}) {
   const id = randomUUID();
-  await db.insert(schema.plans).values({ id, description: "d", status: "pending", ...extra } as any);
+  await db.insert(schema.plans).values({ id, description: "d", status: "pending", ...extra } as typeof schema.plans.$inferInsert);
   return id;
 }
 async function waitFor(fn: () => Promise<boolean>) {

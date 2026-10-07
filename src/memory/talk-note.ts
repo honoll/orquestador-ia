@@ -23,7 +23,10 @@ export function buildTalkNote(input: TalkNoteInput): { fileName: string; content
     ? input.turns.map((t) => `**Tú:** ${turnText(t.user)}\n\n**Asistente:** ${turnText(t.assistant)}`).join("\n\n")
     : "(sin turnos)";
   const plans = input.plans.length ? input.plans.map((p) => `- ${inert(oneLine(p.description))}`).join("\n") : "- (ninguno)";
-  const related = input.projectName ? `- ${link(input.projectName, input.projectNotePath)}` : "- PENDIENTE";
+  // PENDIENTE es solo para datos de negocio faltantes: aquí una sección vacía se marca "(ninguno)".
+  const related = input.projectName ? `- ${link(input.projectName, input.projectNotePath)}` : "- (ninguno)";
+  const phrases = input.turns.slice(0, 3).map((t) => oneLine(t.user).replace(/[.!?]+$/, "")).filter(Boolean);
+  const summary = input.summary.trim() || (phrases.length ? phrases.join(". ") + "." : "(sin resumen)");
   const content = [
     "---",
     "tipo: platica-orquestador",
@@ -35,7 +38,7 @@ export function buildTalkNote(input: TalkNoteInput): { fileName: string; content
     `# Plática ${date} ${hm.slice(0, 2)}:${hm.slice(2)}`,
     "",
     "## Resumen",
-    neutralize(input.summary.trim()) || "PENDIENTE",
+    neutralize(summary),
     "",
     "## Conversación",
     conversation,

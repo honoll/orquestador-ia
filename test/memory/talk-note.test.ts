@@ -37,6 +37,16 @@ describe("buildTalkNote", () => {
     expect(content).not.toContain("[[");
   });
 
+  it("nunca escribe PENDIENTE: sin proyecto pone (ninguno) y sin resumen usa las frases del usuario", () => {
+    const { content } = buildTalkNote(base({
+      summary: "  ", projectName: null, plans: [],
+      turns: [{ user: "Revisa el login.", assistant: "Va" }, { user: "y el README", assistant: "Ok" }],
+    }));
+    expect(content).not.toContain("PENDIENTE");
+    expect(content).toContain("## Relacionado\n- (ninguno)");
+    expect(content).toContain("## Resumen\nRevisa el login. y el README.");
+  });
+
   it("redacta secretos", () => {
     const { content } = buildTalkNote(base({ turns: [{ user: "password: hunter2", assistant: "ok" }] }));
     expect(content).not.toContain("hunter2");

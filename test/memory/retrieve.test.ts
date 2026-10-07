@@ -244,7 +244,7 @@ describe("opciones por turno y notas de plática", () => {
   it("una plática no es la nota del proyecto", async () => {
     write("P/pl.md", "---\ntipo: platica-orquestador\nruta: C:/p\n---\n# Pl\nhola");
     await indexVault({ vaultPath: vault, embedder: fakeEmbedder });
-    const r = await retrieveMemory({ query: "q", project: { name: "pl", path: "C:/p" }, embedder: null as any });
+    const r = await retrieveMemory({ query: "q", project: { name: "pl", path: "C:/p" }, embedder: null });
     expect(r.notes).toEqual([]);
   });
 });
