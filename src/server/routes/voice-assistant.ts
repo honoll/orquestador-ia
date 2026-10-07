@@ -1,7 +1,9 @@
 import { Hono, type Context } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { originGuard } from "../origin-guard.js";
-import { activeAssistant, assistantTurn, AssistantError, endAssistant, startAssistant } from "../../voice/assistant/session.js";
+import {
+  activeAssistant, assistantTurn, AssistantError, endAssistant, interruptAssistant, startAssistant,
+} from "../../voice/assistant/session.js";
 import { isWhisperHallucination } from "../../voice/assistant/text.js";
 
 export const MAX_ASSISTANT_BODY_BYTES = 16 * 1024;
@@ -56,6 +58,13 @@ app.post("/:id/turn", limitBody, async (c) => {
   const r = await assistantTurn(c.req.param("id"), text);
   if ("error" in r) return c.json({ error: r.error }, r.status);
   return c.json({ turnId: r.turnId }, 202);
+});
+
+// El usuario interrumpió (Esc, espacio, voz): la acción pendiente o la del turno en curso se descarta.
+app.post("/:id/interrupt", limitBody, async (c) => {
+  if (!isJson(c)) return c.json(NOT_JSON, 415);
+  if (!interruptAssistant(c.req.param("id"))) return c.json({ error: "Sesión no encontrada" }, 404);
+  return c.json({ ok: true });
 });
 
 app.post("/:id/end", async (c) => {

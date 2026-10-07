@@ -7,6 +7,11 @@ import {
   isClosingPhrase,
   isConfirmation,
   isWhisperHallucination,
+  askProjectQuestion,
+  confirmQuestion,
+  isStartQuestion,
+  restateForAction,
+  createSpokenFilter,
 } from "../../src/voice/assistant/text.js";
 import { AGY_VOICE_MODEL } from "../../src/config/models.js";
 
@@ -165,5 +170,64 @@ describe("createSentenceStreamer", () => {
 describe("AGY_VOICE_MODEL", () => {
   it("es flash-low", () => {
     expect(AGY_VOICE_MODEL).toBe("gemini-3.8-flash-low");
+  });
+});
+
+describe("pregunta de confirmación del servidor (I2)", () => {
+  it("confirmQuestion repite el pedido entre comillas latinas", () => {
+    expect(confirmQuestion("Revisa el login")).toBe("¿Arranco el plan: «Revisa el login»?");
+  });
+
+  it("recorta el pedido a ~120 caracteres en un límite de palabra y en una sola línea", () => {
+    const largo = "palabra ".repeat(40) + "\nfin";
+    const q = confirmQuestion(largo);
+    const inner = q.slice("¿Arranco el plan: «".length, -"»?".length);
+    expect(inner.length).toBeLessThanOrEqual(121);
+    expect(inner.endsWith("…")).toBe(true);
+    expect(inner).not.toContain("\n");
+    expect(inner).not.toMatch(/\s…$/);
+  });
+
+  it("isStartQuestion reconoce la pregunta de agy y nada más", () => {
+    expect(isStartQuestion("¿Lo arranco?")).toBe(true);
+    expect(isStartQuestion("¿Quieres que lo arranque?")).toBe(true);
+    expect(isStartQuestion("¿Te lo arranco ya?")).toBe(true);
+    expect(isStartQuestion("Puedo revisarlo.")).toBe(false);
+    expect(isStartQuestion("El motor arranca solo.")).toBe(false);
+  });
+
+  it("restateForAction quita la pregunta de agy y termina con la del servidor (sin duplicar)", () => {
+    expect(restateForAction("Puedo revisarlo. ¿Lo arranco?", "Revisa el login")).toBe(
+      "Puedo revisarlo. ¿Arranco el plan: «Revisa el login»?",
+    );
+    expect(restateForAction("", "X")).toBe("¿Arranco el plan: «X»?");
+    expect(restateForAction("Te cuento cómo quedó.", "Borra todo")).toBe(
+      "Te cuento cómo quedó. ¿Arranco el plan: «Borra todo»?",
+    );
+  });
+
+  it("askProjectQuestion lista los proyectos", () => {
+    expect(askProjectQuestion(["Orquestador-IA", "Tienda"])).toBe("¿En qué proyecto lo hago? Tengo: Orquestador-IA, Tienda.");
+    expect(askProjectQuestion([])).toBe("¿En qué proyecto lo hago? No tengo proyectos registrados.");
+  });
+});
+
+describe("createSpokenFilter (I2)", () => {
+  const run = (deltas: string[], question: string | null) => {
+    const out: string[] = [];
+    const f = createSpokenFilter((x) => out.push(x));
+    for (const d of deltas) f.push(d);
+    f.end(question);
+    return out.join("");
+  };
+
+  it("con acción: nunca deja pasar la marca ni la pregunta de agy; termina con la del servidor", () => {
+    const said = run(["Puedo revisarlo. ¿Lo ", "arranco? <<", '<ACCION plan {"pedido":"X"}>>>'], "¿Arranco el plan: «X»?");
+    expect(said).toBe("Puedo revisarlo. ¿Arranco el plan: «X»?");
+  });
+
+  it("sin acción: la pregunta retenida sí se dice", () => {
+    expect(run(["¿Lo arranco? ", "Es grande."], null)).toBe("Es grande. ¿Lo arranco?");
+    expect(run(["Hola Alejandro."], null)).toBe("Hola Alejandro.");
   });
 });

@@ -10,6 +10,7 @@ const h = vi.hoisted(() => {
     turn: vi.fn(),
     end: vi.fn(),
     active: vi.fn(),
+    interrupt: vi.fn(),
   };
 });
 vi.mock("../../src/voice/assistant/session.js", () => ({
@@ -18,6 +19,7 @@ vi.mock("../../src/voice/assistant/session.js", () => ({
   assistantTurn: h.turn,
   endAssistant: h.end,
   activeAssistant: h.active,
+  interruptAssistant: h.interrupt,
   shutdownAssistant: vi.fn(),
 }));
 
@@ -26,7 +28,7 @@ const { default: route } = await import("../../src/server/routes/voice-assistant
 const post = (p: string, body?: unknown, headers: Record<string, string> = { "Content-Type": "application/json" }) =>
   route.request(p, { method: "POST", body: typeof body === "string" ? body : body === undefined ? undefined : JSON.stringify(body), headers });
 
-beforeEach(() => { h.start.mockReset(); h.turn.mockReset(); h.end.mockReset(); h.active.mockReset(); });
+beforeEach(() => { h.start.mockReset(); h.turn.mockReset(); h.end.mockReset(); h.active.mockReset(); h.interrupt.mockReset(); });
 
 describe("POST /start", () => {
   it("200 con sessionId y conversationId; projectId opcional", async () => {
@@ -108,5 +110,24 @@ describe("GET /active", () => {
     expect(await (await route.request("/active")).json()).toEqual({ sessionId: "s1", conversationId: "c1" });
     h.active.mockReturnValue(null);
     expect(await (await route.request("/active")).json()).toBeNull();
+  });
+});
+
+describe("POST /:id/interrupt", () => {
+  it("200 y descarta la acción pendiente de la sesión", async () => {
+    h.interrupt.mockReturnValue(true);
+    const r = await post("/s1/interrupt", {});
+    expect(r.status).toBe(200);
+    expect(await r.json()).toEqual({ ok: true });
+    expect(h.interrupt).toHaveBeenCalledWith("s1");
+  });
+  it("404 si la sesión no existe", async () => {
+    h.interrupt.mockReturnValue(false);
+    expect((await post("/s1/interrupt", {})).status).toBe(404);
+  });
+  it("415 sin JSON y 413 enorme", async () => {
+    expect((await post("/s1/interrupt", "{}", { "Content-Type": "text/plain" })).status).toBe(415);
+    expect((await post("/s1/interrupt", { x: "x".repeat(20000) })).status).toBe(413);
+    expect(h.interrupt).not.toHaveBeenCalled();
   });
 });

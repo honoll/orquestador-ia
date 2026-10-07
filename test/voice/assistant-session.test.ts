@@ -1,5 +1,8 @@
 import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from "vitest";
 import { eq } from "drizzle-orm";
+import type { WsEvent } from "../../src/lib/types.js";
+import type { AssistantDeps } from "../../src/voice/assistant/session.js";
+import type { TalkNoteInput } from "../../src/memory/talk-note.js";
 
 const { migrationDone } = await import("../../src/db/migrate.js");
 const { db, schema } = await import("../../src/db/index.js");
@@ -39,7 +42,15 @@ function fakeAgyFactory(script: Res[] | ((msg: string, n: number) => Res)) {
   return { factory, sent, made };
 }
 
-let events: any[] = [];
+type Ev = {
+  type: string; sessionId?: string; turnId?: string; speech: string; text: string; delta?: string; reason?: string;
+  notePath?: string | null; hasAction?: boolean; error?: string; pedido?: string;
+};
+type Deps = AssistantDeps;
+type NoteFn = (vault: string, dir: string, input: TalkNoteInput) => string;
+const bc = (e: Record<string, unknown>) => broadcast(e as unknown as WsEvent);
+
+let events: Ev[] = [];
 let off: () => void;
 const types = (t: string) => events.filter((e) => e.type === t);
 const waitFor = async (pred: () => boolean, ms = 2000) => {
@@ -56,7 +67,7 @@ beforeAll(async () => {
 
 beforeEach(async () => {
   events = [];
-  off = onBroadcast((e) => events.push(e));
+  off = onBroadcast((e) => events.push(e as unknown as Ev));
   await db.delete(schema.agyUsage);
   await db.delete(schema.runs);
   await db.delete(schema.tasks);
@@ -79,21 +90,31 @@ async function say(sid: string, text: string) {
   const r = await session.assistantTurn(sid, text);
   if ("error" in r) throw new Error(r.error);
   await turnDone(r.turnId);
-  return types("voice:assistant:turn-done").find((e) => e.turnId === r.turnId);
+  return doneOf(r.turnId);
+}
+function doneOf(turnId: string): Ev {
+  const d = types("voice:assistant:turn-done").find((e) => e.turnId === turnId);
+  if (!d) throw new Error("sin turn-done");
+  return d;
 }
 
-function setup(over: { script?: Res[] | ((msg: string, n: number) => Res); [k: string]: any } = {}) {
-  const agy = fakeAgyFactory(over.script ?? [{ text: "Listo." }]);
-  const createPlan = vi.fn(async () => ({ id: "plan-1" }));
-  const startPlan = vi.fn(async () => "started" as const);
+type Over = Omit<Partial<Deps>, "writeNote"> & {
+  script?: Res[] | ((msg: string, n: number) => Res);
+  writeNote?: ReturnType<typeof vi.fn<NoteFn>>;
+};
+function setup(over: Over = {}) {
+  const { script, ...rest } = over;
+  const agy = fakeAgyFactory(script ?? [{ text: "Listo." }]);
+  const createPlan = vi.fn(async (_i: { description: string; projectId?: string | null }) => ({ id: "plan-1" }));
+  const startPlan = vi.fn(async (_id: string) => "started" as "started" | "needs-approval" | "not-ready" | "running");
   const retrieve = vi.fn(async () => ({ notes: [], source: "none" as const }));
-  const writeNote = vi.fn((..._a: unknown[]) => "Orquestador/Platicas/nota.md");
-  const deps = { agy: agy.factory, createPlan, startPlan, retrieve, writeNote, ...over } as any;
-  delete deps.script;
+  const writeNote = rest.writeNote ?? vi.fn<NoteFn>(() => "Orquestador/Platicas/nota.md");
+  const deps = { agy: agy.factory, createPlan, startPlan, retrieve, ...rest, writeNote } as unknown as Deps;
   return { agy, createPlan, startPlan, retrieve, writeNote, deps };
 }
+const asRetrieve = (f: unknown) => f as Deps["retrieve"];
 
-const PROPOSE = '¿Lo arranco? <<<ACCION plan {"pedido":"X","proyecto":null}>>>';
+const PROPOSE = '¿Lo arranco? <<<ACCION plan {"pedido":"X","proyecto":"Orquestador-IA"}>>>';
 const announces = () => types("voice:assistant:announce").map((e) => e.text);
 const confirm = async (sid: string) => {
   const t0 = types("voice:assistant:turn-done").length;
@@ -101,9 +122,9 @@ const confirm = async (sid: string) => {
   if ("error" in r) throw new Error(r.error);
   await turnDone(r.turnId);
   expect(types("voice:assistant:turn-done").length).toBe(t0 + 1);
-  return types("voice:assistant:turn-done").find((e) => e.turnId === r.turnId);
+  return doneOf(r.turnId);
 };
-const ready = () => broadcast({ type: "plan:ready", planId: "plan-1", plan: {}, timestamp: "t" } as any);
+const ready = () => bc({ type: "plan:ready", planId: "plan-1", plan: {}, timestamp: "t" });
 
 describe("startAssistant", () => {
   it("sin cuenta activa: error 409", async () => {
@@ -164,7 +185,7 @@ describe("assistantTurn", () => {
       alive: () => true,
       close: () => {},
     };
-    const { deps } = setup({ agy: () => slow as any });
+    const { deps } = setup({ agy: () => slow });
     const { sessionId } = await session.startAssistant({ projectId: null }, deps);
     const first = await session.assistantTurn(sessionId, "uno");
     expect("turnId" in first).toBe(true);
@@ -180,15 +201,15 @@ describe("assistantTurn", () => {
 
   it("memoria solo si es semantic y hay notas", async () => {
     const note = { path: "a.md", title: "A", score: 0.7, excerpt: "dato útil", isProject: false, generated: false };
-    const retrieve = vi.fn(async () => ({ notes: [note], source: "semantic" as const })) as any;
-    const { deps, agy } = setup({ retrieve });
+    const retrieve = vi.fn(async () => ({ notes: [note], source: "semantic" as const }));
+    const { deps, agy } = setup({ retrieve: asRetrieve(retrieve) });
     const { sessionId } = await session.startAssistant({ projectId: null }, deps);
     await say(sessionId, "qué sabes de A");
     expect(retrieve).toHaveBeenCalledWith(expect.objectContaining({ query: "qué sabes de A", topNotes: 3, budgetChars: 6000 }));
     expect(agy.sent[1]).toContain("dato útil");
 
-    const retrieve2 = vi.fn(async () => ({ notes: [note], source: "project-only" as const })) as any;
-    const s2 = setup({ retrieve: retrieve2 });
+    const retrieve2 = vi.fn(async () => ({ notes: [note], source: "project-only" as const }));
+    const s2 = setup({ retrieve: asRetrieve(retrieve2) });
     const b = await session.startAssistant({ projectId: null }, s2.deps);
     await say(b.sessionId, "otra cosa");
     expect(s2.agy.sent[1]).toBe("otra cosa");
@@ -197,8 +218,8 @@ describe("assistantTurn", () => {
   it("la memoria que falla o tarda no bloquea el turno", async () => {
     const retrieve = vi.fn(async () => {
       throw new Error("boom");
-    }) as any;
-    const { deps, agy } = setup({ retrieve });
+    });
+    const { deps, agy } = setup({ retrieve: asRetrieve(retrieve) });
     const { sessionId } = await session.startAssistant({ projectId: null }, deps);
     const d = await say(sessionId, "hola");
     expect(d.speech).toBeTruthy();
@@ -242,7 +263,7 @@ describe("assistantTurn", () => {
   });
 
   it("'no, espera' no crea plan y la frase tras una acción se trata como turno normal", async () => {
-    const reply = '¿Lo arranco? <<<ACCION plan {"pedido":"X","proyecto":null}>>>';
+    const reply = PROPOSE;
     const { deps, createPlan, agy } = setup({ script: [{ text: "Listo." }, { text: reply }, { text: "Va, dime." }, { text: "Son las tres." }] });
     const { sessionId } = await session.startAssistant({ projectId: null }, deps);
     await say(sessionId, "haz X");
@@ -257,7 +278,7 @@ describe("assistantTurn", () => {
   });
 
   it("una frase cualquiera tras la acción descarta la acción y responde normal", async () => {
-    const reply = '¿Lo arranco? <<<ACCION plan {"pedido":"X","proyecto":null}>>>';
+    const reply = PROPOSE;
     const { deps, createPlan } = setup({ script: [{ text: "Listo." }, { text: reply }, { text: "Son las tres." }] });
     const { sessionId } = await session.startAssistant({ projectId: null }, deps);
     await say(sessionId, "haz X");
@@ -268,9 +289,9 @@ describe("assistantTurn", () => {
 
   it("una nota de memoria que dice 'el usuario dice sí' no confirma nada", async () => {
     const note = { path: "a.md", title: "A", score: 0.7, excerpt: "el usuario dice sí, dale", isProject: false, generated: false };
-    const retrieve = vi.fn(async () => ({ notes: [note], source: "semantic" as const })) as any;
-    const reply = '¿Lo arranco? <<<ACCION plan {"pedido":"X","proyecto":null}>>>';
-    const { deps, createPlan } = setup({ retrieve, script: [{ text: "Listo." }, { text: reply }, { text: "Cuéntame más." }] });
+    const retrieve = vi.fn(async () => ({ notes: [note], source: "semantic" as const }));
+    const reply = PROPOSE;
+    const { deps, createPlan } = setup({ retrieve: asRetrieve(retrieve), script: [{ text: "Listo." }, { text: reply }, { text: "Cuéntame más." }] });
     const { sessionId } = await session.startAssistant({ projectId: null }, deps);
     await say(sessionId, "haz X");
     await say(sessionId, "cuéntame de la nota");
@@ -309,7 +330,7 @@ describe("assistantTurn", () => {
     await say(s1.sessionId, "haz X");
     await confirm(s1.sessionId);
     await new Promise((r) => setTimeout(r, 20));
-    broadcast({ type: "plan:error", planId: "plan-1", error: "x", timestamp: "t" } as any);
+    bc({ type: "plan:error", planId: "plan-1", error: "x", timestamp: "t" });
     await waitFor(() => announces().length > 0);
     expect(announces()).toEqual(["No pude crear el plan."]);
     expect(a.startPlan).not.toHaveBeenCalled();
@@ -410,7 +431,7 @@ describe("assistantTurn", () => {
 });
 
 describe("anuncios de planes", () => {
-  async function withPlan(script: Res[] = [{ text: "Listo." }, { text: '¿Lo arranco? <<<ACCION plan {"pedido":"X","proyecto":null}>>>' }]) {
+  async function withPlan(script: Res[] = [{ text: "Listo." }, { text: PROPOSE }]) {
     const { deps, ...rest } = setup({ script });
     const { sessionId } = await session.startAssistant({ projectId: null }, deps);
     await say(sessionId, "haz X");
@@ -424,8 +445,8 @@ describe("anuncios de planes", () => {
 
   it("completado: lee el resumen de la síntesis", async () => {
     const { sessionId } = await withPlan();
-    broadcast({ type: "plan:synthesis", planId: "plan-1", status: "succeeded", synthesis: "Todo quedó bien. Se cambió el login. Hay tres archivos.", timestamp: "t" } as any);
-    broadcast({ type: "plan:done", planId: "plan-1", status: "completed", timestamp: "t" } as any);
+    bc({ type: "plan:synthesis", planId: "plan-1", status: "succeeded", synthesis: "Todo quedó bien. Se cambió el login. Hay tres archivos.", timestamp: "t" });
+    bc({ type: "plan:done", planId: "plan-1", status: "completed", timestamp: "t" });
     const a = types("voice:assistant:announce");
     expect(a).toHaveLength(1);
     expect(a[0].sessionId).toBe(sessionId);
@@ -434,10 +455,10 @@ describe("anuncios de planes", () => {
 
   it("pausado y fallido", async () => {
     await withPlan();
-    broadcast({ type: "plan:done", planId: "plan-1", status: "pending", paused: "quota", timestamp: "t" } as any);
-    broadcast({ type: "plan:done", planId: "plan-1", status: "pending", paused: "budget", timestamp: "t" } as any);
-    broadcast({ type: "plan:done", planId: "plan-1", status: "pending", paused: "guard", timestamp: "t" } as any);
-    broadcast({ type: "plan:done", planId: "plan-1", status: "failed", timestamp: "t" } as any);
+    bc({ type: "plan:done", planId: "plan-1", status: "pending", paused: "quota", timestamp: "t" });
+    bc({ type: "plan:done", planId: "plan-1", status: "pending", paused: "budget", timestamp: "t" });
+    bc({ type: "plan:done", planId: "plan-1", status: "pending", paused: "guard", timestamp: "t" });
+    bc({ type: "plan:done", planId: "plan-1", status: "failed", timestamp: "t" });
     expect(types("voice:assistant:announce").map((e) => e.text)).toEqual([
       "El plan se pausó por cuota; revísalo en la pantalla.",
       "El plan se pausó por presupuesto; revísalo en la pantalla.",
@@ -448,7 +469,7 @@ describe("anuncios de planes", () => {
 
   it("ignora planes que no son de la sesión", async () => {
     await withPlan();
-    broadcast({ type: "plan:done", planId: "otro", status: "failed", timestamp: "t" } as any);
+    bc({ type: "plan:done", planId: "otro", status: "failed", timestamp: "t" });
     expect(types("voice:assistant:announce")).toHaveLength(0);
   });
 });
@@ -467,7 +488,7 @@ describe("endAssistant y nota", () => {
     await say(b.sessionId, "segundo");
     const r = await session.endAssistant(b.sessionId, "user");
     expect(r).toEqual({ notePath: "Orquestador/Platicas/nota.md" });
-    const [vault, dir, input] = two.writeNote.mock.calls[0] as any[];
+    const [vault, dir, input] = two.writeNote.mock.calls[0];
     expect(typeof vault).toBe("string");
     expect(dir).toBe("Orquestador/Platicas");
     expect(input.summary).toBe("Hablamos de dos cosas.");
@@ -479,7 +500,7 @@ describe("endAssistant y nota", () => {
   });
 
   it("si agy falla al resumir, usa las primeras frases del usuario; si writeNote lanza, notePath null", async () => {
-    const writeNote = vi.fn((..._a: unknown[]): string => {
+    const writeNote = vi.fn<NoteFn>(() => {
       throw new Error("disco");
     });
     const { deps } = setup({ writeNote, script: (_m, n) => (n >= 3 ? { ok: false, error: "x" } : { text: "R." }) });
@@ -488,7 +509,7 @@ describe("endAssistant y nota", () => {
     await say(sessionId, "segundo");
     const r = await session.endAssistant(sessionId, "user");
     expect(r).toEqual({ notePath: null });
-    const input = writeNote.mock.calls[0][2] as any;
+    const input = writeNote.mock.calls[0][2];
     expect(input.summary).toContain("primero");
     expect(input.summary).toContain("segundo");
     expect(types("voice:assistant:ended").at(-1)).toMatchObject({ notePath: null });
@@ -543,7 +564,7 @@ describe("sesión terminada con un turno en curso", () => {
     return { factory, made, spawns: () => spawns };
   }
 
-  async function endMidTurn(how: (sid: string, deps: any) => Promise<void>) {
+  async function endMidTurn(how: (sid: string, deps: Deps) => Promise<void>) {
     const g = gatedAgy();
     const { deps } = setup({ agy: g.factory });
     const { sessionId } = await session.startAssistant({ projectId: null }, deps);
@@ -597,5 +618,235 @@ describe("sesión terminada con un turno en curso", () => {
     expect(r).toEqual({ notePath: null });
     expect(writeNote).not.toHaveBeenCalled();
     expect(g.spawns()).toBe(1);
+  });
+});
+
+describe("revisión final F6", () => {
+  const gate = () => {
+    let release: () => void = () => {};
+    const p = new Promise<void>((r) => (release = r));
+    return { p, release: () => release() };
+  };
+  const spoken = (turnId: string) => types("voice:assistant:delta").filter((e) => e.turnId === turnId).map((e) => e.delta).join("");
+
+  it("I1: terminar mientras se busca la memoria: el turno no llega a agy ni lanza otro", async () => {
+    const g = gate();
+    const retrieve = vi.fn(async () => {
+      await g.p;
+      return { notes: [], source: "none" as const };
+    });
+    const { deps, agy } = setup({ retrieve: asRetrieve(retrieve) });
+    const { sessionId } = await session.startAssistant({ projectId: null }, deps);
+    await waitFor(() => agy.sent.length === 1);
+    const r = await session.assistantTurn(sessionId, "hola");
+    expect("turnId" in r).toBe(true);
+    await waitFor(() => retrieve.mock.calls.length === 1);
+    await session.endAssistant(sessionId, "user");
+    g.release();
+    await new Promise((x) => setTimeout(x, 30));
+    expect(agy.sent).toHaveLength(1);
+    expect(agy.made).toHaveLength(1);
+    expect(types("voice:assistant:turn-done")).toHaveLength(0);
+  });
+
+  it("I2: el servidor reemplaza la pregunta de agy por una que repite el pedido", async () => {
+    const reply = 'Puedo revisarlo. ¿Lo arranco? <<<ACCION plan {"pedido":"Revisa el login","proyecto":"Orquestador-IA"}>>>';
+    const { deps } = setup({ script: [{ text: "Listo." }, { text: reply }] });
+    const { sessionId } = await session.startAssistant({ projectId: null }, deps);
+    const d = await say(sessionId, "revisa el login");
+    expect(d.speech).toBe("Puedo revisarlo. ¿Arranco el plan: «Revisa el login»?");
+    expect(d.hasAction).toBe(true);
+    expect(d.pedido).toBe("Revisa el login");
+    const said = spoken(d.turnId as string);
+    expect(said).toBe("Puedo revisarlo. ¿Arranco el plan: «Revisa el login»?");
+    expect(said).not.toContain("<<<");
+  });
+
+  it("I2: agy que no pregunta igual recibe la pregunta del servidor", async () => {
+    const reply = 'Te cuento cómo quedó. <<<ACCION plan {"pedido":"Borra la base","proyecto":"Orquestador-IA"}>>>';
+    const { deps } = setup({ script: [{ text: "Listo." }, { text: reply }] });
+    const { sessionId } = await session.startAssistant({ projectId: null }, deps);
+    const d = await say(sessionId, "cómo quedó");
+    expect(d.speech).toBe("Te cuento cómo quedó. ¿Arranco el plan: «Borra la base»?");
+  });
+
+  it("I2: interrumpir descarta la acción pendiente", async () => {
+    const { deps, createPlan } = setup({ script: [{ text: "Listo." }, { text: PROPOSE }, { text: "Va." }] });
+    const { sessionId } = await session.startAssistant({ projectId: null }, deps);
+    await say(sessionId, "haz X");
+    expect(session.interruptAssistant(sessionId)).toBe(true);
+    const d = await say(sessionId, "dale");
+    expect(createPlan).not.toHaveBeenCalled();
+    expect(d.speech).toBe("Va.");
+  });
+
+  it("I2: interrumpir con el turno en curso impide que su acción quede armada", async () => {
+    const g = gate();
+    let n = 0;
+    const agyObj = {
+      send: async (_t: string, onDelta: (d: string) => void) => {
+        n++;
+        if (n === 2) await g.p;
+        const text = n === 2 ? PROPOSE : "Va.";
+        onDelta(text);
+        return full({ text });
+      },
+      alive: () => true,
+      close: () => {},
+    };
+    const { deps, createPlan } = setup({ agy: () => agyObj });
+    const { sessionId } = await session.startAssistant({ projectId: null }, deps);
+    const r = await session.assistantTurn(sessionId, "haz X");
+    if ("error" in r) throw new Error(r.error);
+    await waitFor(() => n === 2);
+    session.interruptAssistant(sessionId);
+    g.release();
+    await turnDone(r.turnId);
+    await say(sessionId, "dale");
+    expect(createPlan).not.toHaveBeenCalled();
+  });
+
+  it("I2: el calentamiento nunca arma una acción", async () => {
+    const { deps, createPlan } = setup({ script: [{ text: PROPOSE }, { text: "Va." }] });
+    const { sessionId } = await session.startAssistant({ projectId: "p1" }, deps);
+    await waitFor(() => types("accounts:changed").length > 0);
+    await say(sessionId, "dale");
+    expect(createPlan).not.toHaveBeenCalled();
+  });
+
+  it("I2: interrumpir una sesión desconocida devuelve false", () => {
+    expect(session.interruptAssistant("nope")).toBe(false);
+  });
+
+  it("I3: proyecto desconocido: pregunta cuál y no arma la acción (aunque la sesión tenga proyecto)", async () => {
+    const reply = '¿Lo arranco? <<<ACCION plan {"pedido":"Arregla el README","proyecto":"tienda"}>>>';
+    const { deps, createPlan } = setup({ script: [{ text: "Listo." }, { text: reply }, { text: "Ok." }] });
+    const { sessionId } = await session.startAssistant({ projectId: "p1" }, deps);
+    const d = await say(sessionId, "arregla el README de mi tienda");
+    expect(d.hasAction).toBe(false);
+    expect(d.speech).toBe("¿En qué proyecto lo hago? Tengo: Orquestador-IA.");
+    expect(spoken(d.turnId as string)).toBe("¿En qué proyecto lo hago? Tengo: Orquestador-IA.");
+    await say(sessionId, "dale");
+    expect(createPlan).not.toHaveBeenCalled();
+  });
+
+  it.each([["null"], ['""'], ['"  "']])("I3: proyecto %s sin proyecto de sesión: pregunta cuál", async (p) => {
+    const reply = `¿Lo arranco? <<<ACCION plan {"pedido":"X","proyecto":${p}}>>>`;
+    const { deps, createPlan } = setup({ script: [{ text: "Listo." }, { text: reply }, { text: "Ok." }] });
+    const { sessionId } = await session.startAssistant({ projectId: null }, deps);
+    const d = await say(sessionId, "haz X");
+    expect(d.hasAction).toBe(false);
+    expect(d.speech).toContain("¿En qué proyecto lo hago?");
+    await say(sessionId, "dale");
+    expect(createPlan).not.toHaveBeenCalled();
+  });
+
+  it("I3: proyecto vacío con proyecto de sesión usa el de la sesión", async () => {
+    const reply = '¿Lo arranco? <<<ACCION plan {"pedido":"X","proyecto":""}>>>';
+    const { deps, createPlan } = setup({ script: [{ text: "Listo." }, { text: reply }] });
+    const { sessionId } = await session.startAssistant({ projectId: "p1" }, deps);
+    const d = await say(sessionId, "haz X");
+    expect(d.hasAction).toBe(true);
+    await confirm(sessionId);
+    await waitFor(() => createPlan.mock.calls.length === 1);
+    expect(createPlan).toHaveBeenCalledWith({ description: "X", projectId: "p1" });
+  });
+
+  it("I4: /start con la cuenta bloqueada por cuota responde 409 sin lanzar agy", async () => {
+    await db.update(schema.agyAccounts).set({ quotaBlockedUntil: new Date(Date.now() + 3_600_000).toISOString() });
+    const { deps, agy } = setup();
+    await expect(session.startAssistant({ projectId: null }, deps)).rejects.toMatchObject({
+      status: 409, message: "Se acabó la cuota de esta cuenta de Antigravity; cámbiala en el panel.",
+    });
+    expect(agy.made).toHaveLength(0);
+    expect(session.activeAssistant()).toBeNull();
+  });
+
+  it("I4: un bloqueo ya vencido no impide arrancar", async () => {
+    await db.update(schema.agyAccounts).set({ quotaBlockedUntil: new Date(Date.now() - 1000).toISOString() });
+    const { deps } = setup();
+    await expect(session.startAssistant({ projectId: null }, deps)).resolves.toHaveProperty("sessionId");
+  });
+
+  it("I4: cuota en el calentamiento: lo anuncia en voz y termina la sesión", async () => {
+    const { deps, agy } = setup({ script: [{ ok: false, quota: true, error: "quota exhausted" }] });
+    const { sessionId } = await session.startAssistant({ projectId: null }, deps);
+    await waitFor(() => types("voice:assistant:ended").length > 0);
+    expect(announces()).toEqual(["Se acabó la cuota de esta cuenta de Antigravity; cámbiala en el panel."]);
+    expect(types("voice:assistant:ended")[0]).toMatchObject({ sessionId, reason: "error" });
+    expect(agy.made[0].closed).toBe(true);
+  });
+
+  it("I5: lo guardado en tasks/runs pasa por redactSecrets", async () => {
+    const { deps } = setup({ script: [{ text: "Listo." }, { text: "Tu api_key: sk-zzz123 quedó." }] });
+    const { conversationId, sessionId } = await session.startAssistant({ projectId: null }, deps);
+    await say(sessionId, "mi password=hunter2 sirve?");
+    const tasks = await db.select().from(schema.tasks).where(eq(schema.tasks.conversationId, conversationId));
+    const runs = await db.select().from(schema.runs).where(eq(schema.runs.taskId, tasks[0].id));
+    const all = JSON.stringify([tasks[0].prompt, tasks[0].title, runs[0].prompt, runs[0].result, runs[0].summary]);
+    expect(all).not.toContain("hunter2");
+    expect(all).not.toContain("sk-zzz123");
+  });
+
+  it("I7: dos /start concurrentes no dejan una sesión huérfana", async () => {
+    const g = gate();
+    let n = 0;
+    const made: { closed: boolean }[] = [];
+    const factory = () => {
+      const mine = { closed: false };
+      made.push(mine);
+      return {
+        send: async (t: string, onDelta: (d: string) => void) => {
+          n++;
+          if (t.startsWith("Resume esta plática")) await g.p; // el resumen de A tarda
+          onDelta("R.");
+          return full({ text: "R." });
+        },
+        alive: () => !mine.closed,
+        close: () => {
+          mine.closed = true;
+        },
+      };
+    };
+    const { deps } = setup({ agy: factory });
+    const a = await session.startAssistant({ projectId: null }, deps);
+    await waitFor(() => n === 1);
+    await new Promise((x) => setTimeout(x, 10)); // calentamiento terminado
+    await say(a.sessionId, "uno");
+    await say(a.sessionId, "dos");
+    const pb = session.startAssistant({ projectId: null }, deps);
+    await waitFor(() => n === 4); // B espera el resumen de A
+    const pc = session.startAssistant({ projectId: null }, deps);
+    await new Promise((x) => setTimeout(x, 20));
+    g.release();
+    const [b, c] = await Promise.all([pb, pc]);
+    expect(session.activeAssistant()?.sessionId).toBe(c.sessionId);
+    const ended = types("voice:assistant:ended").map((e) => e.sessionId);
+    expect(ended).toEqual(expect.arrayContaining([a.sessionId, b.sessionId]));
+    expect(made).toHaveLength(3);
+    expect(made.filter((m) => !m.closed)).toHaveLength(1);
+  });
+});
+
+describe("I3: sin carpeta de proyecto no hay plan de voz", () => {
+  it("si el proyecto desaparece antes del sí, no se crea el plan (nunca cae en process.cwd())", async () => {
+    const { deps, createPlan } = setup({ script: [{ text: "Listo." }, { text: PROPOSE }] });
+    const { sessionId } = await session.startAssistant({ projectId: null }, deps);
+    const d = await say(sessionId, "haz X");
+    expect(d.hasAction).toBe(true);
+    await db.delete(schema.projects);
+    await confirm(sessionId);
+    await waitFor(() => announces().length > 0);
+    expect(announces()).toEqual(["No pude crear el plan."]);
+    expect(createPlan).not.toHaveBeenCalled();
+  });
+
+  it("un proyecto sin ruta no cuenta como resuelto", async () => {
+    await db.update(schema.projects).set({ path: "" });
+    const { deps } = setup({ script: [{ text: "Listo." }, { text: PROPOSE }] });
+    const { sessionId } = await session.startAssistant({ projectId: null }, deps);
+    const d = await say(sessionId, "haz X");
+    expect(d.hasAction).toBe(false);
+    expect(d.speech).toContain("¿En qué proyecto lo hago?");
   });
 });

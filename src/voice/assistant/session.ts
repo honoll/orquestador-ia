@@ -10,7 +10,8 @@ import { memoryConfig } from "../../memory/config.js";
 import type { AdapterExecutionResult, WsEvent } from "../../lib/types.js";
 import { createAgySession, type AgyTurnResult } from "./agy-session.js";
 import {
-  buildAssistantSystemPrompt, buildTurnMessage, extractAction, isClosingPhrase, isConfirmation,
+  askProjectQuestion, buildAssistantSystemPrompt, buildTurnMessage, confirmQuestion, createSpokenFilter, extractAction,
+  isClosingPhrase, isConfirmation, withServerQuestion,
 } from "./text.js";
 import { saveTurn } from "./persist.js";
 import { disposeAllPlanWatchers, handlePlanEvent, watchPlanReady } from "./plan-events.js";
@@ -60,7 +61,11 @@ type Session = {
   warmed: boolean;
   busy: boolean;
   ended: boolean;
-  pending: { pedido: string; projectId: string | null } | null;
+  /** Acción propuesta por agy y repetida por el servidor; solo la confirma la frase siguiente. */
+  pending: { pedido: string; projectId: string } | null;
+  /** Turno en curso y, si el usuario lo interrumpió, su id (su acción no se arma). */
+  turnId: string | null;
+  interruptedTurn: string | null;
   turns: { user: string; assistant: string }[];
   plans: { id: string; description: string }[];
   syntheses: Map<string, string>;
@@ -90,7 +95,7 @@ async function listProjects(): Promise<Project[]> {
 
 function touch(s: Session) {
   if (s.idleTimer) clearTimeout(s.idleTimer);
-  s.idleTimer = setTimeout(() => void endAssistant(s.id, "idle"), IDLE_MS);
+  s.idleTimer = setTimeout(() => void endSession(s, "idle"), IDLE_MS);
   s.idleTimer.unref?.();
 }
 
@@ -114,10 +119,12 @@ async function sendRecorded(s: Session, agy: Agy, text: string, onDelta: (d: str
 }
 
 /** Segundo plano tras confirmar: crea el plan, espera plan:ready, lo arranca y lo anuncia (si la sesión sigue). */
-async function prepareAndStart(s: Session, action: { pedido: string; projectId: string | null }): Promise<void> {
+async function prepareAndStart(s: Session, action: { pedido: string; projectId: string }): Promise<void> {
   const watcher = watchPlanReady(s.deps.planReadyTimeoutMs);
   let text = TEXT_PLAN_FAILED;
   try {
+    // Un plan de voz siempre corre en la carpeta de su proyecto: sin ella no se crea (nunca process.cwd()).
+    if (!(await projectRow(action.projectId))?.path) throw new Error("el proyecto del plan ya no existe o no tiene carpeta");
     const { id } = await s.deps.createPlan({ description: action.pedido, projectId: action.projectId });
     s.plans.push({ id, description: action.pedido });
     const waited = await watcher.wait(id);
@@ -178,19 +185,25 @@ async function memoryFor(s: Session, utterance: string): Promise<string> {
   }
 }
 
-async function resolveProject(s: Session, name: string | null): Promise<string | null> {
-  if (name) {
-    const wanted = norm(name);
-    const found = (await listProjects()).find((p) => norm(p.name) === wanted);
-    if (found) return found.id;
-  }
-  return s.projectId;
+/**
+ * Proyecto del plan de voz. Un nombre explícito debe existir en la base (si no, null: se pregunta cuál).
+ * Sin nombre (null/vacío) se usa el de la sesión, si existe. Nunca hay "carpeta por defecto".
+ */
+async function resolveProject(s: Session, name: string | null): Promise<{ projectId: string | null; projects: Project[] }> {
+  const projects = (await listProjects()).filter((p) => p.path.trim());
+  const wanted = name ? norm(name) : "";
+  if (wanted) return { projectId: projects.find((p) => norm(p.name) === wanted)?.id ?? null, projects };
+  const own = s.projectId ? projects.find((p) => p.id === s.projectId) : undefined;
+  return { projectId: own?.id ?? null, projects };
 }
 
 async function finishTurn(
   s: Session,
   turnId: string,
-  p: { utterance: string; speech: string; hasAction: boolean; ok: boolean; error?: string; r?: AgyTurnResult; emitDelta: boolean; final?: boolean },
+  p: {
+    utterance: string; speech: string; hasAction: boolean; ok: boolean; error?: string; r?: AgyTurnResult; emitDelta: boolean;
+    final?: boolean; pedido?: string;
+  },
 ) {
   if (s.ended && !p.final) return;
   if (p.emitDelta) emit({ type: "voice:assistant:delta", sessionId: s.id, turnId, delta: p.speech });
@@ -209,6 +222,7 @@ async function finishTurn(
   });
   emit({
     type: "voice:assistant:turn-done", sessionId: s.id, turnId, speech: p.speech, hasAction: p.hasAction,
+    ...(p.pedido ? { pedido: p.pedido } : {}),
     ...(p.error ? { error: p.error } : {}),
   });
 }
@@ -220,10 +234,15 @@ function historyPrefix(s: Session, projects: Project[]): string {
 
 async function normalTurn(s: Session, turnId: string, utterance: string) {
   const memory = await memoryFor(s, utterance);
+  // Terminada mientras se buscaba la memoria: no se llama a agy (no se relanza un proceso huérfano).
+  if (s.ended) return;
   const message = buildTurnMessage(utterance, memory);
-  const onDelta = (delta: string) => {
+  // A la UI solo llegan oraciones completas, sin la marca ni la pregunta de arranque de agy (ver I2).
+  const newFilter = () => createSpokenFilter((delta) => {
     if (!s.ended) emit({ type: "voice:assistant:delta", sessionId: s.id, turnId, delta });
-  };
+  });
+  let spoken = newFilter();
+  const onDelta = (delta: string) => spoken.push(delta);
 
   let r = await sendRecorded(s, s.agy, message, onDelta);
   // Sesión terminada a media llamada: el turno se resuelve en silencio (sin reintento ni eventos).
@@ -234,6 +253,7 @@ async function normalTurn(s: Session, turnId: string, utterance: string) {
     const projects = await listProjects();
     if (s.ended) return;
     s.agy = newAgy(s);
+    spoken = newFilter();
     r = await sendRecorded(s, s.agy, historyPrefix(s, projects) + message, onDelta);
     if (s.ended) return;
   }
@@ -241,30 +261,47 @@ async function normalTurn(s: Session, turnId: string, utterance: string) {
   if (!r.ok) {
     const speech = r.quota ? TEXT_QUOTA : TEXT_LOST;
     await finishTurn(s, turnId, { utterance, speech, hasAction: false, ok: false, error: r.error ?? "error", r, emitDelta: false });
-    await endAssistant(s.id, "error");
+    await endSession(s, "error");
     return;
   }
 
   const { speech: parsed, action } = extractAction(r.text);
-  const speech = parsed || "Perdón, no supe qué responder.";
+  let speech = parsed || "Perdón, no supe qué responder.";
+  let question: string | null = parsed ? null : speech;
+  let pedido: string | undefined;
   if (action) {
-    s.pending = { pedido: action.pedido, projectId: await resolveProject(s, action.proyecto) };
+    const { projectId, projects } = await resolveProject(s, action.proyecto);
+    if (s.ended) return;
+    if (projectId) {
+      // El servidor repite el pedido: el "sí" siguiente se refiere a lo que de verdad se va a ejecutar.
+      question = confirmQuestion(action.pedido);
+      // Si el usuario interrumpió este turno no oyó la pregunta: no se arma nada.
+      if (s.interruptedTurn !== turnId) {
+        s.pending = { pedido: action.pedido, projectId };
+        pedido = action.pedido;
+      }
+    } else {
+      question = askProjectQuestion(projects.map((p) => p.name));
+    }
+    speech = withServerQuestion(parsed, question);
   }
+  spoken.end(question);
   s.turns.push({ user: utterance, assistant: speech });
-  await finishTurn(s, turnId, { utterance, speech, hasAction: action !== null, ok: true, r, emitDelta: false });
+  await finishTurn(s, turnId, { utterance, speech, hasAction: pedido !== undefined, ok: true, r, emitDelta: false, pedido });
 }
 
 async function runTurn(s: Session, turnId: string, utterance: string) {
   try {
+    // Toda frase nueva consume la acción pendiente: solo puede confirmarla la inmediata siguiente.
+    const action = s.pending;
+    s.pending = null;
     if (isClosingPhrase(utterance)) {
       await finishTurn(s, turnId, { utterance, speech: TEXT_BYE, hasAction: false, ok: true, emitDelta: true, final: true });
       s.busy = false; // el resumen de la nota necesita agy libre
-      await endAssistant(s.id, "phrase");
+      await endSession(s, "phrase");
       return;
     }
-    if (s.pending) {
-      const action = s.pending;
-      s.pending = null;
+    if (action) {
       if (isConfirmation(utterance)) {
         void prepareAndStart(s, action);
         const speech = TEXT_PREPARING;
@@ -282,22 +319,38 @@ async function runTurn(s: Session, turnId: string, utterance: string) {
     });
   } finally {
     s.busy = false;
+    if (s.turnId === turnId) s.turnId = null;
     if (!s.ended) touch(s);
   }
 }
 
 /* ---------- API pública ---------- */
 
-export async function startAssistant(
+// Los /start se atienden de uno en uno: dos arranques concurrentes no pueden dejar una sesión huérfana.
+let startChain: Promise<unknown> = Promise.resolve();
+
+export function startAssistant(
   input: { projectId: string | null },
   deps: AssistantDeps = {},
 ): Promise<{ sessionId: string; conversationId: string }> {
-  if (!(await getActiveAccount())) throw new AssistantError("No hay cuenta de Antigravity activa", 409);
-  if (current) await endAssistant(current.id, "user");
+  const run = startChain.then(() => doStart(input, deps));
+  startChain = run.catch(() => undefined);
+  return run;
+}
+
+async function doStart(
+  input: { projectId: string | null },
+  deps: AssistantDeps,
+): Promise<{ sessionId: string; conversationId: string }> {
+  const now = deps.now ?? Date.now;
+  const account = await getActiveAccount();
+  if (!account) throw new AssistantError("No hay cuenta de Antigravity activa", 409);
+  if (account.quotaBlockedUntil && Date.parse(account.quotaBlockedUntil) > now()) throw new AssistantError(TEXT_QUOTA, 409);
+  if (current) await endSession(current, "user");
 
   const full: Required<AssistantDeps> = {
     agy: deps.agy ?? (() => createAgySession()),
-    now: deps.now ?? Date.now,
+    now,
     planReadyTimeoutMs: deps.planReadyTimeoutMs ?? 10 * 60_000,
     createPlan: deps.createPlan ?? realCreatePlan,
     startPlan: deps.startPlan ?? startPlanIfAllowed,
@@ -315,6 +368,8 @@ export async function startAssistant(
     busy: false,
     ended: false,
     pending: null,
+    turnId: null,
+    interruptedTurn: null,
     turns: [],
     plans: [],
     syntheses: new Map(),
@@ -326,10 +381,16 @@ export async function startAssistant(
   current = s;
   touch(s);
 
-  // Calentamiento en segundo plano: prepara agy con el prompt de sistema; su respuesta se descarta.
+  // Calentamiento en segundo plano: prepara agy con el prompt de sistema; su respuesta se descarta
+  // (nunca arma una acción). Si topa con la cuota, lo dice en voz y cierra la plática.
   void (async () => {
     const projects = await listProjects();
-    await sendRecorded(s, s.agy, buildAssistantSystemPrompt(projects) + "\n\nResponde solo: Listo.", () => {});
+    const r = await sendRecorded(s, s.agy, buildAssistantSystemPrompt(projects) + "\n\nResponde solo: Listo.", () => {});
+    s.warmed = true;
+    if (r.quota && !s.ended) {
+      emit({ type: "voice:assistant:announce", sessionId: s.id, text: TEXT_QUOTA });
+      await endSession(s, "error");
+    }
   })().catch(() => {}).finally(() => { s.warmed = true; });
 
   return { sessionId: s.id, conversationId: s.conversationId };
@@ -345,8 +406,18 @@ export async function assistantTurn(
   s.busy = true;
   if (s.idleTimer) clearTimeout(s.idleTimer);
   const turnId = randomUUID();
+  s.turnId = turnId;
   void runTurn(s, turnId, utterance);
   return { turnId };
+}
+
+/** El usuario interrumpió: se descarta la acción pendiente y la que arme el turno en curso. */
+export function interruptAssistant(sessionId: string): boolean {
+  const s = current;
+  if (!s || s.id !== sessionId || s.ended) return false;
+  s.pending = null;
+  if (s.busy && s.turnId) s.interruptedTurn = s.turnId;
+  return true;
 }
 
 async function summarize(s: Session, reason: string): Promise<string> {
@@ -362,12 +433,17 @@ async function summarize(s: Session, reason: string): Promise<string> {
   }
 }
 
-export async function endAssistant(
-  sessionId: string,
-  reason: "user" | "phrase" | "idle" | "error",
-): Promise<{ notePath: string | null }> {
+type EndReason = "user" | "phrase" | "idle" | "error";
+
+export async function endAssistant(sessionId: string, reason: EndReason): Promise<{ notePath: string | null }> {
   const s = current;
-  if (!s || s.id !== sessionId || s.ended) return { notePath: null };
+  if (!s || s.id !== sessionId) return { notePath: null };
+  return endSession(s, reason);
+}
+
+/** Cierra una sesión concreta (aunque ya no sea la actual): nota, agy, oyentes y evento `ended`. */
+async function endSession(s: Session, reason: EndReason): Promise<{ notePath: string | null }> {
+  if (s.ended) return { notePath: null };
   s.ended = true;
   if (s.idleTimer) clearTimeout(s.idleTimer);
 

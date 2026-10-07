@@ -100,7 +100,8 @@ export function buildAssistantSystemPrompt(projects: { name: string }[]): string
     "- Si el usuario pide trabajo grande (revisar código, investigar, implementar, planear), responde preguntando " +
       "\"¿lo arranco?\" y termina con la marca " +
       '<<<ACCION plan {"pedido":"…","proyecto":"…"}>>> ' +
-      "usando en \"proyecto\" un nombre de la lista o null si no aplica.",
+      "usando en \"proyecto\" un nombre exacto de la lista (null solo si la plática ya tiene proyecto; " +
+      "si no sabes cuál, pregúntalo antes de proponer).",
     "- Nunca digas que algo ya se arrancó: solo propón y espera la confirmación del usuario.",
     "",
     "Proyectos disponibles:",
@@ -149,4 +150,77 @@ export function createSentenceStreamer(onSentence: (s: string) => void): { push(
       if (rest) onSentence(rest);
     },
   };
+}
+
+/* ---------- confirmación hablada (la arma el servidor, no agy) ---------- */
+
+const PEDIDO_SPOKEN_MAX = 120;
+
+function clipWords(text: string, max: number): string {
+  const one = text.replace(/\s+/g, " ").trim();
+  if (one.length <= max) return one;
+  const cut = one.slice(0, max);
+  const space = cut.lastIndexOf(" ");
+  return (space > max / 2 ? cut.slice(0, space) : cut).replace(/[\s.,;:]+$/, "") + "…";
+}
+
+/** Pregunta fija que repite lo que se va a ejecutar: el "sí" del usuario se refiere a esto. */
+export function confirmQuestion(pedido: string): string {
+  return `¿Arranco el plan: «${clipWords(pedido, PEDIDO_SPOKEN_MAX)}»?`;
+}
+
+/** ¿La oración es la pregunta de agy tipo "¿lo arranco?"? (la reemplaza la del servidor). */
+export function isStartQuestion(sentence: string): boolean {
+  if (!sentence.includes("?")) return false;
+  const n = normalize(sentence);
+  return /\barran(c|qu)/.test(n) && n.split(" ").length <= 10;
+}
+
+function sentencesOf(text: string): string[] {
+  const out: string[] = [];
+  const st = createSentenceStreamer((x) => out.push(x));
+  st.push(text);
+  st.flush();
+  return out;
+}
+
+/** Lo que dijo agy sin su pregunta de arranque, terminado con la pregunta del servidor. */
+export function withServerQuestion(speech: string, question: string): string {
+  const kept = sentencesOf(speech).filter((x) => !isStartQuestion(x));
+  return [...kept, question].join(" ");
+}
+
+/** Texto hablado de un turno con acción: lo de agy sin su pregunta de arranque + la pregunta del servidor. */
+export function restateForAction(speech: string, pedido: string): string {
+  return withServerQuestion(speech, confirmQuestion(pedido));
+}
+
+/**
+ * Filtro de deltas de agy hacia la UI: entrega oraciones completas (nunca la marca <<<ACCION) y retiene
+ * las preguntas de arranque de agy hasta saber si hubo acción. end(question): con pregunta del servidor,
+ * se descartan las retenidas y se dice esa; con null, se entregan las retenidas tal cual.
+ */
+export function createSpokenFilter(out: (text: string) => void): { push(delta: string): void; end(question: string | null): void } {
+  let first = true;
+  let held: string[] = [];
+  const send = (x: string) => {
+    out(first ? x : " " + x);
+    first = false;
+  };
+  const st = createSentenceStreamer((x) => (isStartQuestion(x) ? held.push(x) : send(x)));
+  return {
+    push: (delta) => st.push(delta),
+    end(question) {
+      st.flush();
+      if (question === null) held.forEach(send);
+      else send(question);
+      held = [];
+    },
+  };
+}
+
+export function askProjectQuestion(names: string[]): string {
+  return names.length
+    ? `¿En qué proyecto lo hago? Tengo: ${names.join(", ")}.`
+    : "¿En qué proyecto lo hago? No tengo proyectos registrados.";
 }
