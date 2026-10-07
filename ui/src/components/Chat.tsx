@@ -10,6 +10,10 @@ import { parseStreamingText } from "../lib/parse-stream";
 import { PlanView, type Plan } from "./PlanView";
 import { GitHubCloneModal } from "./GitHubCloneModal";
 import { FileContextPicker, buildFileContext } from "./FileContextPicker";
+import { MicButton } from "./MicButton";
+import { SpeakButton, AutoReadToggle } from "./SpeakButton";
+import { autoSpeak } from "../lib/voice";
+import { appendTranscript } from "../lib/voice-utils";
 
 interface SlashCommand {
   name: string;
@@ -230,15 +234,18 @@ export function Chat() {
       if (run.status !== "running") {
         clearInterval(interval);
         setActiveRunId(null);
+        const finalContent = run.summary ||
+          (logs.get(activeRunId) ? parseStreamingText(logs.get(activeRunId)!, run.adapter) : "") ||
+          "(sin respuesta)";
+        // Solo respuestas que terminan en esta sesión (nunca el historial cargado).
+        if (run.status === "succeeded" && run.summary) autoSpeak(`run:${activeRunId}`, finalContent);
         setMessages((prev) => {
           const filtered = prev.filter((m) => m.runId !== activeRunId);
           return [
             ...filtered,
             {
               role: "assistant" as const,
-              content: run.summary ||
-                (logs.get(activeRunId) ? parseStreamingText(logs.get(activeRunId)!, run.adapter) : "") ||
-                "(sin respuesta)",
+              content: finalContent,
               adapter: run.adapter,
               model: run.model,
               costUsd: run.costUsd ?? 0,
@@ -586,6 +593,7 @@ export function Chat() {
         )}
 
         <div className="ml-auto flex items-center gap-3">
+          <AutoReadToggle />
           {messages.length > 0 && (
             <button
               onClick={handleNewChat}
@@ -694,6 +702,9 @@ export function Chat() {
                       <span className="text-err" title={msg.errorMessage ?? undefined}>
                         error
                       </span>
+                    )}
+                    {msg.status !== "failed" && (
+                      <SpeakButton id={`msg:${msg.runId ?? i}`} text={msg.content} />
                     )}
                   </div>
                 </div>
@@ -810,6 +821,20 @@ export function Chat() {
                   }
                 }}
                 disabled={!!activeRunId || analyzingFiles}
+              />
+              <MicButton
+                disabled={!!activeRunId || analyzingFiles}
+                onText={(t) => {
+                  setInput((prev) => appendTranscript(prev, t));
+                  setPaletteIndex(0);
+                  setTimeout(() => {
+                    const el = textareaRef.current;
+                    if (el) {
+                      el.style.height = "auto";
+                      el.style.height = Math.min(el.scrollHeight, 160) + "px";
+                    }
+                  }, 0);
+                }}
               />
               {/* File attach button — only when a project is selected */}
               {selectedProjectId && !activeRunId && (

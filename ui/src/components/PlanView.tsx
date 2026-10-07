@@ -1,4 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import { MicButton } from "./MicButton";
+import { SpeakButton, AutoReadToggle } from "./SpeakButton";
+import { autoSpeak } from "../lib/voice";
+import { appendTranscript } from "../lib/voice-utils";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { fetchMemoryStatus, obsidianUrl, type MemoryStatusData } from "../lib/memory-api";
 import { useWs } from "../context/WebSocketProvider";
@@ -1171,6 +1175,19 @@ function PlanChat({ plan }: { plan: Plan }) {
           onKeyDown={handleKeyDown}
           disabled={isRunning}
         />
+        <MicButton
+          disabled={isRunning}
+          onText={(t) => {
+            setInput((prev) => appendTranscript(prev, t));
+            setTimeout(() => {
+              const el = textareaRef.current;
+              if (el) {
+                el.style.height = "auto";
+                el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
+              }
+            }, 0);
+          }}
+        />
         <button
           onClick={handleSend}
           disabled={!input.trim() || isRunning}
@@ -1345,7 +1362,11 @@ function SynthesisCard({ plan, onRetry }: { plan: Plan; onRetry: () => void }) {
   if (!plan.synthesisStatus) return null;
   return (
     <section aria-label="Respuesta final" className="mb-5 rounded-lg border border-accent/30 bg-surface-1 p-4">
-      <h3 className="mb-2 font-mono text-xs text-accent">respuesta final · Opus 5.5</h3>
+      <div className="mb-2 flex flex-wrap items-center gap-3">
+        <h3 className="font-mono text-xs text-accent">respuesta final · Opus 5.5</h3>
+        {plan.synthesisStatus === "succeeded" && plan.synthesis && <SpeakButton id={`synthesis:${plan.id}`} text={plan.synthesis} />}
+        <AutoReadToggle />
+      </div>
       {plan.synthesisStatus === "running" && <p className="font-mono text-[11px] text-text-tertiary">Opus está juntando las respuestas…</p>}
       {plan.synthesisStatus === "succeeded" && plan.synthesis && (
         <div className="prose prose-invert prose-sm max-w-none text-text-primary/90 leading-relaxed [&_p]:my-2 [&_pre]:bg-surface-2 [&_pre]:border [&_pre]:border-edge [&_pre]:rounded-lg"><ReactMarkdown remarkPlugins={[remarkGfm]}>{plan.synthesis}</ReactMarkdown></div>
@@ -1456,6 +1477,8 @@ export function PlanView({
     }
 
     if (e.type === "plan:synthesis") {
+      // Solo síntesis que terminan en esta sesión (llegan por WebSocket), nunca al cargar un plan.
+      if (e.status === "succeeded" && typeof e.synthesis === "string") autoSpeak(`synthesis:${plan.id}:${e.timestamp ?? ""}`, e.synthesis);
       setPlan((p) => ({ ...p, synthesisStatus: e.status, synthesis: e.synthesis ?? p.synthesis, synthesisError: e.error ?? null }));
     }
 
