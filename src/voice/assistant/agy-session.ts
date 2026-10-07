@@ -27,6 +27,15 @@ export type AgyProc = {
 };
 
 const STALLED = "agy dejó de responder";
+const CLOSED = "sesión cerrada";
+
+/**
+ * Argumentos del agy de voz: plática de solo lectura. Además de no auto-aprobar permisos, desactiva la
+ * expansión de slash commands/skills y corre con las restricciones de terminal (--sandbox). Solo para voz.
+ */
+export function buildVoiceAgyArgs(): string[] {
+  return [...buildAgyArgs(AGY_VOICE_MODEL, undefined, { readOnly: true }), "--disable-slash-commands", "--sandbox"];
+}
 const DEFAULT_TURN_TIMEOUT_MS = 60_000;
 const CLOSE_GRACE_MS = 2000;
 
@@ -52,7 +61,7 @@ function defaultSpawn(): AgyProc | null {
   const cleanup = () => fs.rm(cwd, { recursive: true, force: true }, () => {});
   let child;
   try {
-    child = nodeSpawn(exe, buildAgyArgs(AGY_VOICE_MODEL, undefined, { readOnly: true }), {
+    child = nodeSpawn(exe, buildVoiceAgyArgs(), {
       cwd,
       shell: false,
       windowsHide: true,
@@ -107,6 +116,8 @@ export function createAgySession(deps: { spawn?: () => AgyProc | null; now?: () 
   let proc: AgyProc | null = null;
   let turn: Turn | null = null;
   let queue: Promise<unknown> = Promise.resolve();
+  // Una vez cerrada, la sesión nunca relanza agy (ni para turnos que ya estaban en cola).
+  let closed = false;
 
   const fail = (error: string, startedAt: number): AgyTurnResult => ({
     ok: false, text: "", error, quota: false, retryNotBefore: null, inputTokens: 0, outputTokens: 0, startedAt,
@@ -172,6 +183,7 @@ export function createAgySession(deps: { spawn?: () => AgyProc | null; now?: () 
 
   function runTurn(text: string, onDelta: (d: string) => void): Promise<AgyTurnResult> {
     const startedAt = now();
+    if (closed) return Promise.resolve(fail(CLOSED, startedAt));
     let p: AgyProc | null;
     try {
       p = ensureProc();
@@ -229,6 +241,7 @@ export function createAgySession(deps: { spawn?: () => AgyProc | null; now?: () 
       return proc !== null;
     },
     close(): void {
+      closed = true;
       const p = proc;
       if (!p) return;
       proc = null;

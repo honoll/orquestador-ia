@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createAgySession, createLineSplitter, type AgyProc } from "../../src/voice/assistant/agy-session.js";
+import { buildVoiceAgyArgs, createAgySession, createLineSplitter, type AgyProc } from "../../src/voice/assistant/agy-session.js";
+import { buildAgyArgs } from "../../src/adapters/agy/execute.js";
 
 const CONV = "c-1";
 const init = JSON.stringify({ event: "init", conversation_id: CONV, init: { model: "gemini-3.8-flash-low" } });
@@ -211,6 +212,65 @@ describe("createAgySession", () => {
     procs[0].exitCb(0);
     vi.advanceTimersByTime(2000);
     expect(procs[0].killed).toBe(0);
+  });
+});
+
+describe("createAgySession cerrada (I1)", () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("un send después de close() falla sin lanzar agy", async () => {
+    const { spawn, session } = setup();
+    session.close();
+    const r = await session.send("x", () => {});
+    expect(r).toMatchObject({ ok: false, error: "sesión cerrada" });
+    expect(spawn).not.toHaveBeenCalled();
+  });
+
+  it("un send en cola detrás de un turno no relanza agy tras close()", async () => {
+    const { spawn, procs, session } = setup();
+    const first = session.send("calentamiento", () => {});
+    const queued = session.send("turno", () => {});
+    await tick();
+    expect(spawn).toHaveBeenCalledTimes(1);
+    session.close();
+    expect((await first).ok).toBe(false);
+    const r = await queued;
+    expect(r).toMatchObject({ ok: false, error: "sesión cerrada" });
+    expect(spawn).toHaveBeenCalledTimes(1);
+    expect(procs[0].written).toHaveLength(1);
+  });
+
+  it("close() sin proceso vivo también impide relanzar", async () => {
+    const { spawn, procs, session } = setup();
+    const p = session.send("x", () => {});
+    await tick();
+    procs[0].emit(ok("a"));
+    await p;
+    procs[0].exitCb(0); // el proceso salió por su cuenta
+    session.close();
+    await session.send("y", () => {});
+    expect(spawn).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("argumentos de agy de voz (I5)", () => {
+  it("solo lectura y aislado: sin auto-aprobar, sin slash commands, con sandbox", () => {
+    const args = buildVoiceAgyArgs();
+    expect(args).not.toContain("--dangerously-skip-permissions");
+    expect(args).toContain("--disable-slash-commands");
+    expect(args).toContain("--sandbox");
+    expect(args).toEqual(expect.arrayContaining(["--input-format", "stream-json", "--output-format", "stream-json"]));
+  });
+
+  it("los flags de aislamiento son solo de voz: el adapter normal no cambia", () => {
+    const normal = buildAgyArgs("m");
+    expect(normal).not.toContain("--disable-slash-commands");
+    expect(normal).not.toContain("--sandbox");
   });
 });
 
