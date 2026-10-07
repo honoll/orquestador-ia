@@ -19,6 +19,8 @@ export interface PlanNoteInput {
 const pad = (n: number) => String(n).padStart(2, "0");
 const ymd = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 const oneLine = (s: string) => s.replace(/\s+/g, " ").trim();
+/** Cadena YAML en comillas simples: las `\` de Windows quedan literales y `'` se duplica. */
+const yamlSingle = (s: string) => `'${s.replace(/'/g, "''")}'`;
 const cell = (s: string) => oneLine(s).replace(/\|/g, "\\|");
 /** Texto no confiable dentro de una sección: sin encabezados ni separadores que rompan la estructura de la nota. */
 const neutralize = (s: string) =>
@@ -38,7 +40,7 @@ export function buildPlanNote(input: PlanNoteInput): { fileName: string; content
     "---",
     "tipo: plan-orquestador",
     "estado: terminado",
-    `ruta: ${JSON.stringify(input.projectPath ? oneLine(input.projectPath) : "PENDIENTE")}`,
+    `ruta: ${yamlSingle(input.projectPath ? oneLine(input.projectPath) : "PENDIENTE")}`,
     `actualizado: ${date}`,
     `tags: [${tags}]`,
     `tier: ${JSON.stringify(input.tier ?? "PENDIENTE")}`,

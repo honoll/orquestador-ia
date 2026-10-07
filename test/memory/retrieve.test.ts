@@ -113,6 +113,51 @@ describe("retrieveMemory", () => {
   });
 });
 
+describe("nota del proyecto y notas de plan", () => {
+  it("excluye notas tipo plan-orquestador del match y prefiere tipo proyecto", async () => {
+    write("Orquestador/Planes/plan.md", "---\ntipo: plan-orquestador\nruta: 'C:\\p'\n---\n# Plan\nplan viejo");
+    write("otra.md", "---\ntipo: area\nruta: C:\\p\n---\n# Otra\nalgo");
+    write("Proyectos/p.md", "---\ntipo: proyecto\nruta: C:\\p\n---\n# P\nla nota buena");
+    await indexVault({ vaultPath: vault, embedder: fakeEmbedder });
+    const r = await retrieveMemory({ query: "q", project: { name: "p", path: "C:\\p" }, embedder: null as any });
+    expect(r.notes).toHaveLength(1);
+    expect(r.notes[0]).toMatchObject({ path: "Proyectos/p.md", projectNote: true });
+  });
+
+  it("por título tampoco elige una nota de plan", async () => {
+    write("Planes/mi-proyecto.md", "---\ntipo: plan-orquestador\n---\n# x\nplan");
+    await indexVault({ vaultPath: vault, embedder: fakeEmbedder });
+    const r = await retrieveMemory({ query: "q", project: { name: "mi-proyecto", path: "C:\\nada" }, embedder: null as any });
+    expect(r.notes).toEqual([]);
+  });
+
+  it("lee la ruta escrita con JSON.stringify en notas viejas (barras repetidas)", async () => {
+    write("p.md", "---\ntipo: proyecto\nruta: \"C:\\\\estudio\\\\p\"\n---\n# P\nhola");
+    await indexVault({ vaultPath: vault, embedder: fakeEmbedder });
+    const r = await retrieveMemory({ query: "q", project: { name: "zzz", path: "C:\\estudio\\p" }, embedder: null as any });
+    expect(r.notes.map((n) => n.path)).toEqual(["p.md"]);
+  });
+
+  it("como máximo 2 notas de plan, marcadas", async () => {
+    for (let i = 0; i < 4; i++) write(`Planes/plan${i}.md`, `---\ntipo: plan-orquestador\n---\n# Plan ${i}\ngatos maullan ${i}`);
+    write("gatos.md", "# Gatos\ngatos maullan");
+    await indexVault({ vaultPath: vault, embedder: fakeEmbedder });
+    const r = await retrieveMemory({ query: "gatos maullan", embedder: fakeEmbedder });
+    expect(r.notes.filter((n) => n.planNote)).toHaveLength(2);
+    expect(r.notes.map((n) => n.path)).toContain("gatos.md");
+    const s = buildMemorySection(r, "n");
+    expect(s.match(/generada por el orquestador \(menor confianza\)/g)).toHaveLength(2);
+  });
+
+  it("buildMemorySection también corta a 2 notas de plan", () => {
+    const n = (p: string) => ({ path: p, title: p, score: 1, projectNote: false, planNote: true, excerpt: "x" });
+    const s = buildMemorySection({ notes: [n("a.md"), n("b.md"), n("c.md")], source: "semantic" }, "n");
+    expect(s).toContain("a.md");
+    expect(s).toContain("b.md");
+    expect(s).not.toContain("c.md");
+  });
+});
+
 describe("secretos fuera de los extractos", () => {
   it("retrieveMemory redacta secretos en los extractos", async () => {
     write("p.md", "---\nruta: C:\\p\n---\n# P\nel servidor usa password=hunter2 y OPENAI_API_KEY=sk-zzzzzzzzzzzzzzzzzzzz");

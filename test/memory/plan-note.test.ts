@@ -3,6 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { buildPlanNote, writePlanNote, type PlanNoteInput } from "../../src/memory/plan-note.js";
+import { parseFrontmatter } from "../../src/memory/markdown.js";
 
 const base = (o: Partial<PlanNoteInput> = {}): PlanNoteInput => ({
   planId: "p1", description: "Arregla el login de la app", tier: "normal", usedTokens: 1234,
@@ -16,7 +17,7 @@ describe("buildPlanNote", () => {
   it("nombre, frontmatter y secciones", () => {
     const { fileName, content } = buildPlanNote(base());
     expect(fileName).toBe("2026-10-06-arregla-el-login-de-la-app.md");
-    expect(content).toContain(`ruta: ${JSON.stringify("C:/estudio/orquestador-ia")}`);
+    expect(content).toContain("ruta: 'C:/estudio/orquestador-ia'");
     expect(content.startsWith(["---", "tipo: plan-orquestador", "estado: terminado", ""].join("\n"))).toBe(true);
     expect(content).toContain("actualizado: 2026-10-06");
     expect(content).toContain("tags: [orquestador, plan, normal]");
@@ -27,9 +28,16 @@ describe("buildPlanNote", () => {
     expect(content).toContain("- [[Nota Uno]]");
     expect(content).toContain("[[Orquestador-IA]]");
   });
-  it("ruta con comillas o saltos se cita como JSON en el frontmatter", () => {
-    const { content } = buildPlanNote(base({ projectPath: 'C:/a"b\nc: x' }));
-    expect(content).toContain(`ruta: ${JSON.stringify('C:/a"b c: x')}`);
+  it("ruta con comillas o saltos va en comillas simples YAML (duplicando ')", () => {
+    const { content } = buildPlanNote(base({ projectPath: "C:\\estudio\\o'x\"y\nc: z" }));
+    expect(content).toContain("ruta: 'C:\\estudio\\o''x\"y c: z'");
+  });
+  it("ida y vuelta: parseFrontmatter lee la ruta tal cual", () => {
+    for (const p of ["C:\\estudio\\orquestador-ia", "C:\\a'b\\c", "D:/x y/z"]) {
+      const { content } = buildPlanNote(base({ projectPath: p }));
+      expect(parseFrontmatter(content).data.ruta).toBe(p);
+    }
+    expect(parseFrontmatter(buildPlanNote(base()).content).data.tipo).toBe("plan-orquestador");
   });
   it("neutraliza encabezados y separadores en Pedido y Resultado", () => {
     const { content } = buildPlanNote(base({ description: "hola\n## Falso\n---\nfin", answer: "ok\n# Titulo\n---\n### otro" }));
@@ -48,7 +56,7 @@ describe("buildPlanNote", () => {
   });
   it("valores desconocidos son PENDIENTE", () => {
     const { content } = buildPlanNote(base({ projectPath: null, projectName: null, tier: null, memory: null, memoryNotes: [] }));
-    expect(content).toContain(`ruta: "PENDIENTE"`);
+    expect(content).toContain("ruta: 'PENDIENTE'");
     expect(content).toContain("tags: [orquestador, plan]");
     expect(content).toContain(`tier: "PENDIENTE"`);
   });

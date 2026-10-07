@@ -3,7 +3,12 @@ export const CHUNK_MAX_CHARS = 1500;
 export interface Frontmatter { [k: string]: string | string[] }
 export interface NoteChunk { heading: string; text: string; index: number }
 
-const unquote = (v: string) => v.trim().replace(/^["'](.*)["']$/, "$1");
+/** Quita comillas; en comillas simples YAML, `''` es una `'` literal y las `\` no escapan nada. */
+const unquote = (v: string) => {
+  const t = v.trim();
+  if (/^'.*'$/.test(t) && t.length >= 2) return t.slice(1, -1).replace(/''/g, "'");
+  return t.replace(/^"(.*)"$/, "$1");
+};
 
 /** YAML mínimo de la bóveda: `clave: valor` y `clave: [a, b]`. */
 export function parseFrontmatter(text: string): { data: Frontmatter; body: string } {
