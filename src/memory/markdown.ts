@@ -64,20 +64,28 @@ export function chunkNote(title: string, body: string, maxChars = CHUNK_MAX_CHAR
   return chunks;
 }
 
-const SECRET_PATTERNS: RegExp[] = [
-  /\bsk-[A-Za-z0-9_-]{16,}/g,
-  /\bgh[pousr]_[A-Za-z0-9]{20,}/g,
-  /\bAKIA[0-9A-Z]{16}\b/g,
-  /\bxox[abpr]-[A-Za-z0-9-]{10,}/g,
-  /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/g,
-  /\b((?:password|passwd|contrase(?:ñ|n)a|secret|token|api[_-]?key|[A-Z][A-Z0-9_]*(?:KEY|TOKEN|SECRET|PASSWORD)))\s*[:=]\s*\S+/gi,
+const R = "[REDACTADO]";
+/** Patrón + reemplazo, en orden (los bloques PEM primero, para que nada los corte a medias). */
+const SECRET_PATTERNS: [RegExp, string][] = [
+  [/-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z0-9 ]*-----/g, R],
+  [/(:\/\/[^\s:/@]+):[^\s@/]+@/g, `$1:${R}@`],
+  [/\b(Bearer)\s+[A-Za-z0-9._~+/=-]{8,}/gi, `$1 ${R}`],
+  [/\bsk-[A-Za-z0-9_-]{16,}/g, R],
+  [/\bgh[pousr]_[A-Za-z0-9]{20,}/g, R],
+  [/\bAKIA[0-9A-Z]{16}\b/g, R],
+  [/\bxox[abpr]-[A-Za-z0-9-]{10,}/g, R],
+  [/\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/g, R],
+  // "la contraseña es X"
+  [/\b(contrase(?:ñ|n)a)\s+(es|era)\s+(?!\[REDACTADO\])\S+/gi, `$1 $2 ${R}`],
+  // clave: valor / clave=valor (palabras conocidas, sin importar mayúsculas)
+  [/\b(password|passwd|pass|pwd|contrase(?:ñ|n)a|secret|token|api[_-]?key)\s*[:=]\s*\S+/gi, `$1=${R}`],
+  // Variables de entorno: SOLO en mayúsculas (sin bandera i, para no tapar "monkey: banana").
+  [/\b([A-Z][A-Z0-9_]*(?:KEY|TOKEN|SECRET|PASSWORD))\s*[:=]\s*\S+/g, `$1=${R}`],
 ];
 
 export function redactSecrets(text: string): string {
   let out = text;
-  for (const re of SECRET_PATTERNS) {
-    out = out.replace(re, (m, key?: string) => (key && /[:=]/.test(m) ? `${key}=[REDACTADO]` : "[REDACTADO]"));
-  }
+  for (const [re, rep] of SECRET_PATTERNS) out = out.replace(re, rep);
   return out;
 }
 

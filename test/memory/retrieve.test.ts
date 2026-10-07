@@ -113,6 +113,20 @@ describe("retrieveMemory", () => {
   });
 });
 
+describe("secretos fuera de los extractos", () => {
+  it("retrieveMemory redacta secretos en los extractos", async () => {
+    write("p.md", "---\nruta: C:\\p\n---\n# P\nel servidor usa password=hunter2 y OPENAI_API_KEY=sk-zzzzzzzzzzzzzzzzzzzz");
+    await indexVault({ vaultPath: vault, embedder: fakeEmbedder });
+    const r = await retrieveMemory({ query: "servidor", project: { name: "p", path: "C:\\p" }, embedder: fakeEmbedder });
+    expect(r.notes[0].excerpt).not.toMatch(/hunter2|sk-zzzz/);
+    expect(r.notes[0].excerpt).toContain("[REDACTADO]");
+  });
+  it("buildMemorySection redacta secretos aunque el extracto venga sin redactar", () => {
+    const s = buildMemorySection({ notes: [{ path: "a.md", title: "a", score: 1, projectNote: false, excerpt: "la contraseña es Gato123" }], source: "semantic" }, "n");
+    expect(s).not.toContain("Gato123");
+  });
+});
+
 describe("umbral de similitud", () => {
   const axis: Embedder = async (texts) => texts.map((t) => (/alfa/i.test(t) ? [1, 0] : [0, 1]));
 

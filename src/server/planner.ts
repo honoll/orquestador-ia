@@ -44,7 +44,7 @@ function buildAdaptersSection(): string {
   }).join("\n");
 }
 
-const ROUTING_SYSTEM = `You are a planning agent for a local AI orchestrator that routes tasks to the best CLI tool.
+export const ROUTING_SYSTEM = `You are a planning agent for a local AI orchestrator that routes tasks to the best CLI tool.
 
 Available adapters and their strengths:
 ${buildAdaptersSection()}
@@ -56,6 +56,7 @@ Rules:
 - Each step's prompt must be self-contained and executable headlessly; the outputs of its direct dependencies are prepended automatically, so do not repeat them.
 - "estimatedTokens": your estimate of input+output tokens for the step, counting ~11000 tokens of fixed overhead for every agy call. Also give the plan total.
 - Prefer few dense steps over many small ones: every call has fixed overhead.
+- If the user prompt includes memory from the vault: copy into a step prompt only the memory facts that step needs; never copy credentials, keys, IPs or personal data.
 
 Respond ONLY with valid JSON, no markdown fences:
 {
