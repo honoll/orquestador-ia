@@ -42,10 +42,10 @@ export function silentWav(seconds = 1): Buffer {
   return b;
 }
 
-function defaultDeps(cfg: VoiceConfig): WhisperDeps {
+function defaultDeps(getCfg: () => VoiceConfig): WhisperDeps {
   return {
     spawnServer(args) {
-      const child = spawn(cfg.whisperExe, args, {
+      const child = spawn(getCfg().whisperExe, args, {
         stdio: "ignore",
         windowsHide: true,
         shell: false,
@@ -75,9 +75,20 @@ function defaultDeps(cfg: VoiceConfig): WhisperDeps {
   };
 }
 
-export function createWhisper(cfg: VoiceConfig = voiceConfig(), deps: WhisperDeps = defaultDeps(cfg)) {
-  const exists = deps.exists ?? ((p: string) => fs.existsSync(p));
-  const base = `http://127.0.0.1:${cfg.whisperPort}`;
+/** La página de whisper-server (GET /) es un formulario que apunta a /inference. */
+export function isWhisperServerPage(body: string): boolean {
+  return /whisper/i.test(body) && body.includes("/inference");
+}
+
+/**
+ * `cfg` puede ser una función: se evalúa en cada uso (no al importar), así el `.env` que
+ * index.ts carga después de los imports sí aplica.
+ */
+export function createWhisper(cfg: VoiceConfig | (() => VoiceConfig) = voiceConfig, deps?: WhisperDeps) {
+  const getCfg = typeof cfg === "function" ? cfg : () => cfg;
+  const d = deps ?? defaultDeps(getCfg);
+  const exists = d.exists ?? ((p: string) => fs.existsSync(p));
+  let lastError: string | null = null;
   let state: WhisperState = "stopped";
   let proc: { kill(): void } | null = null;
   let startPromise: Promise<boolean> | null = null;
@@ -89,7 +100,7 @@ export function createWhisper(cfg: VoiceConfig = voiceConfig(), deps: WhisperDep
       form.append("file", new Blob([new Uint8Array(wav)], { type: "audio/wav" }), "audio.wav");
       form.append("response_format", "json");
       form.append("language", "es");
-      const res = await deps.fetchImpl(`${base}/inference`, {
+      const res = await d.fetchImpl(`http://127.0.0.1:${getCfg().whisperPort}/inference`, {
         method: "POST",
         body: form,
         signal: AbortSignal.timeout(INFERENCE_TIMEOUT_MS),
@@ -102,27 +113,57 @@ export function createWhisper(cfg: VoiceConfig = voiceConfig(), deps: WhisperDep
     }
   }
 
-  async function healthy(): Promise<boolean> {
+  /** "ours": responde la página de whisper-server; "foreign": responde otra cosa; "down": nadie. */
+  async function probe(): Promise<"ours" | "foreign" | "down"> {
     try {
-      await deps.fetchImpl(`${base}/`, { signal: AbortSignal.timeout(2000) });
-      return true;
+      const res = await d.fetchImpl(`http://127.0.0.1:${getCfg().whisperPort}/`, { signal: AbortSignal.timeout(2000) });
+      const body = (await res.text()).slice(0, 8192);
+      return isWhisperServerPage(body) ? "ours" : "foreign";
     } catch {
-      return false;
+      return "down";
     }
   }
 
+  function foreignPort(): boolean {
+    lastError = `El puerto ${getCfg().whisperPort} está ocupado por otro servicio que no es whisper-server (cambia WHISPER_PORT o libéralo)`;
+    state = "failed";
+    return false;
+  }
+
+  function warmUp(gen: number): void {
+    state = "warming";
+    // Calentamiento en segundo plano: la primera inferencia compila (JIT) y tarda ~40 s.
+    void post(silentWav(1)).finally(() => {
+      if (gen === generation && state === "warming") state = "ready";
+    });
+  }
+
   async function start(): Promise<boolean> {
-    if (!exists(cfg.whisperExe) || !exists(cfg.whisperModel)) {
+    const c = getCfg();
+    lastError = null;
+    if (!exists(c.whisperExe) || !exists(c.whisperModel)) {
+      lastError = "Faltan whisper-server.exe o el modelo";
       state = "failed";
       return false;
     }
     const gen = ++generation;
     state = "starting";
+    // Antes de lanzar nada: ¿ya hay alguien en el puerto? (p. ej. un whisper-server huérfano de
+    // una ejecución anterior que Windows no dejó apagar). Si es genuino se ADOPTA (sin proc:
+    // stop() no lo mata); si es otra cosa, error claro en vez de lanzar procesos que mueren.
+    const pre = await probe();
+    if (gen !== generation) return false;
+    if (pre === "foreign") return foreignPort();
+    if (pre === "ours") {
+      warmUp(gen);
+      return true;
+    }
     let exited = false;
     let child: ReturnType<WhisperDeps["spawnServer"]>;
     try {
-      child = deps.spawnServer(buildWhisperServerArgs(cfg));
+      child = d.spawnServer(buildWhisperServerArgs(c));
     } catch {
+      lastError = "No se pudo lanzar whisper-server";
       state = "failed";
       return false;
     }
@@ -136,18 +177,24 @@ export function createWhisper(cfg: VoiceConfig = voiceConfig(), deps: WhisperDep
     });
     for (let i = 0; i < HEALTH_MAX_POLLS; i++) {
       if (exited || gen !== generation) return false;
-      if (await healthy()) {
+      const p = await probe();
+      if (p === "ours") {
         if (exited || gen !== generation) return false;
-        state = "warming";
-        // Calentamiento en segundo plano: la primera inferencia compila (JIT) y tarda ~40 s.
-        void post(silentWav(1)).finally(() => {
-          if (gen === generation && state === "warming") state = "ready";
-        });
+        warmUp(gen);
         return true;
       }
-      await deps.wait(HEALTH_POLL_MS);
+      if (p === "foreign") {
+        if (gen === generation) {
+          try { child.kill(); } catch { /* nada */ }
+          proc = null;
+          return foreignPort();
+        }
+        return false;
+      }
+      await d.wait(HEALTH_POLL_MS);
     }
     if (gen === generation) {
+      lastError = "whisper-server no respondió a tiempo";
       state = "failed";
       try { child.kill(); } catch { /* nada */ }
       proc = null;
@@ -180,8 +227,10 @@ export function createWhisper(cfg: VoiceConfig = voiceConfig(), deps: WhisperDep
       }
     },
     status: (): WhisperState => state,
+    lastError: (): string | null => lastError,
     stop(): void {
       generation++;
+      startPromise = null;
       const p = proc;
       proc = null;
       state = "stopped";

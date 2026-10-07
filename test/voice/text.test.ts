@@ -47,4 +47,32 @@ describe("toSpeechText", () => {
     expect(out.length).toBeLessThanOrEqual(SPEECH_MAX_CHARS);
     expect(out.endsWith("palabra")).toBe(true);
   });
+
+  describe("resumen: división en oraciones", () => {
+    const sum = (t: string) => toSpeechText(t, { summary: true });
+    it("no parte decimales ni versiones", () => {
+      expect(sum("La versión 2.5 salió. Mide 0.3 s. Otra. Cuarta.")).toBe("La versión 2.5 salió. Mide 0.3 s. Otra.");
+    });
+    it("no corta en abreviaturas comunes", () => {
+      expect(sum("Habló el Sr. García con la Dra. López. Fin uno. Fin dos. Fin tres.")).toBe(
+        "Habló el Sr. García con la Dra. López. Fin uno. Fin dos.",
+      );
+      expect(sum("Por ej. Hoy llueve. Dos. Tres. Cuatro.")).toBe("Por ej. Hoy llueve. Dos. Tres.");
+      expect(sum("Usa p. ej. Python. Dos. Tres. Cuatro.")).toBe("Usa p. ej. Python. Dos. Tres.");
+      expect(sum("Vive en EE. UU. Desde 2020. Dos. Tres.")).toBe("Vive en EE. UU. Desde 2020. Dos. Tres.");
+      expect(sum("Ver núm. 5 y aprox. 3. Dos. Tres. Cuatro.")).toBe("Ver núm. 5 y aprox. 3. Dos. Tres.");
+    });
+    it("maneja ¿?, ¡! y puntos suspensivos", () => {
+      expect(sum("¿Listo? ¡Sí! Bueno… Y luego. Más.")).toBe("¿Listo? ¡Sí! Bueno…");
+      expect(sum("Uno... Dos?! Tres. Cuatro.")).toBe("Uno... Dos?! Tres.");
+    });
+  });
+  it("200k caracteres sin puntuación se procesan rápido (lineal)", () => {
+    const big = "a ".repeat(100_000);
+    const t0 = performance.now();
+    toSpeechText(big, { summary: true });
+    toSpeechText(big);
+    toSpeechText("x. ".repeat(70_000), { summary: true });
+    expect(performance.now() - t0).toBeLessThan(500);
+  });
 });

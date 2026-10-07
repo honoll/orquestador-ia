@@ -19,7 +19,9 @@ export async function synthesize(
   const exists = opts.exists ?? ((p: string) => fs.existsSync(p));
   let dir: string | null = null;
   try {
-    if (!text.trim() || !exists(cfg.piperExe) || !exists(cfg.voiceModel)) return null;
+    // Piper procesa stdin línea por línea: una sola línea por llamada.
+    text = text.replace(/\s+/g, " ").trim();
+    if (!text || !exists(cfg.piperExe) || !exists(cfg.voiceModel)) return null;
     dir = await fsp.mkdtemp(path.join(os.tmpdir(), "voz-out-"));
     const out = path.join(dir, "salida.wav");
     const r = await run(cfg.piperExe, buildPiperArgs(cfg.voiceModel, out), { stdin: text, timeoutSec: 60 });

@@ -1,14 +1,19 @@
 import fs from "node:fs";
 import { Hono } from "hono";
+import { bodyLimit } from "hono/body-limit";
 import { voiceConfig } from "../../voice/config.js";
 import { whisper } from "../../voice/whisper.js";
 import { toWav16k } from "../../voice/audio.js";
+import { AudioTooLongError, MAX_WAV_BYTES } from "../../voice/limits.js";
 import { synthesize } from "../../voice/piper.js";
 import { toSpeechText } from "../../voice/text.js";
 
 export const MAX_AUDIO_BYTES = 10 * 1024 * 1024;
-/** 120 s de WAV 16 kHz mono s16 (+ cabecera). */
-export const MAX_WAV_BYTES = 120 * 16000 * 2 + 44;
+export { MAX_WAV_BYTES };
+export const MAX_SPEAK_BODY_BYTES = 64 * 1024;
+
+const limitBody = (maxSize: number, msg: string) =>
+  bodyLimit({ maxSize, onError: (c) => c.json({ error: msg }, 413) });
 
 const app = new Hono();
 
@@ -20,7 +25,7 @@ app.get("/status", (c) => {
   });
 });
 
-app.post("/transcribe", async (c) => {
+app.post("/transcribe", limitBody(MAX_AUDIO_BYTES, "Audio demasiado grande (máx. 10 MB)"), async (c) => {
   const type = (c.req.header("content-type") ?? "").toLowerCase();
   if (!type.startsWith("audio/")) return c.json({ error: "El cuerpo debe ser audio (Content-Type audio/*)" }, 415);
   const declared = Number(c.req.header("content-length") ?? 0);
@@ -32,7 +37,8 @@ app.post("/transcribe", async (c) => {
   let wav: Buffer;
   try {
     wav = await toWav16k(body);
-  } catch {
+  } catch (err) {
+    if (err instanceof AudioTooLongError) return c.json({ error: "Audio demasiado largo (máx. 120 s)" }, 413);
     return c.json({ error: "No se pudo convertir el audio" }, 503);
   }
   if (wav.length > MAX_WAV_BYTES) return c.json({ error: "Audio demasiado largo (máx. 120 s)" }, 413);
@@ -42,7 +48,7 @@ app.post("/transcribe", async (c) => {
   return c.json({ text });
 });
 
-app.post("/speak", async (c) => {
+app.post("/speak", limitBody(MAX_SPEAK_BODY_BYTES, "Texto demasiado grande (máx. 64 KB)"), async (c) => {
   let body: { text?: unknown; summary?: unknown } = {};
   try {
     body = await c.req.json();

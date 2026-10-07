@@ -101,6 +101,6 @@ process.on("exit", () => whisper.stop());
 for (const sig of ["SIGINT", "SIGTERM"] as const) {
   process.on(sig, () => {
     whisper.stop();
-    process.exit(0);
+    process.exit(sig === "SIGINT" ? 130 : 143);
   });
 }

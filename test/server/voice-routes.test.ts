@@ -28,6 +28,7 @@ vi.mock("../../src/voice/config.js", async () => {
 });
 vi.mock("../../src/voice/whisper.js", () => ({ whisper: { status: h.status, transcribe: h.transcribe, stop: vi.fn() } }));
 vi.mock("../../src/voice/audio.js", () => ({ toWav16k: h.toWav }));
+const { AudioTooLongError } = await import("../../src/voice/limits.js");
 vi.mock("../../src/voice/piper.js", () => ({ synthesize: h.synth }));
 
 h.dir = fs.mkdtempSync(path.join(os.tmpdir(), "voz-route-"));
@@ -72,6 +73,21 @@ describe("POST /transcribe", () => {
     expect((await post("/transcribe", "abc", "audio/webm")).status).toBe(413);
     expect(h.transcribe).not.toHaveBeenCalled();
   });
+  it("413 si ffmpeg/toWav16k reporta audio demasiado largo", async () => {
+    h.toWav.mockRejectedValueOnce(new AudioTooLongError());
+    expect((await post("/transcribe", "abc", "audio/webm")).status).toBe(413);
+    expect(h.transcribe).not.toHaveBeenCalled();
+  });
+  it("413 si el cuerpo real supera 10 MB aunque no declare Content-Length", async () => {
+    const big = new Uint8Array(MAX_AUDIO_BYTES + 1);
+    const res = await voiceRoute.request("/transcribe", {
+      method: "POST",
+      headers: { "Content-Type": "audio/webm", "Transfer-Encoding": "chunked" },
+      body: new ReadableStream({ start(c) { c.enqueue(big); c.close(); } }),
+      duplex: "half",
+    });
+    expect(res.status).toBe(413);
+  });
   it("convierte, transcribe y devuelve { text }", async () => {
     const res = await post("/transcribe", "abc", "audio/webm;codecs=opus");
     expect(res.status).toBe(200);
@@ -109,6 +125,14 @@ describe("POST /speak", () => {
     expect((await speak({ text: "```\ncodigo\n```" })).status).toBe(200); // "(código)"
     expect((await speak({})).status).toBe(400);
     expect((await post("/speak", "no json", "application/json")).status).toBe(400);
+  });
+  it("413 si el JSON supera 64 KB y recorta el texto antes de procesarlo", async () => {
+    expect((await speak({ text: "a".repeat(70 * 1024) })).status).toBe(413);
+    expect(h.synth).not.toHaveBeenCalled();
+    const t0 = performance.now();
+    const ok = await speak({ text: "x".repeat(60 * 1024), summary: true });
+    expect(ok.status).toBe(200);
+    expect(performance.now() - t0).toBeLessThan(1000);
   });
   it("503 si Piper falla", async () => {
     h.synth.mockResolvedValueOnce(null);

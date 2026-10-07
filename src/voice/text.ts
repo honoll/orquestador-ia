@@ -1,4 +1,6 @@
 export const SPEECH_MAX_CHARS = 2000;
+/** Margen para el markup que se descarta (enlaces, tablas, código). */
+const INPUT_MAX_CHARS = SPEECH_MAX_CHARS * 4;
 export const SUMMARY_SENTENCES = 3;
 export const SUMMARY_MAX_CHARS = 400;
 
@@ -11,17 +13,54 @@ function clipAtWord(text: string, max: number): string {
   return (lastSpace > 0 ? cut.slice(0, lastSpace) : cut).trimEnd();
 }
 
+const TERMINATORS = new Set([".", "?", "!", "…"]);
+/** Cierres que pueden seguir al signo final: comillas y paréntesis. */
+const CLOSERS = new Set(['"', "'", ")", "”", "»", "’", "]"]);
+/** Abreviaturas (sin punto, en minúsculas) tras las cuales un punto NO termina la oración. */
+const ABBREVIATIONS = new Set([
+  "sr", "sra", "srta", "dr", "dra", "lic", "ing", "prof", "ej", "p", "etc", "núm", "num", "aprox", "vs",
+  "pág", "págs", "art", "av", "tel", "ud", "uds", "cap", "fig", "vol", "ee", "uu", "admón", "dpto", "col",
+]);
+const NEXT_STARTS = /[¿¡A-ZÁÉÍÓÚÑÜ0-9"“«'([]/;
+const isSpace = (ch: string) => ch === " " || ch === "\n" || ch === "\t";
+
+function wordBefore(text: string, dot: number): string {
+  let i = dot;
+  while (i > 0 && dot - i < 12 && /\p{L}/u.test(text[i - 1])) i--;
+  const w = text.slice(i, dot);
+  // Inicial suelta en mayúscula ("J. Pérez") cuenta como abreviatura; "s" de "0.3 s." no.
+  return w.length === 1 && w === w.toUpperCase() ? "." : w.toLowerCase();
+}
+
+/**
+ * Primeras n oraciones, en una sola pasada (lineal). Un fin de oración es [.?!…]+ (más cierres)
+ * seguido de espacio y mayúscula/¿/¡/dígito, o del final del texto; los puntos de abreviaturas
+ * y de decimales ("2.5") no cuentan.
+ */
 function firstSentences(text: string, n: number): string {
-  const re = /[^.?!…]*[.?!…]+/g;
   const found: string[] = [];
-  let m: RegExpExecArray | null;
-  let consumed = 0;
-  while (found.length < n && (m = re.exec(text)) !== null) {
-    found.push(m[0].trim());
-    consumed = re.lastIndex;
+  let start = 0;
+  let i = 0;
+  while (i < text.length && found.length < n) {
+    if (!TERMINATORS.has(text[i])) { i++; continue; }
+    let j = i;
+    while (j < text.length && TERMINATORS.has(text[j])) j++;
+    const lastTerm = j - 1;
+    while (j < text.length && CLOSERS.has(text[j])) j++;
+    let k = j;
+    while (k < text.length && isSpace(text[k])) k++;
+    const atEnd = k >= text.length;
+    const boundary = atEnd || (k > j && NEXT_STARTS.test(text[k]));
+    const abbreviation = text[lastTerm] === "." && j === lastTerm + 1 && !atEnd &&
+      (() => { const w = wordBefore(text, i); return w === "." || ABBREVIATIONS.has(w); })();
+    if (boundary && !abbreviation) {
+      found.push(text.slice(start, j).trim());
+      start = j;
+    }
+    i = j;
   }
-  if (found.length < n && consumed < text.length) {
-    const rest = text.slice(consumed).trim();
+  if (found.length < n) {
+    const rest = text.slice(start).trim();
     if (rest) found.push(rest);
   }
   return found.join(" ");
@@ -29,7 +68,7 @@ function firstSentences(text: string, n: number): string {
 
 /** Markdown -> texto que se puede leer en voz alta. Puro. */
 export function toSpeechText(markdown: string, opts: { summary?: boolean } = {}): string {
-  let t = markdown.replace(/\r\n?/g, "\n");
+  let t = markdown.slice(0, INPUT_MAX_CHARS).replace(/\r\n?/g, "\n");
   t = t.replace(/```[\s\S]*?(```|$)/g, " (código) ");
   t = t.replace(/`([^`]*)`/g, "$1");
   t = t.replace(/\[\[([^\]|]*)\|([^\]]*)\]\]/g, "$2").replace(/\[\[([^\]]*)\]\]/g, "$1");
