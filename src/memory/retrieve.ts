@@ -6,6 +6,8 @@ import { fence, newPromptNonce } from "../server/plan-dag.js";
 
 export const MEMORY_TOP_NOTES = 5;
 export const MEMORY_BUDGET_CHARS = 24_000;
+/** Las notas que no son del proyecto con mejor trozo por debajo de esto se descartan (ruido). */
+export const MEMORY_MIN_SCORE = 0.55;
 
 export interface MemoryNote { path: string; title: string; score: number; projectNote: boolean; excerpt: string }
 export interface MemoryResult { notes: MemoryNote[]; source: "semantic" | "project-only" | "none" }
@@ -96,7 +98,7 @@ export async function retrieveMemory(opts: {
   if (qvec) {
     const titles = new Map(noteRows.map((n) => [n.path, n]));
     const ranked = [...best.entries()]
-      .filter(([p]) => p !== projectRow?.path && titles.has(p))
+      .filter(([p, e]) => p !== projectRow?.path && titles.has(p) && e.score >= MEMORY_MIN_SCORE)
       .sort((a, b) => b[1].score - a[1].score)
       .slice(0, MEMORY_TOP_NOTES - picks.length);
     for (const [p, e] of ranked) {

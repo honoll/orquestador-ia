@@ -8,6 +8,7 @@ import { indexVault } from "../../src/memory/vault-index.js";
 import {
   MEMORY_TOP_NOTES,
   MEMORY_BUDGET_CHARS,
+  MEMORY_MIN_SCORE,
   cosine,
   retrieveMemory,
   buildMemorySection,
@@ -52,7 +53,7 @@ describe("cosine", () => {
 describe("retrieveMemory", () => {
   it("ordena por similitud, agrupa por nota y limita a 5", async () => {
     write("gatos.md", "# Gatos\nlos gatos maullan mucho\n\n## Más\ngatos gatos gatos maullan");
-    for (let i = 0; i < 8; i++) write(`otra${i}.md`, `# Otra ${i}\nperros ladran fuerte numero${i}`);
+    for (let i = 0; i < 8; i++) write(`otra${i}.md`, `# Otra ${i}\ngatos maullan perros ladran numero${i}`);
     await indexVault({ vaultPath: vault, embedder: fakeEmbedder });
     const r = await retrieveMemory({ query: "gatos maullan", embedder: fakeEmbedder });
     expect(r.source).toBe("semantic");
@@ -109,6 +110,28 @@ describe("retrieveMemory", () => {
     expect(b.source).toBe("project-only");
     const c = await retrieveMemory({ query: "q", embedder: null as any });
     expect(c).toEqual({ notes: [], source: "none" });
+  });
+});
+
+describe("umbral de similitud", () => {
+  const axis: Embedder = async (texts) => texts.map((t) => (/alfa/i.test(t) ? [1, 0] : [0, 1]));
+
+  it("excluye una nota bajo el umbral", async () => {
+    write("a.md", "# A\nalfa");
+    write("b.md", "# B\nbeta");
+    await indexVault({ vaultPath: vault, embedder: axis });
+    const r = await retrieveMemory({ query: "alfa", embedder: axis });
+    expect(MEMORY_MIN_SCORE).toBe(0.55);
+    expect(r.notes.map((n) => n.path)).toEqual(["a.md"]);
+  });
+
+  it("conserva la nota del proyecto aunque puntúe bajo el umbral", async () => {
+    write("a.md", "# A\nalfa");
+    write("p.md", "---\nruta: C:\\p\n---\n# P\nbeta");
+    await indexVault({ vaultPath: vault, embedder: axis });
+    const r = await retrieveMemory({ query: "alfa", project: { name: "p", path: "C:\\p" }, embedder: axis });
+    expect(r.notes.map((n) => n.path)).toEqual(["p.md", "a.md"]);
+    expect(r.notes[0].score).toBeLessThan(MEMORY_MIN_SCORE);
   });
 });
 
