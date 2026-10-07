@@ -4,6 +4,7 @@ import { createVad, float32ToWav, type VadHandle } from "../lib/vad";
 import {
   CONV_IDLE_MS,
   convReducer,
+  createMaxSpeechTimer,
   createSpeechQueue,
   initialConv,
   type ConvEvent,
@@ -21,7 +22,7 @@ import {
   writeBargeIn,
 } from "../lib/assistant";
 import { duckLease } from "../lib/duck";
-import { playSentence, stopSpeech, transcribe } from "../lib/voice";
+import { fetchSentence, playSpeechBlob, stopSpeech, transcribe } from "../lib/voice";
 import { micErrorMessage } from "../lib/voice-utils";
 
 export interface ConversationResult {
@@ -133,7 +134,20 @@ export function ConversationView({
       if (next.phase === "ending" && prev.phase !== "ending") void doEnd();
     };
 
-    const queue = createSpeechQueue({ speak: (text, signal) => playSentence(text, signal) });
+    // Frase máxima: si el usuario sigue hablando a los 60 s, se cierra la frase y se transcribe lo capturado.
+    const maxSpeech = createMaxSpeechTimer({
+      onExpire: () => {
+        if (closed || convRef.current.phase !== "listening") return;
+        // pause() entrega la frase (submitUserSpeechOnPause) → onSpeechEnd → transcribing.
+        vad?.pause();
+        setTimeout(() => {
+          // Si no había frase que entregar, el micrófono sigue abierto.
+          if (!closed && convRef.current.phase === "listening") vad?.start();
+        }, 300);
+      },
+    });
+
+    const queue = createSpeechQueue({ fetch: fetchSentence, play: playSpeechBlob });
     queue.onIdle(() => dispatch({ type: "speakIdle" }));
 
     const onSentence = (s: string) => {
@@ -145,6 +159,7 @@ export function ConversationView({
     let streamer = createSentenceStreamer(onSentence);
 
     const releaseResources = () => {
+      maxSpeech.cancel();
       if (idleTimer) clearInterval(idleTimer);
       idleTimer = null;
       unsub?.();
@@ -194,6 +209,7 @@ export function ConversationView({
       else interruptedSeq = turnSeq;
       curTurn = null;
       streamer = createSentenceStreamer(onSentence);
+      maxSpeech.cancel();
       queue.stop();
       stopSpeech();
       dispatch({ type: "interrupt" });
@@ -229,8 +245,11 @@ export function ConversationView({
           const p = convRef.current.phase;
           if (p === "speaking" && bargeRef.current) interrupt();
           else dispatch({ type: "speechStart" });
+          if (convRef.current.phase === "listening") maxSpeech.start();
         },
+        onMisfire: () => maxSpeech.cancel(),
         onSpeechEnd: (audio) => {
+          maxSpeech.cancel();
           if (convRef.current.phase !== "listening") return;
           dispatch({ type: "speechEnd" });
           void handleUtterance(audio);
@@ -338,7 +357,7 @@ export function ConversationView({
       end: () => dispatch({ type: "end" }),
       dismiss: () => {
         closed = true;
-        onCloseRef.current({ conversationId: null, notePath: null });
+        onCloseRef.current({ conversationId, notePath: null });
       },
       rebuildVad: () => {
         if (!vad || closed || !stream) return;
@@ -486,6 +505,8 @@ export function ConversationView({
                   bargeRef.current = next;
                   writeBargeIn(safeStorage(), next);
                   api.current?.rebuildVad();
+                  // El espacio debe seguir interrumpiendo, no volver a alternar este interruptor.
+                  circleRef.current?.focus();
                 }}
                 className={`min-h-11 rounded-lg px-3 font-mono text-[11px] focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent ${
                   bargeIn ? "text-accent" : "text-text-secondary hover:text-text-primary"

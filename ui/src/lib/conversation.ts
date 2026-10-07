@@ -104,34 +104,110 @@ export function convReducer(
   }
 }
 
-export function createSpeechQueue(deps: {
-  speak: (text: string, signal: AbortSignal) => Promise<void>;
-}): {
+/** Tope de una frase del usuario (el servidor rechaza audio de más de 120 s). */
+export const MAX_SPEECH_MS = 60_000;
+
+/**
+ * Temporizador de frase máxima: arranca con speechStart y, si la frase no terminó a tiempo, avisa
+ * (onExpire) para forzar el cierre. cancel() al terminar, en misfire, al interrumpir y al desmontar.
+ */
+export function createMaxSpeechTimer(deps: {
+  onExpire: () => void;
+  ms?: number;
+  setTimer?: (fn: () => void, ms: number) => unknown;
+  clearTimer?: (h: unknown) => void;
+}): { start(): void; cancel(): void; armed(): boolean } {
+  const setTimer = deps.setTimer ?? ((fn, ms) => setTimeout(fn, ms));
+  const clearTimer = deps.clearTimer ?? ((h) => clearTimeout(h as ReturnType<typeof setTimeout>));
+  const ms = deps.ms ?? MAX_SPEECH_MS;
+  let handle: unknown = null;
+  let armed = false;
+  return {
+    start() {
+      // Un segundo speechStart dentro de la misma frase no reinicia el reloj.
+      if (armed) return;
+      armed = true;
+      handle = setTimer(() => {
+        armed = false;
+        handle = null;
+        deps.onExpire();
+      }, ms);
+    },
+    cancel() {
+      if (handle !== null) clearTimer(handle);
+      handle = null;
+      armed = false;
+    },
+    armed: () => armed,
+  };
+}
+
+type QueueDeps<T> =
+  | { speak: (text: string, signal: AbortSignal) => Promise<void> }
+  | {
+      /** Pide el audio de una frase (se adelanta mientras suena la anterior). */
+      fetch: (text: string, signal: AbortSignal) => Promise<T>;
+      /** Reproduce lo ya pedido; debe resolver al terminar o al abortarse. */
+      play: (item: T, signal: AbortSignal) => Promise<void>;
+      /** Máximo de frases pedidas por adelantado (en vuelo o listas) además de la que toca ahora. Por defecto 1: con la que se espera, 2 pedidos en vuelo como mucho. */
+      maxAhead?: number;
+    };
+
+/**
+ * Cola de reproducción por frases con prefetch: el audio de la frase n+1 se pide mientras suena la n,
+ * pero siempre se reproduce en orden de llegada aunque los pedidos terminen desordenados.
+ * La forma antigua { speak } sigue funcionando (sin prefetch).
+ */
+export function createSpeechQueue<T = string>(deps: QueueDeps<T>): {
   enqueue(sentence: string): void;
   stop(): void;
   idle(): boolean;
   onIdle(cb: () => void): void;
 } {
-  let pending: string[] = [];
+  const fetchFn = ("fetch" in deps ? deps.fetch : async (t: string) => t as unknown as T) as (
+    text: string,
+    signal: AbortSignal,
+  ) => Promise<T>;
+  const playFn =
+    "play" in deps
+      ? deps.play
+      : (item: T, signal: AbortSignal) => deps.speak(item as unknown as string, signal);
+  const maxAhead = "fetch" in deps ? Math.max(1, deps.maxAhead ?? 1) : 1;
+
+  type Item = { text: string; ctl: AbortController; p: Promise<T> | null };
+  let pending: Item[] = [];
+  let current: Item | null = null;
   let running = false;
-  let controller: AbortController | null = null;
   let generation = 0;
   let idleCb: (() => void) | null = null;
+
+  // Pide por adelantado las primeras maxAhead frases pendientes.
+  function prefetch(): void {
+    for (const it of pending.slice(0, maxAhead)) {
+      if (it.p) continue;
+      const p = fetchFn(it.text, it.ctl.signal);
+      p.catch(() => {}); // el error se maneja al esperar la frase
+      it.p = p;
+    }
+  }
 
   async function pump(): Promise<void> {
     if (running) return;
     running = true;
     const gen = generation;
     while (pending.length > 0 && gen === generation) {
-      const text = pending.shift() as string;
-      const ctl = new AbortController();
-      controller = ctl;
+      prefetch();
+      const item = pending.shift() as Item;
+      current = item;
+      prefetch(); // la frase que sigue se pide mientras esta suena
       try {
-        await deps.speak(text, ctl.signal);
+        const value = await (item.p as Promise<T>);
+        if (gen !== generation) break;
+        await playFn(value, item.ctl.signal);
       } catch {
         // una frase fallida no detiene las siguientes
       }
-      if (controller === ctl) controller = null;
+      if (current === item) current = null;
     }
     if (gen === generation) {
       running = false;
@@ -141,14 +217,16 @@ export function createSpeechQueue(deps: {
 
   return {
     enqueue(sentence) {
-      pending.push(sentence);
+      pending.push({ text: sentence, ctl: new AbortController(), p: null });
+      if (running) prefetch();
       void pump();
     },
     stop() {
       generation++;
+      for (const it of pending) it.ctl.abort();
+      current?.ctl.abort();
       pending = [];
-      controller?.abort();
-      controller = null;
+      current = null;
       running = false;
     },
     idle: () => !running && pending.length === 0,

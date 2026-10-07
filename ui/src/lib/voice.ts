@@ -147,10 +147,15 @@ export async function playSpeech(id: string, text: string, summary: boolean, ori
 }
 
 /**
- * Una frase del modo «Platicar»: usa el mismo reproductor único, pero SIN lease `speak` (el lease
- * `conversation` ya cubre el ducking y `speak` excluiría al navegador). Resuelve al terminar o al abortar.
+ * Una frase del modo «Platicar» (pedir con fetchSentence, reproducir con playSpeechBlob): usa el mismo reproductor único, pero SIN lease `speak` (el lease
+ * `conversation` ya cubre el ducking y `speak` excluiría al navegador). playSpeechBlob resuelve al terminar o al abortar.
  */
-export async function playSentence(text: string, signal: AbortSignal): Promise<void> {
+export function fetchSentence(text: string, signal: AbortSignal): Promise<Blob> {
+  return fetchSpeech(text, false, signal);
+}
+
+/** Reproduce un audio ya pedido en el reproductor único (ver fetchSentence); revoca su URL al terminar. */
+export async function playSpeechBlob(blob: Blob, signal: AbortSignal): Promise<void> {
   if (signal.aborted) return;
   stopSpeech();
   const ctrl = new AbortController();
@@ -158,8 +163,6 @@ export async function playSentence(text: string, signal: AbortSignal): Promise<v
   const onAbort = () => ctrl.abort();
   signal.addEventListener("abort", onAbort, { once: true });
   try {
-    const blob = await fetchSpeech(text, false, ctrl.signal);
-    if (ctrl.signal.aborted) return;
     objectUrl = URL.createObjectURL(blob);
     const a = new Audio(objectUrl);
     audio = a;

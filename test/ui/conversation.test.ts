@@ -4,6 +4,8 @@ import {
   convReducer,
   CONV_IDLE_MS,
   createSpeechQueue,
+  createMaxSpeechTimer,
+  MAX_SPEECH_MS,
   type ConvState,
   type ConvEvent,
 } from "../../ui/src/lib/conversation.js";
@@ -255,5 +257,164 @@ describe("createSpeechQueue", () => {
     await tick();
     expect(f.calls.map((c) => c.text)).toEqual(["uno", "tres"]);
     expect(f.calls[1].signal.aborted).toBe(false);
+  });
+});
+
+describe("createSpeechQueue con prefetch", () => {
+  function setup(maxAhead?: number) {
+    const fetches: { text: string; signal: AbortSignal; resolve: (v: string) => void }[] = [];
+    const plays: { item: string; signal: AbortSignal; resolve: () => void }[] = [];
+    const q = createSpeechQueue<string>({
+      fetch: (text, signal) =>
+        new Promise<string>((resolve) => {
+          fetches.push({ text, signal, resolve });
+        }),
+      play: (item, signal) =>
+        new Promise<void>((resolve) => {
+          plays.push({ item, signal, resolve });
+          signal.addEventListener("abort", () => resolve());
+        }),
+      maxAhead,
+    });
+    return { q, fetches, plays };
+  }
+
+  it("pide la frase n+1 antes de que termine de sonar la n", async () => {
+    const { q, fetches, plays } = setup();
+    q.enqueue("uno");
+    q.enqueue("dos");
+    await tick();
+    expect(fetches.map((f) => f.text)).toEqual(["uno", "dos"]);
+    fetches[0].resolve("audio-uno");
+    await tick();
+    expect(plays.map((p) => p.item)).toEqual(["audio-uno"]);
+    // dos ya se pidió y sigue sonando uno
+    expect(fetches.map((f) => f.text)).toContain("dos");
+    fetches[1].resolve("audio-dos");
+    await tick();
+    expect(plays).toHaveLength(1);
+    plays[0].resolve();
+    await tick();
+    expect(plays.map((p) => p.item)).toEqual(["audio-uno", "audio-dos"]);
+  });
+
+  it("mantiene el orden aunque los pedidos terminen desordenados", async () => {
+    const { q, fetches, plays } = setup();
+    q.enqueue("a");
+    q.enqueue("b");
+    q.enqueue("c");
+    await tick();
+    fetches[1].resolve("B");
+    await tick();
+    expect(plays).toHaveLength(0);
+    fetches[0].resolve("A");
+    await tick();
+    expect(plays.map((p) => p.item)).toEqual(["A"]);
+    plays[0].resolve();
+    await tick();
+    expect(plays.map((p) => p.item)).toEqual(["A", "B"]);
+    plays[1].resolve();
+    await tick();
+    fetches[2].resolve("C");
+    await tick();
+    expect(plays.map((p) => p.item)).toEqual(["A", "B", "C"]);
+  });
+
+  it("como mucho 2 pedidos en vuelo (el de la frase actual y 1 adelantado)", async () => {
+    const { q, fetches } = setup();
+    for (const t of ["1", "2", "3", "4"]) q.enqueue(t);
+    await tick();
+    expect(fetches.map((f) => f.text)).toEqual(["1", "2"]);
+    fetches[0].resolve("A");
+    await tick();
+    // suena 1; solo 2 está adelantado
+    expect(fetches.map((f) => f.text)).toEqual(["1", "2"]);
+  });
+
+  it("stop aborta todos los pedidos y la reproducción, y no reproduce nada más", async () => {
+    const { q, fetches, plays } = setup();
+    let idles = 0;
+    q.onIdle(() => idles++);
+    q.enqueue("a");
+    q.enqueue("b");
+    q.enqueue("c");
+    await tick();
+    fetches[0].resolve("A");
+    await tick();
+    expect(plays).toHaveLength(1);
+    q.stop();
+    await tick();
+    expect(fetches.every((f) => f.signal.aborted)).toBe(true);
+    expect(plays[0].signal.aborted).toBe(true);
+    fetches[1].resolve("B");
+    fetches[2]?.resolve("C");
+    await tick();
+    expect(plays).toHaveLength(1);
+    expect(q.idle()).toBe(true);
+    expect(idles).toBe(0);
+  });
+
+  it("un pedido fallido se salta y sigue con la siguiente", async () => {
+    const played: string[] = [];
+    const q = createSpeechQueue<string>({
+      fetch: async (t) => {
+        if (t === "mala") throw new Error("503");
+        return t;
+      },
+      play: async (i) => {
+        played.push(i);
+      },
+    });
+    let idles = 0;
+    q.onIdle(() => idles++);
+    q.enqueue("mala");
+    q.enqueue("buena");
+    await tick();
+    expect(played).toEqual(["buena"]);
+    expect(idles).toBe(1);
+  });
+});
+
+describe("createMaxSpeechTimer", () => {
+  function fake() {
+    const timers: { fn: () => void; ms: number; id: number; live: boolean }[] = [];
+    return {
+      timers,
+      setTimer: (fn: () => void, ms: number) => {
+        const t = { fn, ms, id: timers.length, live: true };
+        timers.push(t);
+        return t.id;
+      },
+      clearTimer: (h: unknown) => {
+        timers[h as number].live = false;
+      },
+    };
+  }
+  it("vence a los 60 s si la frase no terminó", () => {
+    const f = fake();
+    let n = 0;
+    const t = createMaxSpeechTimer({ onExpire: () => n++, ...f });
+    t.start();
+    expect(f.timers[0].ms).toBe(MAX_SPEECH_MS);
+    expect(MAX_SPEECH_MS).toBe(60_000);
+    expect(t.armed()).toBe(true);
+    f.timers[0].fn();
+    expect(n).toBe(1);
+    expect(t.armed()).toBe(false);
+  });
+  it("cancel (speechEnd, misfire, interrupt) lo desarma", () => {
+    const f = fake();
+    const t = createMaxSpeechTimer({ onExpire: () => {}, ...f });
+    t.start();
+    t.cancel();
+    expect(f.timers[0].live).toBe(false);
+    expect(t.armed()).toBe(false);
+  });
+  it("un segundo start dentro de la frase no reinicia el reloj", () => {
+    const f = fake();
+    const t = createMaxSpeechTimer({ onExpire: () => {}, ...f });
+    t.start();
+    t.start();
+    expect(f.timers).toHaveLength(1);
   });
 });

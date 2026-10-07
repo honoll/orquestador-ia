@@ -24,6 +24,8 @@ export async function createVad(opts: {
     resumeStream: async () => opts.stream,
     positiveSpeechThreshold: positive,
     negativeSpeechThreshold: positive - 0.15,
+    // pause() entrega la frase en curso (onSpeechEnd): así se corta una frase de más de 60 s sin perder audio.
+    submitUserSpeechOnPause: true,
     redemptionMs: 800,
     minSpeechMs: 300,
     onSpeechStart: opts.onSpeechStart,
