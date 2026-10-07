@@ -113,6 +113,22 @@ describe("convReducer", () => {
     expect(s.lastSpeechAt).toBe(99_000);
   });
 
+  it("started -> announce -> speakIdle -> listening", () => {
+    let s = step(initialConv(0), { type: "started" });
+    s = step(s, { type: "announce" });
+    expect(s.phase).toBe("speaking");
+    s = step(s, { type: "speakIdle" });
+    expect(s.phase).toBe("listening");
+  });
+
+  it("interrupt en thinking -> announce -> speakIdle -> listening", () => {
+    let s = step(st("thinking"), { type: "interrupt" });
+    expect(s.turnDone).toBe(true);
+    s = step(s, { type: "announce" });
+    s = step(s, { type: "speakIdle" });
+    expect(s.phase).toBe("listening");
+  });
+
   it("announce desde listening -> speaking", () => {
     expect(step(st("listening", { micOpen: true }), { type: "announce" }).phase).toBe("speaking");
   });

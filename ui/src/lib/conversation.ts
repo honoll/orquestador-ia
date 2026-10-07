@@ -90,9 +90,9 @@ export function convReducer(
       if (!e.hasAudio || s.queueIdle) return to("listening", { turnDone: true });
       return to("speaking", { turnDone: true });
     case "interrupt":
-      return p === "speaking" || p === "thinking" ? to("listening", { queueIdle: true }) : s;
+      return p === "speaking" || p === "thinking" ? to("listening", { turnDone: true, queueIdle: true }) : s;
     case "announce":
-      return p === "listening" ? to("speaking") : s;
+      return p === "listening" ? to("speaking", { turnDone: true, queueIdle: false }) : s;
     case "idleTimeout":
       return p === "listening" && now - s.lastSpeechAt >= CONV_IDLE_MS ? to("ending") : s;
     case "end":
