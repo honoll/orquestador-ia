@@ -39,6 +39,7 @@ beforeEach(async () => {
   vault = fs.mkdtempSync(path.join(os.tmpdir(), "vault-ret-"));
   await db.delete(schema.vaultChunks);
   await db.delete(schema.vaultNotes);
+  await db.delete(schema.vaultMeta);
 });
 afterEach(() => { fs.rmSync(vault, { recursive: true, force: true }); });
 

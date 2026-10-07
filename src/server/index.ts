@@ -86,7 +86,7 @@ injectWebSocket(server);
 // Indexa la memoria (Cerebro) en segundo plano; nunca bloquea ni tumba el arranque.
 try {
   const cfg = memoryConfig();
-  void indexVault({ vaultPath: cfg.vaultPath, embedder: createOllamaEmbedder(cfg) })
+  void indexVault({ vaultPath: cfg.vaultPath, embedder: createOllamaEmbedder(cfg), model: cfg.model })
     .then((r) => log.info({ report: r }, "índice de memoria listo"))
     .catch((err) => log.warn({ err: String(err?.message ?? err) }, "índice de memoria omitido"));
 } catch (err) {

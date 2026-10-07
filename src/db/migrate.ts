@@ -172,6 +172,11 @@ CREATE TABLE IF NOT EXISTS vault_chunks (
 );
 
 CREATE INDEX IF NOT EXISTS idx_vault_chunks_path ON vault_chunks(path);
+
+CREATE TABLE IF NOT EXISTS vault_meta (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
 `;
 
 const statements = SCHEMA_SQL.split(";").map((s) => s.trim()).filter(Boolean);

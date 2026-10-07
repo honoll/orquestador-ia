@@ -17,16 +17,16 @@ const write = (rel: string, content: string) => {
   return p;
 };
 
-function fakeEmbedder() {
+function fakeEmbedder(dim = 8) {
   const batches: number[] = [];
   const fn: Embedder = async (texts) => {
     batches.push(texts.length);
     return texts.map((t) => {
-      const v = new Array(8).fill(0);
+      const v = new Array(dim).fill(0);
       for (const w of t.toLowerCase().split(/\s+/)) {
         let h = 0;
         for (const c of w) h = (h * 31 + c.charCodeAt(0)) >>> 0;
-        v[h % 8] += 1;
+        v[h % dim] += 1;
       }
       return v;
     });
@@ -43,6 +43,7 @@ beforeEach(async () => {
   write("adjuntos/z.md", "no indexar");
   await db.delete(schema.vaultChunks);
   await db.delete(schema.vaultNotes);
+  await db.delete(schema.vaultMeta);
 });
 afterEach(() => { fs.rmSync(vault, { recursive: true, force: true }); });
 
@@ -162,6 +163,40 @@ describe("robustez", () => {
     const p3 = indexVault({ vaultPath: vault, embedder: e.fn });
     expect(p3).not.toBe(p1);
     await p3;
+  });
+});
+
+describe("modelo y dimensión del índice", () => {
+  const meta = async () => Object.fromEntries((await db.select().from(schema.vaultMeta)).map((r) => [r.key, r.value]));
+
+  it("guarda modelo y dimensión; sin cambios no reindexa", async () => {
+    await indexVault({ vaultPath: vault, embedder: fakeEmbedder().fn, model: "bge-m3" });
+    expect(await meta()).toMatchObject({ model: "bge-m3", dim: "8" });
+    const e = fakeEmbedder();
+    const r = await indexVault({ vaultPath: vault, embedder: e.fn, model: "bge-m3" });
+    expect(r.updated).toBe(0);
+    expect(e.batches.length).toBe(0);
+  });
+
+  it("si cambia el modelo, reindexa todo aunque no cambie ningún archivo", async () => {
+    await indexVault({ vaultPath: vault, embedder: fakeEmbedder().fn, model: "bge-m3" });
+    const e = fakeEmbedder();
+    const r = await indexVault({ vaultPath: vault, embedder: e.fn, model: "otro-modelo" });
+    expect(r).toMatchObject({ scanned: 3, updated: 3, failed: false });
+    expect((await meta()).model).toBe("otro-modelo");
+  });
+
+  it("si cambia la dimensión, reindexa todo con la nueva", async () => {
+    await indexVault({ vaultPath: vault, embedder: fakeEmbedder(8).fn, model: "m" });
+    const p = write("a.md", "# A\nTexto cambiado");
+    const future = new Date(Date.now() + 60_000);
+    fs.utimesSync(p, future, future);
+    const r = await indexVault({ vaultPath: vault, embedder: fakeEmbedder(4).fn, model: "m" });
+    expect(r).toMatchObject({ scanned: 3, updated: 3, failed: false });
+    const all = await chunks();
+    expect(all.length).toBe(r.chunks);
+    expect(all.every((c) => decodeVector(c.embedding).length === 4)).toBe(true);
+    expect((await meta()).dim).toBe("4");
   });
 });
 

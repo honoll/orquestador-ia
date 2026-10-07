@@ -65,21 +65,52 @@ let inFlight: Promise<IndexReport> | null = null;
 /** true mientras hay una corrida de indexado en curso. */
 export function isIndexing(): boolean { return inFlight !== null; }
 
+export interface IndexOptions {
+  vaultPath: string;
+  embedder: Embedder;
+  /** Modelo de embeddings; si difiere del guardado en `vault_meta`, se reindexa todo. */
+  model?: string;
+}
+
 /** Indexa la bóveda; si ya hay una corrida en curso devuelve esa misma promesa. */
-export function indexVault(opts: { vaultPath: string; embedder: Embedder }): Promise<IndexReport> {
+export function indexVault(opts: IndexOptions): Promise<IndexReport> {
   if (inFlight) return inFlight;
   const p = runIndex(opts).finally(() => { if (inFlight === p) inFlight = null; });
   inFlight = p;
   return p;
 }
 
-async function runIndex(opts: { vaultPath: string; embedder: Embedder }): Promise<IndexReport> {
+async function getMeta(): Promise<Map<string, string>> {
+  return new Map((await db.select().from(schema.vaultMeta)).map((r) => [r.key, r.value]));
+}
+
+async function setMeta(key: string, value: string): Promise<void> {
+  await db.insert(schema.vaultMeta).values({ key, value })
+    .onConflictDoUpdate({ target: schema.vaultMeta.key, set: { value } });
+}
+
+/** Borra el índice entero (cambió el modelo o la dimensión: los vectores viejos no son comparables). */
+async function wipeIndex(): Promise<void> {
+  await db.transaction(async (tx) => {
+    await tx.delete(schema.vaultChunks);
+    await tx.delete(schema.vaultNotes);
+    await tx.delete(schema.vaultMeta).where(eq(schema.vaultMeta.key, "dim"));
+  });
+}
+
+async function runIndex(opts: IndexOptions, restarted = false): Promise<IndexReport> {
   await migrationDone;
   try {
     if (!fs.statSync(opts.vaultPath).isDirectory()) throw new Error("no es carpeta");
   } catch {
     return { scanned: 0, updated: 0, removed: 0, chunks: 0, failed: true };
   }
+  const meta = await getMeta();
+  if (opts.model && meta.get("model") !== opts.model) {
+    if (meta.has("model")) await wipeIndex();
+    await setMeta("model", opts.model);
+  }
+  let dim = restarted ? null : Number(meta.get("dim")) || null;
   const { files, skippedDirs } = walk(opts.vaultPath);
   const report: IndexReport = { scanned: files.length, updated: 0, removed: 0, chunks: 0, failed: false };
 
@@ -106,6 +137,18 @@ async function runIndex(opts: { vaultPath: string; embedder: Embedder }): Promis
     const chunks = chunkNote(title, body);
     const embeddings = await embedAll(opts.embedder, chunks.map((c) => `${c.heading}\n${c.text}`));
     if (!embeddings) { report.failed = true; break; }
+    if (embeddings.length > 0) {
+      const d = embeddings[0].length;
+      if (dim === null) {
+        dim = d;
+        await setMeta("dim", String(d));
+      } else if (d !== dim) {
+        // Cambió la dimensión: los vectores viejos no sirven. Se reindexa todo una sola vez.
+        if (restarted) { report.failed = true; break; }
+        await wipeIndex();
+        return runIndex(opts, true);
+      }
+    }
 
     await db.transaction(async (tx) => {
       await tx.delete(schema.vaultChunks).where(eq(schema.vaultChunks.path, f.rel));

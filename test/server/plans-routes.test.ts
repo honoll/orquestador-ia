@@ -339,6 +339,8 @@ describe("rutas de planes (F2)", () => {
     expect(mem).toEqual(["loading", "semantic"]);
     const call = (h.retrieveMemory.mock.calls[0] as unknown as [{ embedder: { opts: Record<string, unknown> } }])[0];
     expect(call.embedder.opts).toMatchObject({ timeoutMs: 10_000 });
+    // F: el índice recibe el modelo para detectar cambios de modelo.
+    expect((h.indexVault.mock.calls[0] as unknown as [Record<string, unknown>])[0]).toMatchObject({ model: "bge-m3" });
   });
 
   it("si la indexación falla o se cuelga, el planner sigue sin bloquearse", async () => {

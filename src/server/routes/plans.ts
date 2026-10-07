@@ -61,7 +61,7 @@ async function loadMemory(description: string, project: { name: string; path: st
     let timer: NodeJS.Timeout | undefined;
     try {
       await Promise.race([
-        indexVault({ vaultPath: cfg.vaultPath, embedder }).catch(() => null),
+        indexVault({ vaultPath: cfg.vaultPath, embedder, model: cfg.model }).catch(() => null),
         new Promise((resolve) => { timer = setTimeout(resolve, MEMORY_INDEX_TIMEOUT_MS); }),
       ]);
     } finally {

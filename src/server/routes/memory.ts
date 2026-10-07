@@ -30,7 +30,7 @@ app.post("/reindex", (c) => {
   if (isIndexing()) return c.json({ error: "Ya se está indexando la memoria" }, 409);
   const cfg = memoryConfig();
   const failed: IndexReport = { scanned: 0, updated: 0, removed: 0, chunks: 0, failed: true };
-  void indexVault({ vaultPath: cfg.vaultPath, embedder: createOllamaEmbedder(cfg) })
+  void indexVault({ vaultPath: cfg.vaultPath, embedder: createOllamaEmbedder(cfg), model: cfg.model })
     .catch((): IndexReport => failed)
     .then((report) => broadcast({ type: "memory:indexed", report, timestamp: new Date().toISOString() } as never));
   return c.json({ started: true }, 202);

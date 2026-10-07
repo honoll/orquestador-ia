@@ -159,6 +159,12 @@ export const vaultNotes = sqliteTable("vault_notes", {
   indexedAt: text("indexed_at").notNull(),
 });
 
+/** Metadatos del índice de la bóveda: `model` y `dim` de los embeddings guardados. */
+export const vaultMeta = sqliteTable("vault_meta", {
+  key: text("key").primaryKey(),
+  value: text("value").notNull(),
+});
+
 /** Trozos de cada nota con su embedding (base64 de Float32Array). */
 export const vaultChunks = sqliteTable("vault_chunks", {
   id: text("id").primaryKey(),
