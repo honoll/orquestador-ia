@@ -45,6 +45,10 @@ export const plans = sqliteTable("plans", {
   tier: text("tier", { enum: ["trivial", "normal", "critical"] }),
   tierConfidence: real("tier_confidence"),
   tierSource: text("tier_source", { enum: ["jev", "fallback"] }),
+  // Memoria de Cerebro usada al planear: notas (JSON sin extracto), origen y nota del proyecto.
+  memoryNotes: text("memory_notes"),
+  memorySource: text("memory_source", { enum: ["semantic", "project-only", "none"] }),
+  memoryNotePath: text("memory_note_path"),
   synthesis: text("synthesis"),
   synthesisStatus: text("synthesis_status", { enum: ["running", "succeeded", "failed"] }),
   synthesisError: text("synthesis_error"),

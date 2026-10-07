@@ -144,7 +144,7 @@ export function newPromptNonce(): string {
   return randomBytes(6).toString("hex");
 }
 
-function fence(label: string, body: string, nonce: string): string {
+export function fence(label: string, body: string, nonce: string): string {
   return `<<<${label} #${nonce}>>>\n${body}\n<<<FIN #${nonce}>>>`;
 }
 

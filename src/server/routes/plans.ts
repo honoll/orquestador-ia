@@ -7,6 +7,10 @@ import { defaultBudget, extendBudget, MAX_PARALLEL_LIMIT, toDagSteps, pickRunnab
 import { ROUTABLE_ADAPTERS } from "../../config/models.js";
 import { runPlanDag, cancelPlanRun, isPlanRunning, retrySynthesis } from "../plan-scheduler.js";
 import { broadcast } from "../ws.js";
+import { indexVault } from "../../memory/vault-index.js";
+import { retrieveMemory, buildMemorySection, type MemoryResult } from "../../memory/retrieve.js";
+import { createOllamaEmbedder } from "../../memory/ollama.js";
+import { memoryConfig } from "../../memory/config.js";
 import { classifyTier, trivialWrites, makeTrivialStep, addReviewStep, TRIVIAL_ESTIMATED_TOKENS } from "../plan-tier.js";
 
 const app = new Hono();
@@ -43,6 +47,29 @@ async function generationCancelled(planId: string): Promise<boolean> {
 
 // Active plan-generation kill functions
 const generatingKills = new Map<string, () => void>();
+
+const MEMORY_INDEX_TIMEOUT_MS = 20_000;
+
+/** Indexa (incremental) y recupera memoria de Cerebro; nunca lanza ni bloquea más de 20 s. */
+async function loadMemory(description: string, project: { name: string; path: string } | null | undefined): Promise<MemoryResult> {
+  try {
+    const cfg = memoryConfig();
+    const embedder = createOllamaEmbedder(cfg);
+    let timer: NodeJS.Timeout | undefined;
+    try {
+      await Promise.race([
+        indexVault({ vaultPath: cfg.vaultPath, embedder }).catch(() => null),
+        new Promise((resolve) => { timer = setTimeout(resolve, MEMORY_INDEX_TIMEOUT_MS); }),
+      ]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+    return await retrieveMemory({ query: description, project, embedder });
+  } catch (err) {
+    console.error("[memoria] recuperación omitida:", (err as Error)?.message);
+    return { notes: [], source: "none" };
+  }
+}
 
 // List plans (optionally filtered by projectId)
 app.get("/", async (c) => {
@@ -113,6 +140,23 @@ app.post("/", async (c) => {
       };
     }
 
+    let memorySection = "";
+    if (!trivial) {
+      const mem = await loadMemory(body.description, project ? { name: project.name, path: project.path } : null);
+      if (await generationCancelled(planId)) return;
+      memorySection = buildMemorySection(mem);
+      const noExcerpt = mem.notes.map(({ excerpt: _excerpt, ...rest }) => rest);
+      await db.update(schema.plans)
+        .set({
+          memoryNotes: JSON.stringify(noExcerpt),
+          memorySource: mem.source,
+          memoryNotePath: mem.notes.find((n) => n.projectNote)?.path ?? null,
+          updatedAt: new Date().toISOString(),
+        })
+        .where(eq(schema.plans.id, planId));
+      broadcast({ type: "plan:memory", planId, source: mem.source, notes: noExcerpt, timestamp: new Date().toISOString() } as any);
+    }
+
     for (let attempt = 0; !trivial && attempt <= MAX_PLAN_GEN_RETRIES; attempt++) {
       try {
         generated = await generatePlan(
@@ -120,6 +164,7 @@ app.post("/", async (c) => {
           cwd,
           project ? { name: project.name, path: project.path, projectDescription: project.description } : undefined,
           {
+            memory: memorySection,
             onStream: (text) => {
               broadcast({
                 type: "plan:generating",

@@ -3,6 +3,11 @@ import { randomUUID } from "node:crypto";
 
 const h = vi.hoisted(() => ({ runPlanDag: vi.fn(async () => {}), running: new Set<string>(), retrySynthesis: vi.fn(async () => true), cancelPlanRun: vi.fn(() => true),
   gate: null as Promise<void> | null,
+  indexVault: vi.fn(async () => ({ scanned: 0, updated: 0, removed: 0, chunks: 0, failed: false })),
+  retrieveMemory: vi.fn(async () => ({
+    notes: [{ path: "Proyectos/x.md", title: "x", score: 0.8, projectNote: true, excerpt: "EXTRACTO-SECRETO" }],
+    source: "semantic" as const,
+  })),
   tier: { tier: "normal", confidence: null, source: "fallback" } as { tier: string; confidence: number | null; source: string },
   generatePlan: vi.fn(async () => ({
     steps: [{ stepIndex: 0, key: "s1", dependsOn: [], writes: false, estimatedTokens: 1000, description: "paso", adapter: "codex", model: "m", reason: "r", prompt: "p" }],
@@ -16,6 +21,14 @@ vi.mock("../../src/server/plan-tier.js", async () => {
 vi.mock("../../src/server/planner.js", async () => {
   const actual = await vi.importActual<typeof import("../../src/server/planner.js")>("../../src/server/planner.js");
   return { ...actual, generatePlan: h.generatePlan };
+});
+vi.mock("../../src/memory/vault-index.js", async () => {
+  const actual = await vi.importActual<typeof import("../../src/memory/vault-index.js")>("../../src/memory/vault-index.js");
+  return { ...actual, indexVault: h.indexVault };
+});
+vi.mock("../../src/memory/retrieve.js", async () => {
+  const actual = await vi.importActual<typeof import("../../src/memory/retrieve.js")>("../../src/memory/retrieve.js");
+  return { ...actual, retrieveMemory: h.retrieveMemory };
 });
 vi.mock("../../src/server/plan-scheduler.js", () => ({
   runPlanDag: h.runPlanDag,
@@ -265,6 +278,48 @@ describe("rutas de planes (F2)", () => {
     await vi.waitFor(async () => expect(h.runPlanDag).toHaveBeenCalledWith(id, expect.any(String), { mode: "all" }));
     const steps = await db.select().from(schema.planSteps).where(eq(schema.planSteps.planId, id));
     expect(steps[0]).toMatchObject({ writes: 1, readOnly: 0 });
+  });
+
+  it("normal: indexa, recupera memoria, la guarda sin extracto y se la pasa al planner", async () => {
+    h.generatePlan.mockClear();
+    h.retrieveMemory.mockClear();
+    h.indexVault.mockClear();
+    const r = await req("/", "POST", { description: "agrega login" });
+    const { id } = (await r.json()) as { id: string };
+    await vi.waitFor(async () => expect((await getPlanRow(id)).status).toBe("pending"));
+    expect(h.indexVault).toHaveBeenCalledTimes(1);
+    expect(h.retrieveMemory).toHaveBeenCalledWith(expect.objectContaining({ query: "agrega login" }));
+    const p = await getPlanRow(id);
+    expect(p.memorySource).toBe("semantic");
+    expect(p.memoryNotePath).toBe("Proyectos/x.md");
+    const saved = JSON.parse(p.memoryNotes!);
+    expect(saved).toHaveLength(1);
+    expect(saved[0]).toMatchObject({ path: "Proyectos/x.md", projectNote: true });
+    expect(saved[0]).not.toHaveProperty("excerpt");
+    const opts = (h.generatePlan.mock.calls[0] as any[])[3];
+    expect(opts.memory).toContain("EXTRACTO-SECRETO");
+    expect(opts.memory).toContain("Proyectos/x.md");
+  });
+
+  it("si la indexación falla o se cuelga, el planner sigue sin bloquearse", async () => {
+    h.generatePlan.mockClear();
+    h.indexVault.mockRejectedValueOnce(new Error("boom"));
+    const r = await req("/", "POST", { description: "otra cosa" });
+    const { id } = (await r.json()) as { id: string };
+    await vi.waitFor(async () => expect((await getPlanRow(id)).status).toBe("pending"));
+    expect(h.generatePlan).toHaveBeenCalled();
+  });
+
+  it("trivial: no recupera memoria", async () => {
+    h.retrieveMemory.mockClear();
+    h.indexVault.mockClear();
+    h.tier = { tier: "trivial", confidence: 0.95, source: "jev" };
+    const r = await req("/", "POST", { description: "resume c.txt" });
+    const { id } = (await r.json()) as { id: string };
+    await vi.waitFor(async () => expect(h.runPlanDag).toHaveBeenCalledWith(id, expect.any(String), { mode: "all" }));
+    expect(h.retrieveMemory).not.toHaveBeenCalled();
+    expect(h.indexVault).not.toHaveBeenCalled();
+    expect((await getPlanRow(id)).memoryNotes).toBeNull();
   });
 
   it("crítico: Opus planea, se agrega la revisión de solo lectura y NO arranca solo", async () => {
