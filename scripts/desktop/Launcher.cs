@@ -52,6 +52,18 @@ public static class Core {
     return new string[] { title, "Plan " + (id.Length > 8 ? id.Substring(0, 8) : id), id };
   }
 
+  // Huella del orquestador: GET /api/voice/status devuelve un objeto JSON con "whisper" y "piper" (objetos).
+  // Una app ajena con ruta comodín (200 + index.html) no pasa: así nunca se adopta ni se apaga un servidor ajeno.
+  public static bool IsOrquestadorStatus(string body) {
+    if (body == null) return false;
+    try {
+      Dictionary<string, object> d = new JavaScriptSerializer().DeserializeObject(body) as Dictionary<string, object>;
+      object w, p;
+      return d != null && d.TryGetValue("whisper", out w) && w is Dictionary<string, object> &&
+        d.TryGetValue("piper", out p) && p is Dictionary<string, object>;
+    } catch { return false; }
+  }
+
   public static bool ShouldRotate(long size) { return size >= 5L * 1024 * 1024; }
 
   public static string Str(Dictionary<string, object> d, string k) {
@@ -75,7 +87,7 @@ public class Launcher : ApplicationContext {
   Dictionary<string, object> cfg;
   string repo, npmDir, edge;
   int port = 3100;
-  bool notifications = true;
+  volatile bool notifications = true;
   volatile bool quitting;
   Process server; // el cmd.exe que envuelve a node; null = servidor adoptado (o ninguno): nunca se apaga al salir
   readonly object serverLock = new object();
@@ -157,13 +169,21 @@ public class Launcher : ApplicationContext {
   }
 
   // ---------- servidor ----------
-  bool Alive() {
+  const int Nobody = 0, Ours = 1, Foreign = 2;
+  int Probe() {
     try {
       using (HttpClient c = new HttpClient()) {
         c.Timeout = TimeSpan.FromSeconds(2);
-        return c.GetAsync(BaseUrl + "/api/voice/status").Result.IsSuccessStatusCode;
+        HttpResponseMessage r = c.GetAsync(BaseUrl + "/api/voice/status").Result;
+        return r.IsSuccessStatusCode && Core.IsOrquestadorStatus(r.Content.ReadAsStringAsync().Result) ? Ours : Foreign;
       }
-    } catch { return false; }
+    } catch { return Nobody; }
+  }
+
+  bool Alive() { return Probe() == Ours; }
+
+  void PortBusy() {
+    Balloon("Puerto ocupado", "El puerto " + port + " lo usa otra aplicación; cambia `port` en launcher.json.", ToolTipIcon.Error, null);
   }
 
   bool Post(string path, string json) {
@@ -187,7 +207,10 @@ public class Launcher : ApplicationContext {
 
   bool EnsureServer() {
     lock (serverLock) {
-      if (Alive()) return true;
+      int probe = Probe();
+      if (probe == Ours) return true;
+      if (probe == Foreign) { PortBusy(); return false; }
+      if (quitting) return false; // Salir llegó antes de lanzar: no dejar un node huérfano
       string path = Core.BuildPath(npmDir, Environment.GetEnvironmentVariable("PATH"));
       string node = FindOnPath("node.exe", path);
       if (node == null) { Balloon("No encuentro Node.js", "Instala Node.js (node en el PATH) y vuelve a abrir.", ToolTipIcon.Error, null); return false; }
@@ -221,6 +244,7 @@ public class Launcher : ApplicationContext {
         if (server.WaitForExit(1000)) break;
       }
       SetText("Orquestador IA");
+      if (server.HasExited && Probe() == Foreign) { PortBusy(); return false; }
       Balloon("El servidor no responde", "Pasaron 60 s sin respuesta. Clic para ver el registro.", ToolTipIcon.Error, ShowLog);
       return false;
     }
@@ -255,7 +279,7 @@ public class Launcher : ApplicationContext {
     quitting = true;
     SetText("Orquestador IA · cerrando…");
     Bg(delegate {
-      if (server != null) StopServer(); // solo el servidor propio; uno adoptado nunca se apaga al salir
+      lock (serverLock) { if (server != null) StopServer(); } // solo el servidor propio; uno adoptado nunca se apaga al salir
       ui.BeginInvoke((MethodInvoker)delegate { tray.Visible = false; tray.Dispose(); ExitThread(); });
     });
   }
@@ -395,6 +419,11 @@ public class Launcher : ApplicationContext {
     Check(Core.NotificationFor("plan:done {no es json") == null, "basura");
     Check(Core.NotificationFor("[\"plan:done\"]") == null, "no es objeto");
     Check(Core.NotificationFor(null) == null, "null");
+    Check(Core.IsOrquestadorStatus("{\"whisper\":{\"available\":true,\"state\":\"stopped\"},\"piper\":{\"available\":true},\"duck\":{}}"), "huella ok");
+    Check(!Core.IsOrquestadorStatus("<!DOCTYPE html><html></html>"), "huella html");
+    Check(!Core.IsOrquestadorStatus("{\"whisper\":{}}"), "huella sin piper");
+    Check(!Core.IsOrquestadorStatus("{\"whisper\":true,\"piper\":\"x\"}"), "huella no objetos");
+    Check(!Core.IsOrquestadorStatus("[]") && !Core.IsOrquestadorStatus("") && !Core.IsOrquestadorStatus(null), "huella vacía");
     Check(!Core.ShouldRotate(5L * 1024 * 1024 - 1) && Core.ShouldRotate(5L * 1024 * 1024), "ShouldRotate");
     Console.WriteLine(fails == 0 ? "SELF-TEST PASS (" + checks + " checks)" : "SELF-TEST FAIL (" + fails + "/" + checks + ")");
     return fails == 0 ? 0 : 1;

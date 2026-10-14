@@ -31,7 +31,7 @@ $out = & $exe --self-test | Out-String  # el pipe hace que PowerShell espere al 
 Write-Host $out.Trim()
 if ($LASTEXITCODE -ne 0) { Write-Host 'El self-test del lanzador falló; no se instala.' -ForegroundColor Red; exit 1 }
 
-# 2. Icono: círculo de color con "OI", 64 px, guardado como ICO con un PNG dentro.
+# 2. Icono: círculo de color con "OI", 64 px, guardado como ICO (DIB de 32 bits, ver abajo).
 Add-Type -AssemblyName System.Drawing
 $ico = Join-Path $AppDir 'orquestador.ico'
 $bmp = New-Object System.Drawing.Bitmap 64, 64
