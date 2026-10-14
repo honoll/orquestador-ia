@@ -15,6 +15,7 @@ import { ConversationView, type ConversationResult } from "./ConversationView";
 import { SpeakButton, AutoReadToggle } from "./SpeakButton";
 import { autoSpeak, stopSpeech } from "../lib/voice";
 import { appendTranscript } from "../lib/voice-utils";
+import { parseIntentFromSearch, stripIntentParams, type Intent } from "../lib/intent";
 
 interface SlashCommand {
   name: string;
@@ -87,7 +88,7 @@ interface Message {
 
 export function Chat() {
   const queryClient = useQueryClient();
-  const { logs, lastEvent } = useWs();
+  const { logs, lastEvent, subscribe } = useWs();
   const {
     selectedAdapter, selectedModel, setAdapter, setModel,
     selectedProjectId, conversationId, setConversation, newChat,
@@ -184,6 +185,23 @@ export function Chat() {
       setActivePlanId(r.approvalPlanId);
     }
   }, [setConversation, loadConversation, queryClient, setActivePlanId]);
+
+  // Atajos externos (lanzador de escritorio): ?platicar=1 / ?plan=<id> al montar, y ui:intent por WS.
+  const applyIntent = useCallback((i: Intent) => {
+    if (i.open === "platicar") setTalking(true);
+    else setActivePlanId(i.planId);
+  }, [setActivePlanId]);
+  useEffect(() => {
+    const i = parseIntentFromSearch(window.location.search);
+    if (!i) return;
+    window.history.replaceState(null, "", stripIntentParams(window.location.href));
+    applyIntent(i);
+  }, [applyIntent]);
+  useEffect(() => subscribe((ev) => {
+    if (ev.type !== "ui:intent") return;
+    if (ev.open === "platicar") applyIntent({ open: "platicar" });
+    else if (ev.open === "plan" && ev.planId) applyIntent({ open: "plan", planId: ev.planId });
+  }), [subscribe, applyIntent]);
 
   useEffect(() => {
     if (!toast) return;
