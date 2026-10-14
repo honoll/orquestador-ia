@@ -41,7 +41,7 @@ import { migrationDone } from "../db/migrate.js";
 await migrationDone;
 
 const log = pino({ name: "server" });
-const PORT = parseInt(process.env.ORQUESTADOR_PORT || "3100", 10);
+const PORT = parseInt(process.env.ORQUESTADOR_PORT || "3110", 10);
 
 const app = new Hono();
 const { injectWebSocket, upgradeWebSocket } = createNodeWebSocket({ app });

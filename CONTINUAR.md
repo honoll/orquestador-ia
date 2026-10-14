@@ -245,7 +245,7 @@ El caso de uso principal es desarrollo Flutter + Firebase (POS de taqueria — p
 Todo lo siguiente ya esta implementado y probado:
 
 ### Backend (src/)
-- **Server Hono** en puerto 3100 (localhost only, sin auth)
+- **Server Hono** en puerto 3110 (localhost only, sin auth)
 - **3 adapters funcionales**: Claude Code, Codex CLI, agy (Antigravity). Gemini CLI se retiró en F1 (UNSUPPORTED_CLIENT)
 - **SQLite** con Drizzle ORM + libsql en `~/.orquestador-ia/data/orquestador.db`
 - **WebSocket** para streaming de logs en tiempo real
@@ -335,7 +335,7 @@ src/
 
 ui/
   package.json                 — React 19, Vite, Tailwind 4, @tanstack/react-query, react-markdown
-  vite.config.ts               — Proxy /api y /ws a localhost:3100
+  vite.config.ts               — Proxy /api y /ws a localhost:3110
   src/
     main.tsx                   — QueryClient + App
     App.tsx                    — Layout 3 columnas
@@ -358,7 +358,7 @@ ui/
 cd C:\estudio\orquestador-ia
 npm install
 npm run build:ui        # Compila el frontend
-npm start               # Arranca server en http://localhost:3100
+npm start               # Arranca server en http://localhost:3110
 ```
 
 ## CLIs necesarios (deben estar en PATH)

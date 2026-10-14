@@ -86,7 +86,7 @@ public class Launcher : ApplicationContext {
 
   Dictionary<string, object> cfg;
   string repo, npmDir, edge;
-  int port = 3100;
+  int port = 3110;
   volatile bool notifications = true;
   volatile bool quitting;
   Process server; // el cmd.exe que envuelve a node; null = servidor adoptado (o ninguno): nunca se apaga al salir
@@ -400,8 +400,8 @@ public class Launcher : ApplicationContext {
     Check(Core.BuildPath(null, @"C:\a") == @"C:\a", "BuildPath sin npmDir");
     Check(Core.BuildPath(@"C:\npm", "") == @"C:\npm", "BuildPath PATH vacío");
     Check(Core.NodeArgs(@"C:\r") == "\"C:\\r\\node_modules\\tsx\\dist\\cli.mjs\" \"src\\server\\index.ts\"", "NodeArgs");
-    Check(Core.EdgeArgs("http://127.0.0.1:3100/?plan=x", @"C:\p") ==
-      "--app=http://127.0.0.1:3100/?plan=x --user-data-dir=\"C:\\p\" --no-first-run", "EdgeArgs");
+    Check(Core.EdgeArgs("http://127.0.0.1:3110/?plan=x", @"C:\p") ==
+      "--app=http://127.0.0.1:3110/?plan=x --user-data-dir=\"C:\\p\" --no-first-run", "EdgeArgs");
     string[] n = Core.NotificationFor("{\"type\":\"plan:done\",\"planId\":\"abcdef123456\",\"status\":\"completed\",\"timestamp\":\"t\"}");
     Check(n != null && n[0] == "Plan terminado" && n[1] == "Plan abcdef12" && n[2] == "abcdef123456", "completed");
     n = Core.NotificationFor("{\"type\":\"plan:done\",\"planId\":\"p1\",\"status\":\"failed\"}");

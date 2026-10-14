@@ -6,7 +6,7 @@ import type { MiddlewareHandler } from "hono";
  * Los orígenes derivan del puerto configurado (ORQUESTADOR_PORT) y del del dev server de Vite (5173).
  */
 export function allowedOrigins(env: NodeJS.ProcessEnv = process.env): string[] {
-  const port = parseInt(env.ORQUESTADOR_PORT || "3100", 10) || 3100;
+  const port = parseInt(env.ORQUESTADOR_PORT || "3110", 10) || 3110;
   const uiPort = parseInt(env.ORQUESTADOR_UI_PORT || "5173", 10) || 5173;
   const ports = [...new Set([port, uiPort])];
   return ports.flatMap((p) => [`http://127.0.0.1:${p}`, `http://localhost:${p}`]);

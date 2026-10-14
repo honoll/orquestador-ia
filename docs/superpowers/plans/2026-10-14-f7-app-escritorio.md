@@ -15,7 +15,7 @@ WS `ui:intent`.
   `%USERPROFILE%\.orquestador-ia\app\`; log `%USERPROFILE%\.orquestador-ia\logs\server.log` (rota a 5 MB, guarda `.1`);
   perfil Edge `%USERPROFILE%\.orquestador-ia\edge-app`; carpeta npm de MSIX
   `%LOCALAPPDATA%\Packages\Claude_pzs8sxrjxfjjc\LocalCache\Roaming\npm` (configurable en `launcher.json`).
-- Puerto 3100, host 127.0.0.1. Rutas nuevas pasan `originGuard`, JSON obligatorio (415), body ≤ 1 KB (413).
+- Puerto 3110, host 127.0.0.1. Rutas nuevas pasan `originGuard`, JSON obligatorio (415), body ≤ 1 KB (413).
 - Textos en español de México. Tests nunca lanzan procesos reales.
 - Cada tarea: TDD donde aplique, `npm test`, `npm run lint` (0 errores), `npm run typecheck`, `npm run build:ui` si toca
   `ui/`. Commits en español + `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`. Rama `f7-app-escritorio`.

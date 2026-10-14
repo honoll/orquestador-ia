@@ -67,7 +67,7 @@ if (-not (Test-Path -LiteralPath $cfg)) {
   if (-not (Test-Path -LiteralPath $edge)) { $edge = Join-Path $env:ProgramFiles 'Microsoft\Edge\Application\msedge.exe' }
   [ordered]@{
     repo          = $repo
-    port          = 3100
+    port          = 3110
     npmDir        = Join-Path $env:LOCALAPPDATA 'Packages\Claude_pzs8sxrjxfjjc\LocalCache\Roaming\npm'
     edge          = $edge
     notifications = $true
