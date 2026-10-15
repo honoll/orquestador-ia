@@ -204,6 +204,9 @@ export function OfficeWorld({ state, onNear, onAdvance, children }: Props) {
       if (!e.repeat) onAdvance?.();
       return;
     }
+    // Solo el canvas mueve al jugador: con el foco en un botón del cuadro, su keyup nunca llegaría al canvas
+    // y la tecla quedaría "sostenida" para siempre.
+    if (e.target !== canvasRef.current) return;
     const d = keyToDir(e.key);
     if (!d) return;
     if (e.key.startsWith("Arrow")) e.preventDefault();
