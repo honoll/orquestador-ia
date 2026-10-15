@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { useAppState } from "../context/AppStateContext";
+import { statusStyle } from "../lib/pixel";
 
 interface Project {
   id: string;
@@ -26,6 +27,7 @@ interface Plan {
   projectId: string | null;
   description: string;
   status: string;
+  pauseReason?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -132,19 +134,19 @@ export function ProjectPanel({ onClose }: { onClose?: () => void }) {
   });
 
   const inputClass =
-    "w-full bg-transparent border-b border-edge-strong px-0 py-2 text-xs text-text-primary placeholder-text-tertiary focus:border-accent focus:outline-none transition-colors font-mono";
+    "px-input mb-2 w-full text-xs";
 
   return (
     <div className="flex flex-col h-full">
-      <header className="flex items-center justify-between px-5 py-4">
-        <span className="font-mono text-[10px] uppercase tracking-widest text-text-tertiary">
+      <header className="flex flex-wrap items-center justify-between gap-2 px-5 py-4">
+        <span className="font-pixel text-[12px] uppercase text-text-primary">
           proyectos
         </span>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {selectedProjectId && (
             <button
               onClick={() => setProject(null)}
-              className="font-mono text-[10px] text-text-tertiary hover:text-text-secondary transition-colors"
+              className="px-btn whitespace-nowrap"
               title="ver todos"
             >
               ← todos
@@ -152,7 +154,7 @@ export function ProjectPanel({ onClose }: { onClose?: () => void }) {
           )}
           <button
             onClick={() => setShowForm(!showForm)}
-            className="font-mono text-[10px] text-text-secondary hover:text-accent transition-colors"
+            className="px-btn whitespace-nowrap"
           >
             {showForm ? "cancelar" : "+ nuevo"}
           </button>
@@ -160,7 +162,7 @@ export function ProjectPanel({ onClose }: { onClose?: () => void }) {
             <button
               onClick={onClose}
               title="Ocultar proyectos"
-              className="font-mono text-[10px] text-text-tertiary hover:text-text-secondary transition-colors ml-1"
+              className="px-btn whitespace-nowrap"
             >
               ›
             </button>
@@ -186,7 +188,7 @@ export function ProjectPanel({ onClose }: { onClose?: () => void }) {
               required
             />
             <input
-              className={inputClass}
+              className={`${inputClass} font-mono`}
               placeholder="C:\ruta\al\proyecto"
               value={path}
               onChange={(e) => setPath(e.target.value)}
@@ -200,7 +202,7 @@ export function ProjectPanel({ onClose }: { onClose?: () => void }) {
             />
             <button
               type="submit"
-              className="mt-3 w-full font-mono text-[11px] text-accent hover:text-text-primary py-2 border border-edge-strong rounded transition-colors disabled:opacity-30"
+              className="px-btn px-btn-pri mt-1 w-full"
               disabled={createMutation.isPending}
             >
               crear
@@ -209,16 +211,16 @@ export function ProjectPanel({ onClose }: { onClose?: () => void }) {
         )}
 
         {isLoading && (
-          <p className="font-mono text-xs text-text-tertiary">cargando...</p>
+          <p className="text-text-tertiary">cargando...</p>
         )}
 
         {/* Project detail view */}
         {selectedProjectId && activeProject ? (
           <div className="animate-fade-in">
             {/* Project header */}
-            <div className="mb-4 pb-3 border-b border-edge">
-              <div className="flex items-center justify-between mb-1">
-                <p className="font-mono text-xs font-medium text-accent">
+            <div className="px-panel mb-4 border-accent! bg-[#1b1638]! px-2 py-1.5">
+              <div className="flex flex-wrap items-center justify-between gap-1 mb-1">
+                <p className="min-w-0 break-words text-white">
                   {activeProject.name}
                 </p>
                 <button
@@ -227,7 +229,7 @@ export function ProjectPanel({ onClose }: { onClose?: () => void }) {
                       deleteMutation.mutate(activeProject.id);
                     }
                   }}
-                  className="font-mono text-[10px] text-text-tertiary hover:text-err transition-colors"
+                  className="px-btn whitespace-nowrap hover:text-err"
                 >
                   eliminar
                 </button>
@@ -239,15 +241,15 @@ export function ProjectPanel({ onClose }: { onClose?: () => void }) {
                 {activeProject.path}
               </p>
               {activeProject.description && (
-                <p className="text-xs text-text-secondary mt-1 leading-relaxed">
+                <p className="text-xs text-text-secondary mt-1">
                   {activeProject.description}
                 </p>
               )}
             </div>
 
             {/* Conversation history */}
-            <div className="flex items-center justify-between mb-3">
-              <p className="font-mono text-[10px] uppercase tracking-widest text-text-tertiary">
+            <div className="flex flex-wrap items-center justify-between gap-1 mb-3">
+              <p className="font-pixel text-[11px] uppercase text-text-tertiary">
                 conversaciones
               </p>
               {conversations && conversations.length > 0 && (
@@ -255,7 +257,7 @@ export function ProjectPanel({ onClose }: { onClose?: () => void }) {
                   onClick={() => {
                     newChat();
                   }}
-                  className="font-mono text-[10px] text-text-secondary hover:text-accent transition-colors"
+                  className="px-btn whitespace-nowrap"
                 >
                   + nuevo
                 </button>
@@ -269,16 +271,16 @@ export function ProjectPanel({ onClose }: { onClose?: () => void }) {
                   return (
                     <div
                       key={conv.conversationId}
-                      className={`group p-2 rounded-lg transition-colors cursor-pointer ${
+                      className={`group cursor-pointer border-[3px] px-2 py-1 ${
                         isActive
-                          ? "bg-accent-dim"
-                          : "hover:bg-surface-2/50"
+                          ? "border-accent bg-[#1b1638] shadow-[3px_3px_0_#000]"
+                          : "border-transparent hover:bg-surface-2/50"
                       }`}
                       onClick={() => setConversation(conv.conversationId)}
                     >
                       <div className="flex items-start justify-between gap-2">
-                        <p className={`font-mono text-[11px] truncate flex-1 ${
-                          isActive ? "text-accent" : "text-text-primary"
+                        <p className={`truncate flex-1 ${
+                          isActive ? "text-white" : "text-text-primary"
                         }`}>
                           {conv.title}
                         </p>
@@ -288,7 +290,7 @@ export function ProjectPanel({ onClose }: { onClose?: () => void }) {
                               e.stopPropagation();
                               deleteConvMutation.mutate(conv.conversationId);
                             }}
-                            className="font-mono text-[9px] text-transparent group-hover:text-text-tertiary hover:!text-err transition-colors"
+                            className="text-transparent group-hover:text-text-tertiary hover:!text-err"
                             title="eliminar conversacion"
                           >
                             ×
@@ -297,15 +299,15 @@ export function ProjectPanel({ onClose }: { onClose?: () => void }) {
                         </div>
                       </div>
                       <div className="flex items-center gap-2 mt-1">
-                        <span className="font-mono text-[9px] text-text-tertiary">
+                        <span className="text-xs text-text-tertiary">
                           {conv.adapter}
                         </span>
                         {conv.messageCount > 1 && (
-                          <span className="font-mono text-[9px] text-text-tertiary">
+                          <span className="text-xs text-text-tertiary">
                             {conv.messageCount} msgs
                           </span>
                         )}
-                        <span className="font-mono text-[9px] text-text-tertiary ml-auto">
+                        <span className="text-xs text-text-tertiary ml-auto">
                           {formatDate(conv.updatedAt)}
                         </span>
                       </div>
@@ -314,7 +316,7 @@ export function ProjectPanel({ onClose }: { onClose?: () => void }) {
                 })}
               </div>
             ) : (
-              <p className="font-mono text-[11px] text-text-tertiary">
+              <p className="text-xs text-text-tertiary">
                 sin conversaciones
               </p>
             )}
@@ -323,10 +325,10 @@ export function ProjectPanel({ onClose }: { onClose?: () => void }) {
             {plans && plans.length > 0 && (
               <>
                 <div className="flex items-center justify-between mt-5 mb-3">
-                  <p className="font-mono text-[10px] uppercase tracking-widest text-text-tertiary">
+                  <p className="font-pixel text-[11px] uppercase text-text-tertiary">
                     planes
                   </p>
-                  <span className="font-mono text-[9px] text-text-tertiary">
+                  <span className="text-xs text-text-tertiary">
                     {plans.length}
                   </span>
                 </div>
@@ -334,13 +336,12 @@ export function ProjectPanel({ onClose }: { onClose?: () => void }) {
                   {plans.map((plan) => (
                     <div
                       key={plan.id}
-                      className="group p-2 rounded-lg transition-colors cursor-pointer hover:bg-surface-2/50"
+                      className="group cursor-pointer border-[3px] border-transparent px-2 py-1 hover:bg-surface-2/50"
                       onClick={() => setActivePlanId(plan.id)}
                     >
                       <div className="flex items-start justify-between gap-2">
                         <div className="flex items-center gap-1.5 min-w-0">
-                          <span className="font-mono text-[10px] text-text-tertiary shrink-0">◈</span>
-                          <p className="font-mono text-[11px] truncate text-text-primary">
+                          <p className="truncate text-text-primary">
                             {plan.description.slice(0, 60)}
                           </p>
                         </div>
@@ -350,18 +351,19 @@ export function ProjectPanel({ onClose }: { onClose?: () => void }) {
                               e.stopPropagation();
                               deletePlanMutation.mutate(plan.id);
                             }}
-                            className="font-mono text-[9px] text-transparent group-hover:text-text-tertiary hover:!text-err transition-colors"
+                            className="text-transparent group-hover:text-text-tertiary hover:!text-err"
                             title="eliminar plan"
                           >
                             ×
                           </button>
-                          <PlanStatusBadge status={plan.status} />
                         </div>
                       </div>
-                      <div className="flex items-center gap-2 mt-1 pl-5">
-                        <span className="font-mono text-[9px] text-text-tertiary">
+                      {/* El estado va en la fila de la fecha: en columnas angostas dejaba el título en "Haz …". */}
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-text-tertiary">
                           {formatDate(plan.updatedAt)}
                         </span>
+                        <PlanStatusBadge status={plan.status} paused={!!plan.pauseReason} />
                       </div>
                     </div>
                   ))}
@@ -373,7 +375,7 @@ export function ProjectPanel({ onClose }: { onClose?: () => void }) {
           /* Project list view */
           <>
             {projects?.length === 0 && !showForm && (
-              <p className="font-mono text-xs text-text-tertiary leading-relaxed">
+              <p className="text-text-tertiary">
                 sin proyectos
               </p>
             )}
@@ -382,14 +384,14 @@ export function ProjectPanel({ onClose }: { onClose?: () => void }) {
               <button
                 key={p.id}
                 onClick={() => setProject(p.id)}
-                className={`w-full text-left mb-3 p-2.5 rounded-lg transition-all animate-fade-in cursor-pointer ${
+                className={`w-full text-left mb-2 px-2 py-1 animate-fade-in cursor-pointer border-[3px] ${
                   p.id === selectedProjectId
-                    ? "bg-accent-dim border border-accent/20"
-                    : "hover:bg-surface-2/50 border border-transparent"
+                    ? "border-accent bg-[#1b1638] shadow-[3px_3px_0_#000]"
+                    : "border-transparent hover:bg-surface-2/50"
                 }`}
                 style={{ animationDelay: `${i * 60}ms` }}
               >
-                <p className="font-mono text-xs font-medium text-text-primary">
+                <p className="text-text-primary">
                   {p.name}
                 </p>
                 <p
@@ -399,7 +401,7 @@ export function ProjectPanel({ onClose }: { onClose?: () => void }) {
                   {p.path}
                 </p>
                 {p.description && (
-                  <p className="text-[11px] text-text-secondary mt-1 leading-relaxed">
+                  <p className="text-xs text-text-secondary mt-1">
                     {p.description}
                   </p>
                 )}
@@ -408,7 +410,7 @@ export function ProjectPanel({ onClose }: { onClose?: () => void }) {
 
             {looseConversations && looseConversations.length > 0 && (
               <div className="mt-5">
-                <p className="mb-3 font-mono text-[10px] uppercase tracking-widest text-text-tertiary">
+                <p className="mb-3 font-pixel text-[11px] uppercase text-text-tertiary">
                   Pláticas sin proyecto
                 </p>
                 <div className="space-y-1">
@@ -419,14 +421,14 @@ export function ProjectPanel({ onClose }: { onClose?: () => void }) {
                         key={conv.conversationId}
                         type="button"
                         onClick={() => setConversation(conv.conversationId)}
-                        className={`w-full rounded-lg p-2 text-left transition-colors ${
-                          isActive ? "bg-accent-dim" : "hover:bg-surface-2/50"
+                        className={`w-full border-[3px] px-2 py-1 text-left ${
+                          isActive ? "border-accent bg-[#1b1638] shadow-[3px_3px_0_#000]" : "border-transparent hover:bg-surface-2/50"
                         }`}
                       >
-                        <p className={`truncate font-mono text-[11px] ${isActive ? "text-accent" : "text-text-primary"}`}>
+                        <p className={`truncate ${isActive ? "text-white" : "text-text-primary"}`}>
                           {conv.title}
                         </p>
-                        <p className="mt-1 font-mono text-[9px] text-text-tertiary">{formatDate(conv.updatedAt)}</p>
+                        <p className="text-xs text-text-tertiary">{formatDate(conv.updatedAt)}</p>
                       </button>
                     );
                   })}
@@ -440,33 +442,18 @@ export function ProjectPanel({ onClose }: { onClose?: () => void }) {
   );
 }
 
-function PlanStatusBadge({ status }: { status: string }) {
-  const config: Record<string, { color: string; label: string }> = {
-    generating: { color: "text-accent", label: "generando" },
-    pending: { color: "text-text-tertiary", label: "pendiente" },
-    running: { color: "text-accent", label: "ejecutando" },
-    completed: { color: "text-ok", label: "completado" },
-    failed: { color: "text-err", label: "fallido" },
-    cancelled: { color: "text-text-tertiary", label: "cancelado" },
-  };
-  const c = config[status] ?? { color: "text-text-tertiary", label: status };
+function PlanStatusBadge({ status, paused }: { status: string; paused?: boolean }) {
+  const c = status === "generating" ? { icon: "…", color: "var(--color-accent)", label: "generando" } : statusStyle(status, paused);
   return (
-    <span className={`font-mono text-[9px] shrink-0 ${c.color}`}>
-      {c.label}
+    <span className="text-xs shrink-0" style={{ color: c.color }}>
+      <span aria-hidden="true">{c.icon} </span>{c.label}
     </span>
   );
 }
 
 function StatusDot({ status }: { status: string }) {
-  const color =
-    status === "succeeded"
-      ? "bg-ok"
-      : status === "failed"
-        ? "bg-err"
-        : status === "running"
-          ? "bg-accent animate-pulse-dot"
-          : "bg-text-tertiary";
-  return <div className={`h-1.5 w-1.5 rounded-full shrink-0 mt-1 ${color}`} />;
+  const s = statusStyle(status);
+  return <span className="shrink-0" style={{ color: s.color }} title={s.label}><span aria-hidden="true">{s.icon}</span><span className="sr-only">{s.label}</span></span>;
 }
 
 function formatDate(iso: string): string {

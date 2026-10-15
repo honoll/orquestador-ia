@@ -83,17 +83,17 @@ export function GitHubCloneModal({ initialUrl = "", onClose, onCloned }: GitHubC
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div className="absolute inset-0 bg-black/60" onClick={isCloning ? undefined : onClose} />
-      <div className="relative z-10 bg-surface-1 border border-edge rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden animate-fade-in">
+      <div className="absolute inset-0 bg-black/70" onClick={isCloning ? undefined : onClose} />
+      <div className="px-panel relative z-10 w-full max-w-md mx-4 overflow-hidden animate-fade-in">
 
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-edge">
+        <div className="flex items-center justify-between px-5 py-3 border-b-[3px] border-edge">
           <div className="flex items-center gap-2">
             <span className="text-sm">⬇</span>
-            <span className="font-mono text-xs text-text-primary">clonar repositorio</span>
+            <span className="font-pixel text-[12px] text-text-primary">CLONAR REPOSITORIO</span>
           </div>
           {!isCloning && (
-            <button onClick={onClose} className="font-mono text-[10px] text-text-tertiary hover:text-text-secondary">✕</button>
+            <button onClick={onClose} aria-label="Cerrar" className="px-btn px-2">✕</button>
           )}
         </div>
 
@@ -102,35 +102,35 @@ export function GitHubCloneModal({ initialUrl = "", onClose, onCloned }: GitHubC
             <>
               {/* URL input */}
               <div className="space-y-1.5">
-                <label className="font-mono text-[10px] uppercase tracking-widest text-text-tertiary">
-                  url o usuario/repo
+                <label className="block font-pixel text-[11px] text-text-tertiary">
+                  URL O USUARIO/REPO
                 </label>
                 <input
-                  className="w-full bg-surface-0 border border-edge rounded-lg px-3 py-2.5 font-mono text-xs text-text-primary placeholder-text-tertiary focus:outline-none focus:border-accent transition-colors"
+                  className="px-input w-full px-3 py-2 font-code focus:border-accent!"
                   placeholder="https://github.com/usuario/repo  o  usuario/repo"
                   value={url}
                   onChange={e => setUrl(e.target.value)}
                   autoFocus
                 />
-                <p className="font-mono text-[9px] text-text-tertiary">
+                <p className="text-xs text-text-tertiary">
                   repos privados: usa <code className="text-accent">gh auth login</code> primero
                 </p>
               </div>
 
               {/* Destination */}
               <div className="space-y-1.5">
-                <label className="font-mono text-[10px] uppercase tracking-widest text-text-tertiary">
-                  carpeta destino
+                <label className="block font-pixel text-[11px] text-text-tertiary">
+                  CARPETA DESTINO
                 </label>
                 <input
-                  className="w-full bg-surface-0 border border-edge rounded-lg px-3 py-2.5 font-mono text-xs text-text-primary placeholder-text-tertiary focus:outline-none focus:border-accent transition-colors"
+                  className="px-input w-full px-3 py-2 font-code focus:border-accent!"
                   placeholder="C:\proyectos"
                   value={destination}
                   onChange={e => setDestination(e.target.value)}
                 />
                 {url && projectName && (
-                  <p className="font-mono text-[9px] text-text-tertiary">
-                    se clonará en: <span className="text-accent">{destination}\\{projectName}</span>
+                  <p className="text-xs text-text-tertiary">
+                    se clonará en: <span className="font-mono text-[12px] text-accent">{destination}\\{projectName}</span>
                   </p>
                 )}
               </div>
@@ -139,24 +139,24 @@ export function GitHubCloneModal({ initialUrl = "", onClose, onCloned }: GitHubC
               <label className="flex items-center gap-3 cursor-pointer group">
                 <div
                   onClick={() => setCreateProject(!createProject)}
-                  className={`h-4 w-4 rounded border flex items-center justify-center transition-colors cursor-pointer ${
+                  className={`h-5 w-5 border-2 flex items-center justify-center transition-colors cursor-pointer ${
                     createProject ? "bg-accent border-accent" : "border-edge-strong bg-surface-0"
                   }`}
                 >
-                  {createProject && <span className="text-surface-0 text-[10px]">✓</span>}
+                  {createProject && <span className="text-surface-0 text-xs leading-none">✓</span>}
                 </div>
-                <span className="font-mono text-xs text-text-secondary group-hover:text-text-primary transition-colors">
+                <span className="text-sm text-text-secondary group-hover:text-text-primary transition-colors">
                   crear proyecto en el orquestador
                 </span>
               </label>
 
               {createProject && (
                 <div className="space-y-1.5 pl-7">
-                  <label className="font-mono text-[10px] uppercase tracking-widest text-text-tertiary">
-                    nombre del proyecto
+                  <label className="block font-pixel text-[11px] text-text-tertiary">
+                    NOMBRE DEL PROYECTO
                   </label>
                   <input
-                    className="w-full bg-surface-0 border border-edge rounded-lg px-3 py-2 font-mono text-xs text-text-primary placeholder-text-tertiary focus:outline-none focus:border-accent transition-colors"
+                    className="px-input w-full px-3 py-2 text-sm focus:border-accent!"
                     placeholder={projectName || "nombre"}
                     value={projectName}
                     onChange={e => setProjectName(e.target.value)}
@@ -165,15 +165,15 @@ export function GitHubCloneModal({ initialUrl = "", onClose, onCloned }: GitHubC
               )}
 
               {error && (
-                <p className="font-mono text-xs text-err bg-err/10 rounded-lg px-3 py-2">{error}</p>
+                <p className="border-[3px] border-err bg-err/10 px-3 py-2 text-sm text-err">{error}</p>
               )}
 
               <button
                 onClick={handleClone}
                 disabled={!url.trim() || !destination.trim()}
-                className="w-full font-mono text-[11px] text-ok hover:text-text-primary border border-ok/30 hover:border-ok/50 rounded-lg py-2.5 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                className="px-btn px-btn-pri w-full py-2"
               >
-                clonar
+                CLONAR
               </button>
             </>
           ) : (
@@ -183,18 +183,18 @@ export function GitHubCloneModal({ initialUrl = "", onClose, onCloned }: GitHubC
                 <div className="flex items-center gap-2">
                   {isCloning ? (
                     <>
-                      <span className="h-1.5 w-1.5 rounded-full bg-accent animate-pulse-dot" />
-                      <span className="font-mono text-xs text-text-secondary">clonando...</span>
+                      <span className="h-1.5 w-1.5 bg-accent animate-pulse-dot" />
+                      <span className="text-sm text-text-secondary">clonando...</span>
                     </>
                   ) : succeeded ? (
                     <>
                       <span className="text-ok">✓</span>
-                      <span className="font-mono text-xs text-ok">clonado exitosamente</span>
+                      <span className="text-sm text-ok">clonado exitosamente</span>
                     </>
                   ) : (
                     <>
                       <span className="text-err">✗</span>
-                      <span className="font-mono text-xs text-err">error al clonar</span>
+                      <span className="text-sm text-err">error al clonar</span>
                     </>
                   )}
                 </div>
@@ -203,23 +203,23 @@ export function GitHubCloneModal({ initialUrl = "", onClose, onCloned }: GitHubC
                 <CloneLog jobId={jobId} />
 
                 {error && (
-                  <p className="font-mono text-xs text-err bg-err/10 rounded-lg px-3 py-2 whitespace-pre-wrap">{error}</p>
+                  <p className="border-[3px] border-err bg-err/10 px-3 py-2 text-sm text-err whitespace-pre-wrap">{error}</p>
                 )}
 
                 <div className="flex gap-2">
                   {isCloning ? (
                     <button
                       onClick={handleCancel}
-                      className="flex-1 font-mono text-[11px] text-err hover:text-text-primary border border-err/30 rounded-lg py-2 transition-colors"
+                      className="px-btn flex-1 py-2 border-err! text-err!"
                     >
-                      cancelar
+                      CANCELAR
                     </button>
                   ) : (
                     <button
                       onClick={onClose}
-                      className="flex-1 font-mono text-[11px] text-accent hover:text-text-primary border border-accent/30 rounded-lg py-2 transition-colors"
+                      className="px-btn flex-1 py-2"
                     >
-                      {succeeded ? "listo" : "cerrar"}
+                      {succeeded ? "LISTO" : "CERRAR"}
                     </button>
                   )}
                 </div>
@@ -237,15 +237,15 @@ function CloneLog({ jobId }: { jobId: string }) {
   const log = logs.get(`gh:${jobId}`) ?? "";
 
   return (
-    <div className="bg-surface-0 rounded-lg border border-edge h-40 overflow-y-auto">
+    <div className="bg-[#060608] border-[3px] border-edge h-40 overflow-y-auto">
       {log ? (
         <pre className="font-mono text-[10px] text-text-secondary whitespace-pre-wrap leading-relaxed p-3">
           {log}
         </pre>
       ) : (
         <div className="flex items-center gap-2 p-3">
-          <span className="h-1 w-1 rounded-full bg-accent animate-pulse-dot" />
-          <span className="font-mono text-[10px] text-text-tertiary">iniciando...</span>
+          <span className="h-1.5 w-1.5 bg-accent animate-pulse-dot" />
+          <span className="text-xs text-text-tertiary">iniciando...</span>
         </div>
       )}
     </div>

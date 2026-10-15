@@ -251,7 +251,8 @@ async function runPlanStepInner(options: StepRunOptions): Promise<StepOutcome> {
         .set({
           status: succeeded && !roleFailed ? "succeeded" : "failed",
           result: result.stdout,
-          summary: result.summary,
+          // F11: sin la línea <<<ESTADO …>>> (el chat muestra este summary).
+          summary: step.role && result.summary ? stripStepStatus(result.summary) : result.summary,
           sessionId: result.sessionId,
           exitCode: result.exitCode,
           costUsd: result.costUsd,

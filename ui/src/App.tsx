@@ -7,13 +7,11 @@ import { Chat } from "./components/Chat";
 import { HudBar } from "./components/HudBar";
 import { ProjectPanel } from "./components/ProjectPanel";
 import { ResizableGroup, ResizableHandle, ResizablePanel } from "./components/ResizableDivider";
-import { useWs } from "./context/WebSocketProvider";
 import { useAppState } from "./context/AppStateContext";
 import { OfficeView } from "./components/office/OfficeView";
 import { RolesView } from "./components/RolesView";
 
 export default function App() {
-  const { connected } = useWs();
   const [rightOpen, setRightOpen] = useState(true);
   const { view } = useAppState();
   // "office" = la vista ocupa centro + derecha (Oficina o Roles); Chat queda montado y oculto.
@@ -25,17 +23,8 @@ export default function App() {
       {/* Left — Adapters */}
       <ResizableGroup direction="horizontal" className="min-h-0 flex-1 overflow-hidden">
         <ResizablePanel defaultSize={16} minSize={10} maxSize={30}>
-          <aside className="border-r border-edge flex h-full flex-col bg-surface-1">
-            <header className="flex items-center gap-3 px-5 py-4">
-              <span className="font-mono text-xs font-medium tracking-tight text-text-primary">
-                orquestador
-              </span>
-              <div
-                className={`ml-auto h-1.5 w-1.5 rounded-full ${connected ? "bg-ok animate-pulse-dot" : "bg-err"}`}
-                title={connected ? "conectado" : "desconectado"}
-              />
-            </header>
-            <div className="flex-1 overflow-y-auto overflow-x-hidden">
+          <aside className="px-grid border-r-[3px] border-edge flex h-full flex-col bg-surface-1">
+            <div className="flex-1 overflow-y-auto overflow-x-hidden pt-3">
               <AdapterPanel />
               <AccountsPanel />
               <WorkerIsolationNotice />
@@ -61,7 +50,7 @@ export default function App() {
           <>
             <ResizableHandle direction="horizontal" />
             <ResizablePanel defaultSize={22} minSize={12} maxSize={35}>
-              <aside className="border-l border-edge flex h-full flex-col bg-surface-1">
+              <aside className="px-grid border-l-[3px] border-edge flex h-full flex-col bg-surface-1">
                 <ProjectPanel onClose={() => setRightOpen(false)} />
               </aside>
             </ResizablePanel>
@@ -74,12 +63,12 @@ export default function App() {
         <button
           onClick={() => setRightOpen((o) => !o)}
           title={rightOpen ? "Ocultar proyectos" : "Mostrar proyectos"}
-          className="fixed bottom-4 right-4 z-30 flex items-center gap-1.5 px-2.5 py-1.5 bg-surface-1 border border-edge rounded-lg font-mono text-[10px] text-text-tertiary hover:text-text-primary hover:bg-surface-2 transition-all shadow-sm"
+          className="px-btn fixed bottom-4 right-4 z-30"
         >
           <svg width="10" height="10" viewBox="0 0 12 12" fill="none" className={`transition-transform ${rightOpen ? "" : "rotate-180"}`}>
-            <path d="M8 2L4 6L8 10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+            <path d="M8 2L4 6L8 10" stroke="currentColor" strokeWidth="2" strokeLinecap="square"/>
           </svg>
-          proyectos
+          PROYECTOS
         </button>
       )}
     </div>

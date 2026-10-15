@@ -31,19 +31,19 @@ export function WorkersPanel() {
   };
   return (
     <Panel title="TRABAJADORES DE AGY">
-      {error && <p role="alert" className="mb-1 text-err">{error}</p>}
+      {error && <p role="alert" className="px-panel mb-1 border-err! px-2 py-1 text-err">{error}</p>}
       {workers.length === 0 ? <p className="text-text-secondary">sin trabajadores</p> : (
         <ul>
           {workers.map((w) => {
             const h = probed[w.id] ?? w.healthy;
             const txt = h === "wait" ? "probando…" : h === true ? "ok" : h === false ? "caído" : "desconocido";
             return (
-              <li key={w.id} className="flex items-center gap-2 border-t border-white/[.03] py-1">
+              <li key={w.id} className="flex items-center gap-2 border-t-2 border-edge py-1">
                 <span className="min-w-0 flex-1 truncate" title={`${w.accountLabel} · puerto ${w.port}`}>{w.accountLabel} <span className="text-text-secondary">:{w.port}</span></span>
                 <span className={h === true ? "text-ok" : h === false ? "text-err" : "text-text-secondary"}>{txt}</span>
-                <button type="button" className="rounded bg-surface-3 px-1.5 py-px hover:bg-surface-2" onClick={() => void probe(w.id)} aria-label={`Probar ${w.accountLabel}`}>probar</button>
-                <label className="flex items-center gap-1 text-text-secondary">
-                  <input type="checkbox" checked={w.enabled} onChange={() => void toggle(w)} aria-label={`Habilitar ${w.accountLabel}`} />on
+                <button type="button" className="px-btn" onClick={() => void probe(w.id)} aria-label={`Probar ${w.accountLabel}`}>PROBAR</button>
+                <label className="flex items-center gap-1 font-pixel text-[11px] text-text-secondary">
+                  <input type="checkbox" checked={w.enabled} onChange={() => void toggle(w)} aria-label={`Habilitar ${w.accountLabel}`} className="h-4 w-4 accent-[#a78bfa]" />ON
                 </label>
               </li>
             );

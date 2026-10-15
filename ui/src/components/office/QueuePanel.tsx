@@ -2,22 +2,22 @@ import type { ReactNode } from "react";
 import { queueTag, type Tag, type Tone } from "../../lib/office-view";
 import type { QueueItem } from "./OfficeView";
 
-const TONE: Record<Tone, string> = { run: "text-accent", ok: "text-ok", err: "text-err", wait: "text-amber-400", idle: "text-text-secondary" };
+const TONE: Record<Tone, string> = { run: "text-accent", ok: "text-ok", err: "text-err", wait: "text-warn", idle: "text-text-secondary" };
 
 export function TagBadge({ tag }: { tag: Tag }) {
-  return <span className={`min-w-[74px] shrink-0 rounded-[3px] bg-surface-3 px-1.5 py-px text-center text-[10px] ${TONE[tag.tone]}`}>{tag.label}</span>;
+  return <span className={`px-tag min-w-[74px] shrink-0 text-center ${TONE[tag.tone]}`}>{tag.label}</span>;
 }
 
 export function Panel({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <section aria-label={title} className="min-w-0 rounded-lg border border-edge-strong bg-surface-1 px-2.5 py-2">
-      <h2 className="mb-1.5 text-[10px] tracking-[.12em] text-text-secondary">{title}</h2>
+    <section aria-label={title} className="px-panel px-grid min-w-0 px-2.5 py-2">
+      <h2 className="mb-1.5 font-pixel text-[11px] text-text-tertiary">{title}</h2>
       {children}
     </section>
   );
 }
 
-export const ROW = "flex w-full items-center gap-2 border-t border-white/[.03] py-1 text-left hover:bg-surface-2 focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent";
+export const ROW = "flex w-full items-center gap-2 border-t-2 border-edge py-1 text-left hover:bg-surface-2";
 
 export function QueuePanel({ queue, onOpen }: { queue: QueueItem[]; onOpen: (planId: string) => void }) {
   return (

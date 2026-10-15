@@ -107,50 +107,50 @@ function AdapterUsage({ adapter }: { adapter: string }) {
   const barColor = isRateLimited
     ? "bg-err"
     : pct >= 80
-      ? "bg-amber-400"
+      ? "bg-warn"
       : "bg-ok";
 
   const isRealData = usage.source === "local_jsonl";
 
   return (
-    <div className="pl-3.5 mt-2 space-y-1">
-      <p className="font-mono text-[9px] uppercase tracking-widest text-text-tertiary">
+    <div className="pl-3.5 mt-2 space-y-1 text-xs">
+      <p className="font-pixel text-[10px] uppercase text-text-tertiary">
         uso {isRealData ? "real" : "orquestador"} (5h)
       </p>
 
       {/* Progress bar */}
-      <div className="h-1 w-full bg-surface-0 rounded-full overflow-hidden">
+      <div className="h-2.5 w-full border-2 border-edge-strong bg-black">
         <div
-          className={`h-full rounded-full transition-all ${barColor}`}
+          className={`h-full ${barColor}`}
           style={{ width: `${Math.max(pct, pct > 0 ? 2 : 0)}%` }}
         />
       </div>
 
       <div className="flex items-center justify-between">
-        <span className={`font-mono text-[9px] ${isRateLimited ? "text-err" : "text-text-secondary"}`}>
+        <span className={isRateLimited ? "text-err" : "text-text-secondary"}>
           {pct}% usado
         </span>
-        <span className="font-mono text-[9px] text-text-tertiary">
+        <span className="text-text-tertiary">
           {(usage.totalTokens / 1000).toFixed(1)}k tok
         </span>
       </div>
 
       {/* Window reset (like Claude.ai "Se restablece en") */}
       {showWindowReset && windowMsLeft !== null && !isRateLimited && (
-        <p className="font-mono text-[9px] text-text-tertiary">
+        <p className="text-text-tertiary">
           restablece en {formatTimeLeft(windowMsLeft)}
         </p>
       )}
 
       {/* Hard rate-limit (separate from window reset) */}
       {isRateLimited && rateLimitMsLeft !== null && (
-        <p className="font-mono text-[9px] text-err">
+        <p className="text-err">
           rate-limit · espera {formatTimeLeft(rateLimitMsLeft)}
         </p>
       )}
 
       {usage.costUsd > 0 && (
-        <p className="font-mono text-[9px] text-text-tertiary">
+        <p className="text-text-tertiary">
           ${usage.costUsd.toFixed(4)} USD
         </p>
       )}
@@ -202,7 +202,7 @@ function ClaudeProfiles() {
       <div className="pl-3.5 mt-1">
         <button
           onClick={() => setAdding(true)}
-          className="font-mono text-[9px] text-text-tertiary hover:text-accent transition-colors"
+          className="text-xs text-text-tertiary hover:text-accent"
         >
           + segunda cuenta
         </button>
@@ -212,7 +212,7 @@ function ClaudeProfiles() {
 
   return (
     <div className="pl-3.5 mt-2 space-y-1.5">
-      <p className="font-mono text-[9px] uppercase tracking-widest text-text-tertiary mb-1.5">
+      <p className="font-pixel text-[10px] uppercase text-text-tertiary mb-1.5">
         perfiles
       </p>
       {profiles.map((p) => {
@@ -222,16 +222,16 @@ function ClaudeProfiles() {
         return (
           <div key={p.id} className="flex items-center gap-2">
             <div
-              className={`h-1.5 w-1.5 rounded-full shrink-0 ${p.available ? "bg-ok" : "bg-err"}`}
+              className={`h-2 w-2 shrink-0 ${p.available ? "bg-ok" : "bg-err"}`}
             />
-            <span className="font-mono text-[10px] text-text-secondary truncate flex-1" title={p.id}>
+            <span className="text-xs text-text-secondary truncate flex-1" title={p.id}>
               {p.label}
             </span>
             {limitLabel && (
               <button
                 onClick={() => clearMutation.mutate(p.id)}
                 title={limitLabel}
-                className="font-mono text-[9px] text-err hover:text-text-primary transition-colors"
+                className="text-xs text-err hover:text-text-primary"
               >
                 rl
               </button>
@@ -239,7 +239,7 @@ function ClaudeProfiles() {
             {profiles.length > 1 && (
               <button
                 onClick={() => deleteMutation.mutate(p.id)}
-                className="font-mono text-[9px] text-text-tertiary hover:text-err transition-colors"
+                className="text-xs text-text-tertiary hover:text-err"
               >
                 ×
               </button>
@@ -251,14 +251,14 @@ function ClaudeProfiles() {
       {adding ? (
         <div className="space-y-1 pt-1">
           <input
-            className="w-full bg-surface-0 border border-edge rounded px-2 py-1 font-mono text-[10px] text-text-primary focus:outline-none focus:border-accent"
+            className="px-input w-full text-xs"
             placeholder="profile id (ej: cuenta2)"
             value={newId}
             onChange={(e) => setNewId(e.target.value)}
             autoFocus
           />
           <input
-            className="w-full bg-surface-0 border border-edge rounded px-2 py-1 font-mono text-[10px] text-text-primary focus:outline-none focus:border-accent"
+            className="px-input w-full text-xs"
             placeholder="nombre (ej: Claude Pro 2)"
             value={newLabel}
             onChange={(e) => setNewLabel(e.target.value)}
@@ -273,13 +273,13 @@ function ClaudeProfiles() {
             <button
               onClick={() => addMutation.mutate({ id: newId.trim(), label: newLabel.trim() || newId.trim() })}
               disabled={!newId.trim()}
-              className="font-mono text-[9px] text-accent hover:text-text-primary disabled:opacity-30 transition-colors"
+              className="px-btn px-btn-pri"
             >
               agregar
             </button>
             <button
               onClick={() => { setAdding(false); setNewId(""); setNewLabel(""); }}
-              className="font-mono text-[9px] text-text-tertiary hover:text-text-secondary transition-colors"
+              className="px-btn"
             >
               cancelar
             </button>
@@ -288,7 +288,7 @@ function ClaudeProfiles() {
       ) : (
         <button
           onClick={() => setAdding(true)}
-          className="font-mono text-[9px] text-text-tertiary hover:text-accent transition-colors"
+          className="px-btn"
         >
           + agregar perfil
         </button>
@@ -317,12 +317,12 @@ export function AdapterPanel() {
 
   return (
     <div className="flex-1 overflow-y-auto px-5 pb-5">
-      <p className="font-mono text-[10px] uppercase tracking-widest text-text-tertiary mb-4">
+      <p className="font-pixel text-[12px] uppercase text-text-primary mb-3">
         adapters
       </p>
 
       {isLoading && (
-        <p className="font-mono text-xs text-text-tertiary">detectando...</p>
+        <p className="text-text-tertiary">detectando...</p>
       )}
 
       {adapters &&
@@ -331,17 +331,17 @@ export function AdapterPanel() {
           return (
             <div
               key={a.type}
-              className={`mb-4 animate-fade-in rounded-lg transition-colors ${
+              className={`mb-4 animate-fade-in ${
                 isActiveAdapter ? "bg-surface-2/50 -mx-2 px-2 py-2" : ""
               }`}
               style={{ animationDelay: `${i * 60}ms` }}
             >
               <div className="flex items-center gap-2 mb-1.5">
                 <div
-                  className={`h-1.5 w-1.5 rounded-full ${a.available ? "bg-ok" : "bg-text-tertiary"}`}
+                  className={`h-2 w-2 ${a.available ? "bg-ok" : "bg-text-tertiary"}`}
                 />
                 <button
-                  className={`font-mono text-xs font-medium transition-colors text-left ${
+                  className={`font-pixel text-[12px] uppercase text-left ${
                     isActiveAdapter
                       ? "text-accent"
                       : a.available
@@ -360,24 +360,24 @@ export function AdapterPanel() {
               {a.available ? (
                 <>
                   <p
-                    className="font-mono text-[10px] text-text-tertiary truncate mb-2 pl-3.5"
+                    className="font-code text-text-tertiary truncate mb-2 pl-3.5"
                     title={a.resolvedPath ?? undefined}
                   >
                     {a.resolvedPath}
                   </p>
-                  <div className="flex flex-wrap gap-1 pl-3.5">
+                  <div className="flex flex-col items-stretch gap-0.5 pl-3.5">
                     {a.models.map((m) => {
                       const isSelected = isActiveAdapter && m.id === activeModel;
                       return (
                         <button
                           key={m.id}
                           onClick={() => setAdapter(a.type, m.id)}
-                          className={`font-mono text-[10px] px-1.5 py-0.5 rounded transition-all cursor-pointer ${
+                          className={`border-[3px] px-2 text-left cursor-pointer ${
                             isSelected
-                              ? "bg-accent text-surface-0 font-medium"
+                              ? "border-accent bg-[#1b1638] text-white shadow-[3px_3px_0_#000]"
                               : isActiveAdapter && m.id === a.defaultModel && !selectedModel
-                                ? "bg-accent-dim text-accent hover:bg-accent hover:text-surface-0"
-                                : "text-text-tertiary hover:text-text-secondary hover:bg-surface-2"
+                                ? "border-accent/50 bg-accent-dim text-accent hover:text-white"
+                                : "border-transparent text-text-secondary hover:text-text-primary hover:bg-surface-2"
                           }`}
                         >
                           {m.label}
@@ -389,14 +389,14 @@ export function AdapterPanel() {
                   {a.type !== "agy" && <AdapterUsage adapter={a.type} />}
                   {isActiveAdapter && cavemanStatus?.active && (
                     <div className="pl-3.5 mt-1">
-                      <span className="font-mono text-[9px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 border border-amber-500/30">
+                      <span className="px-tag text-warn">
                         [caveman:{cavemanStatus.mode}]
                       </span>
                     </div>
                   )}
                 </>
               ) : (
-                <p className="font-mono text-[10px] text-text-tertiary pl-3.5">
+                <p className="text-xs text-text-tertiary pl-3.5">
                   no encontrado
                 </p>
               )}

@@ -69,15 +69,15 @@ export function OfficeView() {
   const queue = data?.queue ?? [];
 
   return (
-    <div className="@container h-full overflow-y-auto bg-surface-0 font-mono text-xs text-text-primary">
+    <div className="@container h-full overflow-y-auto bg-surface-0 text-sm text-text-primary">
       {isError && (
-        <p role="alert" className="mx-3 mt-2 rounded border border-err/40 px-2 py-1 text-err">
+        <p role="alert" className="px-panel mx-3 mt-2 border-err! px-2 py-1 text-err">
           sin conexión con el servidor{data ? ` — mostrando la última foto (${new Date(data.generatedAt).toLocaleTimeString("es-MX")})` : ""}
         </p>
       )}
       <AgentCards agents={agents} />
       {/* Cambiar de modo desmontaría el panel de Platicar con la plática abierta: se bloquea como el selector de vista. */}
-      <div role="group" aria-label="Modo de la Oficina" className="flex items-center gap-1 px-3 pb-2 text-[11px]">
+      <div role="group" aria-label="Modo de la Oficina" className="flex items-center gap-2 px-3 pb-2">
         {(["mundo", "escritorios"] as const).map((m, i) => (
           <span key={m} className="flex items-center gap-1">
             {i > 0 && <span aria-hidden="true" className="text-text-tertiary">·</span>}
@@ -85,9 +85,9 @@ export function OfficeView() {
               aria-pressed={mode === m}
               disabled={talkActive && mode !== m}
               title={talkActive && mode !== m ? "Termina la plática para cambiar de modo" : undefined}
-              className={`rounded px-1.5 py-0.5 disabled:opacity-50 ${mode === m ? "bg-white/10 text-text-primary" : "text-text-secondary hover:text-text-primary"}`}
+              className={`px-btn ${mode === m ? "px-btn-pri" : ""}`}
               onClick={() => setMode(m)}
-            >{m}</button>
+            >{m.toUpperCase()}</button>
           </span>
         ))}
       </div>
@@ -97,7 +97,7 @@ export function OfficeView() {
             {near && <WorldDialog key={near.key} ref={dialog} agent={near} log={officeLog} onOpenPlan={openPlan} />}
           </OfficeWorld>
         ) : (
-          <OfficeScene agents={agents} queue={queue} />
+          <div className="font-mono text-[12px]"><OfficeScene agents={agents} queue={queue} /></div>
         )}
         <div className="grid content-start gap-2.5 @min-[700px]:grid-cols-3 @min-[1060px]:grid-cols-1">
           {mode === "mundo" && <><AccountRack /><OfficeTalkPanel /></>}

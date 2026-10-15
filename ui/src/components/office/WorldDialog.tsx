@@ -40,11 +40,11 @@ export function WorldDialog({ agent, log, onOpenPlan, ref }: Props) {
 
   return (
     <div
-      className="absolute inset-x-2 bottom-2 border-4 border-zinc-200 bg-[#0b0b10] px-3 py-2 font-mono text-sm text-text-primary"
+      className="absolute inset-x-2 bottom-2 border-4 border-zinc-200 bg-[#0b0b10] px-3 py-2 font-sans text-base text-text-primary"
       style={{ boxShadow: "4px 4px 0 #000" }}
     >
       <p role="status" aria-live="polite" className="sr-only">{`${d.titulo}, ${d.estado}. ${page.join(" ")}`}</p>
-      <div className="flex items-baseline gap-2 text-xs font-bold tracking-widest" aria-hidden="true">
+      <div className="flex items-baseline gap-2 font-pixel text-[12px]" aria-hidden="true">
         <span style={{ color: agent.color }}>{d.titulo}</span>
         <span className="text-text-secondary">{d.estado}</span>
       </div>
@@ -52,9 +52,9 @@ export function WorldDialog({ agent, log, onOpenPlan, ref }: Props) {
         {text}
         {done && pageIdx < pages.length - 1 && <span className="absolute bottom-0 right-0 animate-pulse motion-reduce:animate-none">▼</span>}
       </div>
-      <div className="mt-1 flex gap-3 text-xs">
-        {d.planId && <button className="underline hover:text-accent" onClick={() => onOpenPlan(d.planId!)}>abrir plan</button>}
-        <button className="underline hover:text-accent" aria-expanded={showLog} onClick={() => setShowLog((v) => !v)}>ver log</button>
+      <div className="mt-1 flex gap-2">
+        {d.planId && <button className="px-btn" onClick={() => onOpenPlan(d.planId!)}>ABRIR PLAN</button>}
+        <button className="px-btn" aria-expanded={showLog} onClick={() => setShowLog((v) => !v)}>VER LOG</button>
       </div>
       {showLog && (
         <ul className="mt-1 max-h-24 overflow-y-auto text-xs text-text-secondary">

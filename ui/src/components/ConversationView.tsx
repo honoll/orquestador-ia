@@ -15,15 +15,17 @@ const PHASE_LABEL: Record<ConvPhase, string> = {
   error: "No se pudo continuar",
 };
 
+// Botón pixel: gris reposo · azul escuchando · morado pensando · verde hablando.
+const IDLE = "border-edge-strong bg-surface-2 text-text-secondary";
 const PHASE_STYLE: Record<ConvPhase, string> = {
-  starting: "border-edge-strong text-text-secondary",
-  listening: "border-accent text-accent animate-pulse",
-  transcribing: "border-edge-strong text-text-primary",
-  thinking: "border-edge-strong text-text-primary animate-pulse",
-  speaking: "border-ok text-ok",
-  ending: "border-edge-strong text-text-secondary",
-  ended: "border-edge-strong text-text-secondary",
-  error: "border-err text-err",
+  starting: IDLE,
+  listening: "border-blue bg-[#13314f] text-white motion-safe:animate-pulse",
+  transcribing: "border-accent bg-[#2e2560] text-white",
+  thinking: "border-accent bg-[#2e2560] text-white motion-safe:animate-pulse",
+  speaking: "border-ok bg-[#0f2e24] text-white",
+  ending: IDLE,
+  ended: IDLE,
+  error: "border-err bg-surface-2 text-err",
 };
 
 /** Vista de pantalla completa de «Platicar»; la lógica vive en useConversationSession. */
@@ -51,10 +53,10 @@ export function ConversationView({
       role="dialog"
       aria-modal="true"
       aria-label="Plática por voz"
-      className="fixed inset-0 z-50 flex flex-col items-center bg-surface-0 px-4 py-6 overflow-y-auto"
+      className="px-grid fixed inset-0 z-50 flex flex-col items-center bg-surface-0 px-4 py-6 overflow-y-auto"
     >
       <div className="flex w-full max-w-md flex-1 flex-col items-center gap-5">
-        <h2 className="font-mono text-xs uppercase tracking-widest text-text-secondary">Platicar</h2>
+        <h2 className="font-pixel text-[13px] text-text-secondary">PLATICAR</h2>
 
         <button
           ref={circleRef}
@@ -63,9 +65,9 @@ export function ConversationView({
           disabled={phase === "ending" || phase === "ended" || phase === "error"}
           aria-label={active ? "Interrumpir al asistente" : PHASE_LABEL[phase]}
           title={active ? "Clic para interrumpir (también Esc o espacio)" : undefined}
-          className={`mt-4 flex h-44 w-44 shrink-0 items-center justify-center rounded-full border-2 bg-surface-1 text-center font-mono text-sm transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent sm:h-52 sm:w-52 ${PHASE_STYLE[phase]}`}
+          className={`mt-4 flex h-44 w-44 shrink-0 items-center justify-center border-[3px] p-3 text-center font-pixel text-[14px] shadow-[3px_3px_0_#000] active:enabled:translate-x-[2px] active:enabled:translate-y-[2px] active:enabled:shadow-[1px_1px_0_#000] disabled:cursor-not-allowed sm:h-52 sm:w-52 ${PHASE_STYLE[phase]}`}
         >
-          {PHASE_LABEL[phase]}
+          {PHASE_LABEL[phase].toUpperCase()}
         </button>
 
         <p role="status" aria-live="polite" className="sr-only">
@@ -74,12 +76,12 @@ export function ConversationView({
 
         {phase === "error" ? (
           <div className="w-full text-center">
-            <p role="alert" className="break-words font-mono text-xs text-err">{talk.error}</p>
+            <p role="alert" className="break-words border-[3px] border-err bg-err/10 px-3 py-2 text-sm text-err">{talk.error}</p>
             {talk.approvalPlanId && (
               <button
                 type="button"
                 onClick={talk.approve}
-                className="mt-4 mr-2 min-h-11 rounded-lg border-2 border-[#fbbf24] px-5 font-mono text-xs font-bold tracking-widest text-[#fbbf24] focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+                className="px-btn mt-4 mr-2 min-h-11 border-warn! px-5 text-warn!"
               >
                 ABRIR PLAN PARA APROBAR
               </button>
@@ -87,14 +89,14 @@ export function ConversationView({
             <button
               type="button"
               onClick={() => talk.dismiss()}
-              className="mt-4 min-h-11 rounded-lg border border-edge-strong px-5 font-mono text-xs text-text-primary hover:text-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+              className="px-btn mt-4 min-h-11 px-5"
             >
-              Cerrar
+              CERRAR
             </button>
           </div>
         ) : (
           <>
-            <p className="text-center font-mono text-[11px] text-text-secondary">
+            <p className="text-center text-xs text-text-secondary">
               Esc o espacio para interrumpir · se cierra solo tras {idleMin} min sin voz
             </p>
 
@@ -103,21 +105,21 @@ export function ConversationView({
                 type="button"
                 onClick={talk.approve}
                 disabled={phase === "ending"}
-                className="min-h-11 w-full rounded-lg border-2 border-[#fbbf24] bg-[#fbbf24]/10 px-4 font-mono text-xs font-bold tracking-widest text-[#fbbf24] hover:bg-[#fbbf24]/20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-40"
+                className="px-btn min-h-11 w-full border-warn! bg-[#2a2108]! px-4 text-warn! disabled:opacity-40"
               >
                 ABRIR PLAN PARA APROBAR
               </button>
             )}
 
             {notice && (
-              <p role="alert" className="w-full break-words text-center font-mono text-[11px] text-err">{notice}</p>
+              <p role="alert" className="w-full break-words border-[3px] border-err bg-err/10 px-3 py-1 text-center text-xs text-err">{notice}</p>
             )}
 
             <ul className="w-full space-y-2" aria-label="Últimas frases">
               {lines.map((l) => (
-                <li key={l.id} className="rounded-lg bg-surface-2/60 px-3 py-2 text-sm leading-relaxed text-text-primary">
-                  <span className="mr-2 font-mono text-[10px] uppercase tracking-widest text-text-secondary">
-                    {l.who === "tu" ? "tú" : "asistente"}
+                <li key={l.id} className={`px-panel px-3 py-2 text-sm text-text-primary ${l.who === "tu" ? "border-[#4c3d85]! bg-[#1d1733]!" : ""}`}>
+                  <span className="mr-2 font-pixel text-[11px] text-text-secondary">
+                    {l.who === "tu" ? "TÚ" : "ASISTENTE"}
                   </span>
                   {l.text}
                 </li>
@@ -136,9 +138,7 @@ export function ConversationView({
                   // El espacio debe seguir interrumpiendo, no volver a alternar este interruptor.
                   circleRef.current?.focus();
                 }}
-                className={`min-h-11 rounded-lg px-3 font-mono text-[11px] focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent ${
-                  bargeIn ? "text-accent" : "text-text-secondary hover:text-text-primary"
-                }`}
+                className={`px-btn min-h-11 px-3 ${bargeIn ? "px-btn-pri" : ""}`}
               >
                 interrumpir con la voz: {bargeIn ? "sí" : "no"}
               </button>
@@ -147,9 +147,9 @@ export function ConversationView({
                 onClick={() => talk.end()}
                 disabled={phase === "ending" || phase === "starting"}
                 aria-label="Terminar la plática"
-                className="min-h-11 rounded-lg border border-edge-strong px-5 font-mono text-xs text-text-primary transition-colors hover:text-err focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-40"
+                className="px-btn min-h-11 px-5 hover:enabled:border-err! hover:enabled:text-err!"
               >
-                Terminar
+                TERMINAR
               </button>
             </div>
           </>

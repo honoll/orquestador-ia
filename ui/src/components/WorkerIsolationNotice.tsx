@@ -7,7 +7,7 @@ interface WorkersStatus {
 }
 
 const btn =
-  "min-h-6 px-2 text-left underline decoration-dotted underline-offset-2 border border-edge rounded-sm hover:text-text-primary disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent";
+  "px-btn text-left";
 
 async function fetchStatus(fresh = false): Promise<WorkersStatus> {
   const r = await fetch(fresh ? "/api/workers/status?fresh=1" : "/api/workers/status");
@@ -40,8 +40,8 @@ export function WorkerIsolationNotice() {
   const agyLine = `agy: ${data.agy.isolated ? "sin globales ✓" : "sin aislar"}`;
 
   return (
-    <section aria-labelledby="aislamiento-titulo" className="space-y-1 border-t border-edge px-4 py-3 font-mono text-[11px] text-text-secondary">
-      <h2 id="aislamiento-titulo" className="break-words text-text-tertiary">aislamiento de trabajadores</h2>
+    <section aria-labelledby="aislamiento-titulo" className="space-y-1 border-t-[3px] border-edge px-4 py-3 text-xs text-text-secondary">
+      <h2 id="aislamiento-titulo" className="break-words font-pixel text-[11px] uppercase text-text-tertiary">aislamiento de trabajadores</h2>
       {data.codex.isolated ? (
         <>
           <p role="status" className="text-ok">codex: aislado ✓</p>
@@ -49,7 +49,7 @@ export function WorkerIsolationNotice() {
         </>
       ) : (
         <>
-          <p role="status" className="break-words text-accent">Codex aislado parcialmente: inicia la sesión del perfil de trabajadores (una vez)</p>
+          <p role="status" className="break-words border-2 border-warn px-1.5 text-warn">Codex aislado parcialmente: inicia la sesión del perfil de trabajadores (una vez)</p>
           <p className="break-words text-text-tertiary">{claudeLine}</p>
           <p className="break-words text-text-tertiary">{agyLine}</p>
           <div className="flex flex-col items-start gap-1">
@@ -63,8 +63,8 @@ export function WorkerIsolationNotice() {
           <p className="break-words text-text-tertiary">
             Perfil: <code>{data.codex.home}</code>. Manual: <code>{`set CODEX_HOME=${data.codex.home} && codex login`}</code>
           </p>
-          {login.isError && <p role="alert" className="break-words text-err">{(login.error as Error).message}</p>}
-          {recheck.isError && <p role="alert" className="break-words text-err">{(recheck.error as Error).message}</p>}
+          {login.isError && <p role="alert" className="break-words border-2 border-err px-1.5 text-err">{(login.error as Error).message}</p>}
+          {recheck.isError && <p role="alert" className="break-words border-2 border-err px-1.5 text-err">{(recheck.error as Error).message}</p>}
         </>
       )}
     </section>

@@ -77,22 +77,22 @@ export function RolesView() {
   };
 
   return (
-    <div className="flex h-full min-h-0 font-mono text-[11px] text-text-secondary">
-      <nav aria-label="Roles" className="flex w-64 shrink-0 flex-col border-r border-edge bg-surface-1">
-        <p className="px-4 pb-2 pt-4 text-[10px] uppercase tracking-widest text-text-tertiary">roles de agentes</p>
-        {isError && <p role="alert" className="px-4 text-err">No se pudo leer la lista de roles</p>}
-        <ul className="min-h-0 flex-1 overflow-y-auto">
+    <div className="flex h-full min-h-0 text-xs text-text-secondary">
+      <nav aria-label="Roles" className="px-grid flex w-64 shrink-0 flex-col border-r-[3px] border-edge bg-[#0b0b0e]">
+        <p className="px-4 pb-2 pt-4 font-pixel text-[11px] text-text-tertiary">ROLES DE AGENTES</p>
+        {isError && <p role="alert" className="mx-3 border-[3px] border-err bg-err/10 px-2 py-1 text-err">No se pudo leer la lista de roles</p>}
+        <ul className="min-h-0 flex-1 space-y-2 overflow-y-auto px-3 py-1">
           {roles.map((r) => (
             <li key={r.id}>
               <button
                 type="button"
                 aria-current={selected === r.id ? "true" : undefined}
                 onClick={() => pick(r.id)}
-                className={`flex w-full flex-col gap-0.5 border-l-2 px-4 py-2 text-left hover:bg-surface-2 focus-visible:outline focus-visible:outline-1 focus-visible:-outline-offset-1 focus-visible:outline-accent ${selected === r.id ? "bg-surface-2" : ""}`}
-                style={{ borderLeftColor: roleColor(r.id) }}
+                className={`px-panel flex w-full flex-col gap-0.5 px-3 py-1.5 text-left hover:bg-surface-2! ${selected === r.id ? "bg-surface-3!" : ""}`}
+                style={{ borderColor: roleColor(r.id) }}
               >
                 <span className="flex items-center gap-2">
-                  <span className="text-text-primary">{r.nombre ?? roleTag(r.id)}</span>
+                  <span className="font-pixel text-[12px]" style={{ color: roleColor(r.id) }}>{r.nombre ?? roleTag(r.id)}</span>
                   {r.error
                     ? <span className="ml-auto text-err" title={r.error}>✗ error</span>
                     : <span className="ml-auto text-ok" aria-label="válido">✓</span>}
@@ -107,35 +107,35 @@ export function RolesView() {
         <button
           type="button"
           onClick={() => pick(null)}
-          className={`m-3 rounded-md border border-edge-strong px-3 py-1.5 hover:bg-surface-2 hover:text-text-primary ${selected === null ? "bg-surface-2 text-text-primary" : ""}`}
+          className={`px-btn m-3 py-1 ${selected === null ? "px-btn-pri" : ""}`}
         >
-          + nuevo rol
+          + NUEVO ROL
         </button>
       </nav>
 
       <section className="flex min-w-0 flex-1 flex-col gap-2 p-4" aria-label="Editor de rol">
         <div className="flex flex-wrap items-center gap-2">
-          <h2 className="text-xs text-text-primary">{selected === null ? "Nuevo rol (desde plantilla)" : `${selected}.md`}</h2>
-          {dirty && <span className="text-accent">sin guardar</span>}
+          <h2 className="font-pixel text-[12px] text-text-primary">{selected === null ? "NUEVO ROL (DESDE PLANTILLA)" : <span className="font-mono text-[13px]">{selected}.md</span>}</h2>
+          {dirty && <span className="px-tag text-accent">SIN GUARDAR</span>}
           <span className="ml-auto" />
           {selected !== null && current?.original && (
-            <button type="button" onClick={() => void restore()} className="rounded-md border border-edge-strong px-3 py-1 hover:bg-surface-2 hover:text-text-primary">
-              restaurar original
+            <button type="button" onClick={() => void restore()} className="px-btn">
+              RESTAURAR ORIGINAL
             </button>
           )}
-          <button type="button" onClick={() => void save()} disabled={!text.trim()} className="rounded-md bg-accent px-3 py-1 text-surface-0 hover:opacity-90 disabled:opacity-50">
-            {selected === null ? "crear rol" : "guardar"}
+          <button type="button" onClick={() => void save()} disabled={!text.trim()} className="px-btn px-btn-pri">
+            {selected === null ? "CREAR ROL" : "GUARDAR"}
           </button>
         </div>
-        {error && <p role="alert" className="whitespace-pre-wrap rounded border border-err/40 bg-err/10 px-2 py-1 text-err">{error}</p>}
-        {notice && <p role="status" className="text-ok">{notice}</p>}
+        {error && <p role="alert" className="whitespace-pre-wrap border-[3px] border-err bg-err/10 px-3 py-2 text-sm text-err shadow-[3px_3px_0_#000]">{error}</p>}
+        {notice && <p role="status" className="text-sm text-ok">{notice}</p>}
         <label htmlFor="role-editor" className="sr-only">Markdown del rol</label>
         <textarea
           id="role-editor"
           value={text}
           onChange={(e) => { setText(e.target.value); setDirty(true); setNotice(null); }}
           spellCheck={false}
-          className="min-h-0 flex-1 resize-none rounded-md border border-edge bg-surface-1 p-3 font-mono text-xs leading-relaxed text-text-primary focus:outline focus:outline-1 focus:outline-accent"
+          className="px-input min-h-0 flex-1 resize-none p-3 font-mono text-[13px] leading-relaxed"
         />
         <p className="text-text-tertiary">
           Frontmatter (id, nombre, modelo, escribe, herramientasPermitidas) y las 6 secciones en orden. Se valida al guardar; los cambios se usan sin reiniciar.

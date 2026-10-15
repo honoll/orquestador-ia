@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { accountsApi } from "../lib/accounts-api";
 import { formatIn, formatTokens } from "../lib/format";
 import { useAppState } from "../context/AppStateContext";
+import { useWs } from "../context/WebSocketProvider";
 import { viewLocked, type View } from "../lib/office-view";
 
 export function HudBar() {
@@ -10,37 +11,42 @@ export function HudBar() {
   const account = activeData?.account ?? null;
   const short = account?.usage.short;
   const { view, setView, talkActive } = useAppState();
+  const { connected } = useWs();
 
   return (
-    <header className="flex items-center gap-4 border-b border-edge bg-surface-1 px-4 py-1.5 font-mono text-[11px] text-text-secondary" aria-label="Estado del orquestador">
-      <span className="text-text-tertiary">antigravity</span>
+    <header className="flex items-center gap-x-3 whitespace-nowrap border-b-[3px] border-edge bg-[#0b0b0e] px-3 py-1.5 text-text-primary" aria-label="Estado del orquestador">
+      <span className="font-pixel text-[13px]">ORQUESTADOR</span>
+      <span className={connected ? "text-ok" : "text-err"}>
+        <span aria-hidden="true">● </span>{connected ? "en línea" : "desconectado"}
+      </span>
+      <span className="font-pixel text-[11px] text-text-tertiary">ANTIGRAVITY</span>
       {account ? (
         <>
-          <span className="text-text-primary">{account.label}</span>
+          <span>{account.label}</span>
           {short && (
-            <span className="flex items-center gap-2" title="Estimación local: Google no publica la cuota">
+            <span className="flex min-w-0 items-center gap-2" title="Estimación local: Google no publica la cuota">
               {short.pct !== null ? (
-                <span className="relative h-1.5 w-24 overflow-hidden rounded-full bg-surface-2" aria-hidden="true">
-                  <span className={`absolute inset-y-0 left-0 ${short.pct >= 85 ? "bg-err" : "bg-ok"}`} style={{ width: `${short.pct}%` }} />
+                <span className="relative block h-2.5 w-24 shrink-0 border-2 border-edge-strong bg-black" aria-hidden="true">
+                  <span className={`absolute inset-y-0 left-0 ${short.pct >= 85 ? "bg-err" : "bg-warn"}`} style={{ width: `${short.pct}%` }} />
                 </span>
               ) : null}
-              <span>
+              <span className="truncate">
                 {short.pct !== null ? `~${short.pct} %` : `${formatTokens(short.usedTokens)} tok (sin tope)`} · estimado
                 {short.resetsAt ? ` · se reinicia en ${formatIn(short.resetsAt - Date.now())}` : ""}
               </span>
             </span>
           )}
           {account.warn.warn && (
-            <span role="alert" className="rounded border border-err/40 px-1.5 py-0.5 text-err">{account.warn.reason}</span>
+            <span role="alert" className="border-2 border-err px-1.5 text-err">{account.warn.reason}</span>
           )}
         </>
       ) : (
-        <span>sin cuenta activa — agrégala en el panel de cuentas</span>
+        <span className="text-text-secondary">sin cuenta activa — agrégala en el panel de cuentas</span>
       )}
-      <span className="ml-auto" title="Tokens de todos los adapters desde que arrancó el servidor">
+      <span className="ml-auto text-text-secondary" title="Tokens de todos los adapters desde que arrancó el servidor">
         sesión: {formatTokens(session?.tokens ?? 0)} tok
       </span>
-      <div role="group" aria-label="Vista" className="flex overflow-hidden rounded-md border border-edge-strong">
+      <div role="group" aria-label="Vista" className="flex shrink-0 gap-1.5">
         {(["chat", "oficina", "roles"] as View[]).map((v) => (
           <button
             key={v}
@@ -49,9 +55,9 @@ export function HudBar() {
             onClick={() => setView(v)}
             disabled={viewLocked(v, view, talkActive)}
             title={viewLocked(v, view, talkActive) ? "Termina la plática para cambiar de vista" : undefined}
-            className={`px-3 py-0.5 focus-visible:outline focus-visible:outline-1 focus-visible:-outline-offset-1 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-50 ${view === v ? "bg-surface-3 text-text-primary" : "text-text-secondary hover:text-text-primary"}`}
+            className={`px-btn ${view === v ? "px-btn-pri" : ""}`}
           >
-            {v === "chat" ? "Chat" : v === "oficina" ? "Oficina" : "Roles"}
+            {v === "chat" ? "CHAT" : v === "oficina" ? "OFICINA" : "ROLES"}
           </button>
         ))}
       </div>

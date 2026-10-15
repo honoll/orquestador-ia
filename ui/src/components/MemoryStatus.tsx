@@ -4,7 +4,7 @@ import { useWs } from "../context/WebSocketProvider";
 import { fetchMemoryStatus, type MemoryStatusData } from "../lib/memory-api";
 
 const btn =
-  "min-h-6 px-2 text-left underline decoration-dotted underline-offset-2 border border-edge rounded-sm hover:text-text-primary disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent";
+  "px-btn text-left";
 
 export function MemoryStatus() {
   const { lastEvent } = useWs();
@@ -36,13 +36,13 @@ export function MemoryStatus() {
   else line = `memoria: ${data.notes} notas · ${data.chunks} trozos · actualizado ${when}`;
 
   return (
-    <section aria-labelledby="memoria-titulo" className="space-y-1 border-t border-edge px-4 py-3 font-mono text-[11px] text-text-secondary">
-      <h2 id="memoria-titulo" className="break-words text-text-tertiary">memoria (Cerebro)</h2>
-      <p role="status" className={`break-words ${warn ? "text-accent" : "text-text-secondary"}`}>{line}</p>
+    <section aria-labelledby="memoria-titulo" className="space-y-1 border-t-[3px] border-edge px-4 py-3 text-xs text-text-secondary">
+      <h2 id="memoria-titulo" className="break-words font-pixel text-[11px] uppercase text-text-tertiary">memoria (Cerebro)</h2>
+      <p role="status" className={`break-words ${warn ? "border-2 border-warn px-1.5 text-warn" : "text-text-secondary"}`}>{line}</p>
       <button type="button" className={btn} disabled={busy} aria-busy={busy} onClick={() => reindex.mutate()}>
         {busy ? "indexando…" : "reindexar"}
       </button>
-      {reindex.isError && <p role="alert" className="break-words text-err">{(reindex.error as Error).message}</p>}
+      {reindex.isError && <p role="alert" className="break-words border-2 border-err px-1.5 text-err">{(reindex.error as Error).message}</p>}
     </section>
   );
 }
