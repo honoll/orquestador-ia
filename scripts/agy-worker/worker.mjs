@@ -37,12 +37,15 @@ function send(res, status, body) {
 function readBody(req) {
   return new Promise((resolve, reject) => {
     let size = 0;
+    let tooBig = false;
     const chunks = [];
     req.on("data", (c) => {
       size += c.length;
+      if (tooBig) return; // se descarta el resto para poder contestar 413
       if (size > MAX_BODY) {
+        tooBig = true;
+        chunks.length = 0;
         reject(Object.assign(new Error("cuerpo demasiado grande"), { status: 413 }));
-        req.destroy();
       } else chunks.push(c);
     });
     req.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
@@ -63,6 +66,7 @@ export function createWorker({ account, key, root = "C:\\estudio", agyPath = "C:
     try {
       body = parseRunBody(JSON.parse(await readBody(req)));
     } catch (err) {
+      if (err.status === 413) res.setHeader("Connection", "close");
       return send(res, err.status ?? 400, { error: err.status ? err.message : "JSON inválido" });
     }
     if (!body) return send(res, 400, { error: "cuerpo inválido: prompt, cwd, model?, readOnly?, timeoutSec? (≤ 1800)" });

@@ -48,7 +48,7 @@ export function resolveCwd(cwd, root) {
     return null;
   }
   const rel = path.relative(norm(realRoot), norm(real));
-  if (rel === "" || (!rel.startsWith("..") && !path.isAbsolute(rel))) return real;
+  if (rel === "" || (rel !== ".." && !rel.startsWith(".." + path.sep) && !path.isAbsolute(rel))) return real;
   return null;
 }
 

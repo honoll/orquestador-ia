@@ -49,6 +49,12 @@ describe("resolveCwd", () => {
     expect(resolveCwd(`${root}-hermano`, root)).toBeNull();
     expect(resolveCwd(undefined, root)).toBeNull();
   });
+  it("acepta una carpeta cuyo nombre empieza con .. y, en Windows, mayúsculas distintas", () => {
+    const dots = path.join(root, "..cache");
+    fs.mkdirSync(dots);
+    expect(resolveCwd(dots, root)).toBe(dots);
+    if (process.platform === "win32") expect(resolveCwd(inside.toUpperCase(), root)).not.toBeNull();
+  });
   it("rechaza un enlace (junction) que apunta fuera de la raíz", () => {
     const link = path.join(root, "enlace");
     fs.symlinkSync(outside, link, "junction");

@@ -83,7 +83,9 @@ El script:
 - escribe `C:\ProgramData\orquestador-ia\workers\agy2.json` con `{ account, port, windowsUser }`;
 - **imprime** el comando `schtasks` del paso 6. No lo corre.
 
-Si la llave ya existe se detiene; `-Force` genera una nueva. Node debe estar en `C:\Program Files\nodejs\node.exe`
+La carpeta `workers` queda sin herencia (Administradores, SYSTEM y tú); cada trabajador solo lee su propia
+llave. Si abriste la consola de administrador con **otra** cuenta, agrega `-Owner <tu usuario>` para que la llave
+sea legible por quien corre el orquestador. Si la llave ya existe se detiene; `-Force` genera una nueva. Node debe estar en `C:\Program Files\nodejs\node.exe`
 (o pasa `-NodePath`), en una ruta que `agy2` pueda leer.
 
 ## 6. Crear la tarea programada (arranca el trabajador aunque nadie haya iniciado sesión)
@@ -99,6 +101,9 @@ schtasks /Create /TN "orquestador-ia\agy-worker-agy2" /SC ONSTART /RU agy2 /RP *
 tareas** → `orquestador-ia` → `agy-worker-agy2` → Propiedades:
 - pestaña **Configuración**: desmarca "Detener la tarea si se ejecuta durante más de 3 días";
 - pestaña **Condiciones**: desmarca "Iniciar la tarea solo si el equipo está conectado a la corriente alterna".
+
+Si tras reiniciar el trabajador no responde (paso 7), prueba crear la tarea con `/SC ONLOGON` en lugar de
+`/SC ONSTART` (arranca cuando inicias sesión tú o cualquier usuario).
 
 Arráncala sin reiniciar:
 

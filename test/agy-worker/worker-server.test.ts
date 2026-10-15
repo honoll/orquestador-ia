@@ -98,8 +98,19 @@ describe("trabajador agy", () => {
     const evs = await events(first);
     expect(evs.at(-1)?.event).toBe("worker:done");
     expect(evs.at(-1)?.exitCode).not.toBe(0);
-    expect((await run({ prompt: "x", cwd: root })).status).toBe(200);
+    const again = await run({ prompt: "x", cwd: root });
+    expect(again.status).toBe(200);
+    await again.text(); // termina el paso antes del siguiente test
   }, 20_000);
+
+  it("timeoutSec mata agy y reporta timedOut", async () => {
+    const evs = await events(await run({ prompt: "LENTO", cwd: root, timeoutSec: 1 }));
+    expect(evs.at(-1)).toMatchObject({ event: "worker:done", timedOut: true });
+  }, 20_000);
+
+  it("cuerpo de más de 1 MB → 413", async () => {
+    expect((await run({ prompt: "x".repeat(1_100_000), cwd: root })).status).toBe(413);
+  });
 
   it("ruta desconocida con llave → 404", async () => {
     expect((await fetch(`${base}/otra`, { headers: auth })).status).toBe(404);
