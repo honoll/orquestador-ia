@@ -30,8 +30,17 @@ const WIN_ABS_RE = /\b[A-Za-z]:[\\/][^\s"'`<>|]*/g;
 
 // Quita la puntuación que el texto pega al final de una ruta ("(…\demo)." , "…\x.png;") y resuelve ".." para
 // que "…\demo\..\..\Windows" no pase como dentro del proyecto.
-const TRAILING_PUNCT_RE = /[).,;:!?\]}»"'’]+$/;
-const norm = (p: string) => path.win32.normalize(p.replace(TRAILING_PUNCT_RE, "").replace(/\//g, "\\")).replace(/\\+$/, "").toLowerCase();
+// Los puntos finales se quitan solo si no son un segmento "." o ".." completo (esos sí cuentan como ruta).
+function stripTrailingPunct(p: string): string {
+  for (let prev = ""; prev !== p;) {
+    prev = p;
+    p = p.replace(/[),;:!?\]}»"'’]+$/, "");
+    const last = p.split(/[\\/]/).pop() ?? "";
+    if (last !== "." && last !== "..") p = p.replace(/\.+$/, "");
+  }
+  return p;
+}
+const norm = (p: string) => path.win32.normalize(stripTrailingPunct(p).replace(/\//g, "\\")).replace(/\\+$/, "").toLowerCase();
 
 /**
  * Reglas conservadoras (no entienden negaciones). Sin JEV revisan prompt + dependencias; con JEV solo
