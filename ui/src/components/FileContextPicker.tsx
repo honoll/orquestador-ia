@@ -67,19 +67,19 @@ export function FileContextPicker({ projectId, onAttach, onClose }: FileContextP
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center">
-      <div className="absolute inset-0 bg-black/60" onClick={onClose} />
-      <div className="relative z-10 bg-surface-1 border border-edge rounded-2xl shadow-2xl w-full max-w-sm mx-4 mb-4 sm:mb-0 overflow-hidden animate-fade-in">
+      <div className="absolute inset-0 bg-black/70" onClick={onClose} />
+      <div className="px-panel relative z-10 w-full max-w-sm mx-4 mb-4 sm:mb-0 overflow-hidden animate-fade-in">
 
         {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-edge">
+        <div className="flex items-center justify-between px-4 py-3 border-b-[3px] border-edge">
           <div className="flex items-center gap-1.5 min-w-0">
             <span className="font-mono text-[10px] text-text-tertiary shrink-0">📎</span>
             {/* Breadcrumb */}
             <button
               onClick={() => setCurrentDir("")}
-              className="font-mono text-[10px] text-text-tertiary hover:text-accent transition-colors shrink-0"
+              className="font-pixel text-[11px] text-text-tertiary hover:text-accent transition-colors shrink-0"
             >
-              raíz
+              RAÍZ
             </button>
             {breadcrumbs.map((part, i) => (
               <span key={i} className="flex items-center gap-1">
@@ -93,18 +93,18 @@ export function FileContextPicker({ projectId, onAttach, onClose }: FileContextP
               </span>
             ))}
           </div>
-          <button onClick={onClose} className="font-mono text-[10px] text-text-tertiary hover:text-text-secondary ml-2 shrink-0">✕</button>
+          <button onClick={onClose} aria-label="Cerrar" className="px-btn px-2 ml-2 shrink-0">✕</button>
         </div>
 
         {/* File list */}
         <div className="max-h-64 overflow-y-auto">
           {loading ? (
             <div className="px-4 py-3">
-              <span className="font-mono text-[10px] text-text-tertiary">cargando...</span>
+              <span className="text-xs text-text-tertiary">cargando...</span>
             </div>
           ) : files.length === 0 ? (
             <div className="px-4 py-3">
-              <span className="font-mono text-[10px] text-text-tertiary">directorio vacío</span>
+              <span className="text-xs text-text-tertiary">directorio vacío</span>
             </div>
           ) : (
             files.map(f => (
@@ -112,8 +112,8 @@ export function FileContextPicker({ projectId, onAttach, onClose }: FileContextP
                 key={f.relativePath}
                 className={`flex items-center gap-2.5 px-4 py-2 cursor-pointer transition-colors ${
                   f.type === "file" && selected.has(f.relativePath)
-                    ? "bg-accent/10"
-                    : "hover:bg-surface-2/50"
+                    ? "bg-[#1b1638]"
+                    : "hover:bg-surface-2"
                 }`}
                 onClick={() => {
                   if (f.type === "dir") setCurrentDir(f.relativePath);
@@ -123,13 +123,13 @@ export function FileContextPicker({ projectId, onAttach, onClose }: FileContextP
                 {f.type === "dir" ? (
                   <span className="font-mono text-[11px] text-text-tertiary shrink-0">📁</span>
                 ) : (
-                  <div className={`h-3.5 w-3.5 rounded border flex items-center justify-center shrink-0 transition-colors ${
+                  <div className={`h-5 w-5 border-2 flex items-center justify-center shrink-0 transition-colors ${
                     selected.has(f.relativePath) ? "bg-accent border-accent" : "border-edge-strong"
                   }`}>
-                    {selected.has(f.relativePath) && <span className="text-surface-0 text-[8px]">✓</span>}
+                    {selected.has(f.relativePath) && <span className="text-surface-0 text-xs leading-none">✓</span>}
                   </div>
                 )}
-                <span className={`font-mono text-xs truncate ${
+                <span className={`font-mono text-[12px] truncate ${
                   f.type === "dir" ? "text-text-secondary" : "text-text-primary"
                 }`}>
                   {f.name}
@@ -143,16 +143,16 @@ export function FileContextPicker({ projectId, onAttach, onClose }: FileContextP
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-between px-4 py-3 border-t border-edge">
-          <span className="font-mono text-[10px] text-text-tertiary">
+        <div className="flex items-center justify-between px-4 py-3 border-t-[3px] border-edge">
+          <span className="text-xs text-text-tertiary">
             {selected.size > 0 ? `${selected.size} archivo${selected.size > 1 ? "s" : ""} seleccionado${selected.size > 1 ? "s" : ""}` : "selecciona archivos"}
           </span>
           <button
             onClick={handleAttach}
             disabled={selected.size === 0 || attaching}
-            className="font-mono text-[11px] text-accent hover:text-text-primary border border-accent/30 rounded-lg px-3 py-1.5 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+            className="px-btn px-btn-pri px-3 py-1"
           >
-            {attaching ? "cargando..." : "adjuntar"}
+            {attaching ? "CARGANDO..." : "ADJUNTAR"}
           </button>
         </div>
       </div>

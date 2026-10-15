@@ -53,18 +53,16 @@ export function MicButton({ onText, disabled = false }: { onText: (text: string)
           }
         }}
         onBlur={stop}
-        className={`min-h-6 min-w-6 shrink-0 select-none touch-none rounded-sm border px-1.5 font-mono text-sm leading-none transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-30 ${
-          recording ? "border-err text-err" : "border-edge text-text-tertiary hover:text-text-secondary"
-        }`}
+        className={`px-btn min-h-6 min-w-6 shrink-0 select-none touch-none px-1.5 ${recording ? "border-err! text-err!" : ""}`}
       >
         <span aria-hidden="true">{recording ? "●" : "🎤"}</span>
       </button>
-      <span role="status" aria-live="polite" className="min-w-0 max-w-[40vw] break-words font-mono text-[10px] text-text-secondary">
+      <span role="status" aria-live="polite" className="min-w-0 max-w-[40vw] break-words text-xs text-text-secondary">
         {recording && <span className="text-err">grabando {formatElapsed(elapsed)}</span>}
         {phase === "transcribing" && transcribingLabel(status?.whisper.state)}
       </span>
       {error && (
-        <span role="alert" className="min-w-0 max-w-[40vw] break-words font-mono text-[10px] text-err">{error}</span>
+        <span role="alert" className="min-w-0 max-w-[40vw] break-words text-xs text-err">{error}</span>
       )}
     </span>
   );

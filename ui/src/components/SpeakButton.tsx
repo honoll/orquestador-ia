@@ -19,11 +19,11 @@ export function SpeakButton({ id, text }: { id: string; text: string }) {
         aria-label={active ? "Detener la lectura en voz alta" : "Escuchar esta respuesta"}
         title={unavailable ?? (active ? "Detener la lectura" : "Escuchar esta respuesta")}
         onClick={() => toggleSpeech(id, text, false)}
-        className="min-h-6 rounded-sm border border-edge px-2 font-mono text-[10px] text-text-tertiary transition-colors hover:text-text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-30"
+        className={`px-btn min-h-6 px-2 ${active ? "px-btn-pri" : ""}`}
       >
         {active ? (speech.phase === "loading" ? "preparando… (detener)" : "detener") : "escuchar"}
       </button>
-      {error && <span role="alert" className="break-words font-mono text-[10px] text-err">{error}</span>}
+      {error && <span role="alert" className="break-words text-xs text-err">{error}</span>}
     </span>
   );
 }
@@ -42,9 +42,7 @@ export function AutoReadToggle() {
       disabled={unavailable !== null}
       title={unavailable ?? "Lee en voz alta un resumen corto cuando termina una respuesta o un plan"}
       onClick={() => setAutoRead(!on)}
-      className={`min-h-6 rounded-sm px-1.5 font-mono text-[10px] transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-30 ${
-        on ? "text-accent" : "text-text-tertiary hover:text-text-secondary"
-      }`}
+      className={`px-btn min-h-6 px-1.5 ${on ? "px-btn-pri" : ""}`}
     >
       leer en voz alta: {on ? "sí" : "no"}
     </button>

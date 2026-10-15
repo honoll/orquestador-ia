@@ -16,6 +16,8 @@ import { SpeakButton, AutoReadToggle } from "./SpeakButton";
 import { autoSpeak, stopSpeech } from "../lib/voice";
 import { appendTranscript } from "../lib/voice-utils";
 import { parseIntentFromSearch, stripIntentParams, type Intent } from "../lib/intent";
+import { avatarRoleFor } from "../lib/pixel";
+import { PixelAvatar } from "./PixelAvatar";
 
 interface SlashCommand {
   name: string;
@@ -608,14 +610,14 @@ export function Chat() {
     <div className="flex flex-col h-full bg-surface-0">
       {talking && <ConversationView projectId={selectedProjectId} useMemory={useMemory} onClose={handleTalkClosed} />}
       {toast && (
-        <div role="status" className="fixed bottom-4 left-1/2 z-[60] -translate-x-1/2 rounded-lg border border-edge-strong bg-surface-2 px-4 py-2 font-mono text-[11px] text-text-primary shadow-lg">
+        <div role="status" className="px-panel fixed bottom-4 left-1/2 z-[60] -translate-x-1/2 border-ok! px-4 py-2 text-sm text-text-primary">
           {toast}
         </div>
       )}
       {/* Header bar */}
-      <div className="flex items-center gap-4 px-6 h-12 border-b border-edge shrink-0">
+      <div className="flex items-center gap-3 px-6 h-12 border-b-[3px] border-edge shrink-0">
         <select
-          className="bg-transparent font-mono text-[11px] text-text-secondary appearance-none cursor-pointer hover:text-text-primary focus:outline-none transition-colors pr-4"
+          className="px-input appearance-none cursor-pointer text-xs text-text-secondary hover:text-text-primary"
           value={selectedAdapter}
           onChange={(e) => setAdapter(e.target.value)}
         >
@@ -629,11 +631,11 @@ export function Chat() {
           )}
         </select>
 
-        <span className="text-text-tertiary font-mono text-[10px]">/</span>
+        <span className="text-text-tertiary text-xs">/</span>
 
         {currentAdapter && (
           <select
-            className="bg-transparent font-mono text-[11px] text-text-secondary appearance-none cursor-pointer hover:text-text-primary focus:outline-none transition-colors pr-4"
+            className="px-input appearance-none cursor-pointer text-xs text-text-secondary hover:text-text-primary"
             value={resolvedModel}
             onChange={(e) => setModel(e.target.value)}
           >
@@ -650,9 +652,9 @@ export function Chat() {
           {messages.length > 0 && (
             <button
               onClick={handleNewChat}
-              className="font-mono text-[10px] text-text-tertiary hover:text-accent transition-colors"
+              className="px-btn"
             >
-              + nuevo chat
+              + NUEVO CHAT
             </button>
           )}
         </div>
@@ -664,8 +666,8 @@ export function Chat() {
           {messages.length === 0 && !activeRunId && (
             <div className="flex items-center justify-center min-h-[60vh]">
               <div className="text-center space-y-2">
-                <p className="font-mono text-sm text-text-secondary tracking-tight">
-                  orquestador
+                <p className="font-pixel text-[13px] text-text-secondary">
+                  ORQUESTADOR
                 </p>
                 <p className="text-xs text-text-tertiary">
                   {currentAdapter?.label ?? "CLI de IA"}
@@ -682,15 +684,18 @@ export function Chat() {
             >
               {msg.role === "user" ? (
                 <div className="flex justify-end">
-                  <div className="max-w-[75%] bg-surface-2 rounded-2xl rounded-br-sm px-4 py-3">
-                    <p className="text-sm text-text-primary whitespace-pre-wrap leading-relaxed">
+                  <div className="px-panel max-w-[76%] border-[#4c3d85]! bg-[#1d1733]! px-3 py-2">
+                    <p className="text-sm text-text-primary whitespace-pre-wrap">
                       {msg.content}
                     </p>
                   </div>
                 </div>
               ) : (
-                <div className="space-y-2">
-                  <div className="prose prose-invert prose-sm max-w-none text-text-primary/90 leading-relaxed [&_p]:my-2 [&_pre]:bg-surface-2 [&_pre]:border [&_pre]:border-edge [&_pre]:rounded-lg">
+                <div className="flex items-start gap-3">
+                  <PixelAvatar role={avatarRoleFor(msg.adapter, msg.model)} />
+                  <div className="px-panel min-w-0 flex-1 space-y-2 px-3 py-2">
+                  {msg.adapter && <div className="font-pixel text-[12px] text-accent">{msg.adapter.toUpperCase()}</div>}
+                  <div className="max-w-none text-text-primary/90 [&_p]:my-2 [&_pre]:my-2 [&_pre]:overflow-x-auto [&_pre]:border-[3px] [&_pre]:border-edge [&_pre]:bg-[#060608] [&_pre]:p-3 [&_pre]:text-[#d4d4d8] [&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_pre_code]:text-inherit">
                     <ReactMarkdown
                       remarkPlugins={[remarkGfm]}
                       components={{
@@ -705,12 +710,13 @@ export function Chat() {
                                 PreTag="div"
                                 customStyle={{
                                   margin: 0,
-                                  padding: "1rem",
-                                  borderRadius: "0.5rem",
-                                  fontSize: "0.75rem",
-                                  background: "#16161a",
-                                  border: "1px solid #ffffff0a",
+                                  padding: "0.75rem",
+                                  borderRadius: 0,
+                                  fontSize: "13px",
+                                  background: "#060608",
+                                  border: "3px solid var(--color-edge)",
                                 }}
+                                codeTagProps={{ style: { fontFamily: "var(--font-mono)", fontSize: "13px" } }}
                               >
                                 {code}
                               </SyntaxHighlighter>
@@ -718,7 +724,7 @@ export function Chat() {
                           }
                           return (
                             <code
-                              className="font-mono text-[0.8em] bg-surface-2 text-accent px-1.5 py-0.5 rounded"
+                              className="font-mono text-[13px] bg-[#060608] text-accent px-1 py-0.5"
                               {...props}
                             >
                               {children}
@@ -732,10 +738,7 @@ export function Chat() {
                   </div>
 
                   {/* Meta */}
-                  <div className="flex items-center gap-3 font-mono text-[10px] text-text-tertiary">
-                    {msg.adapter && (
-                      <span className="text-text-tertiary/60">{msg.adapter}</span>
-                    )}
+                  <div className="flex flex-wrap items-center gap-3 text-xs text-text-tertiary">
                     {msg.model && <span>{msg.model}</span>}
                     {(msg.costUsd ?? 0) > 0 && (
                       <span>${msg.costUsd!.toFixed(4)}</span>
@@ -760,6 +763,7 @@ export function Chat() {
                       <SpeakButton id={`msg:${msg.runId ?? i}`} text={msg.content} />
                     )}
                   </div>
+                  </div>
                 </div>
               )}
             </div>
@@ -768,9 +772,9 @@ export function Chat() {
           {/* agy file analysis indicator */}
           {analyzingFiles && (
             <div className="animate-fade-in flex items-center gap-2">
-              <span className="font-mono text-sm text-sky-400">◎</span>
-              <div className="h-1 w-1 rounded-full bg-sky-400 animate-pulse-dot" />
-              <span className="font-mono text-xs text-sky-400/80">
+              <span className="text-sm text-blue">◎</span>
+              <div className="h-1.5 w-1.5 bg-blue animate-pulse-dot" />
+              <span className="text-sm text-blue">
                 ◎ agy analizando archivos…
               </span>
             </div>
@@ -780,14 +784,14 @@ export function Chat() {
           {activeRunId && (
             <div className="animate-fade-in">
               {streamingContent ? (
-                <pre className="font-mono text-xs text-text-secondary whitespace-pre-wrap leading-relaxed">
+                <pre className="border-[3px] border-edge bg-[#060608] p-3 text-text-secondary whitespace-pre-wrap leading-relaxed">
                   {streamingContent}
                   <span className="streaming-cursor" />
                 </pre>
               ) : (
                 <div className="flex items-center gap-2">
-                  <div className="h-1 w-1 rounded-full bg-accent animate-pulse-dot" />
-                  <span className="font-mono text-xs text-text-tertiary">
+                  <div className="h-1.5 w-1.5 bg-accent animate-pulse-dot" />
+                  <span className="text-sm text-text-tertiary">
                     ejecutando
                   </span>
                 </div>
@@ -800,13 +804,13 @@ export function Chat() {
       </div>
 
       {/* Input */}
-      <div className="border-t border-edge px-6 py-4 shrink-0">
+      <div className="border-t-[3px] border-edge px-6 py-4 shrink-0">
         <div className="max-w-3xl mx-auto relative">
           {/* Command palette */}
           {showPalette && (
-            <div className="absolute bottom-full mb-2 left-0 right-0 bg-surface-2 border border-edge-strong rounded-xl overflow-hidden shadow-lg animate-fade-in z-50">
+            <div className="px-panel absolute bottom-full mb-2 left-0 right-0 overflow-hidden animate-fade-in z-50">
               <div className="px-3 pt-2 pb-1">
-                <span className="font-mono text-[9px] uppercase tracking-widest text-text-tertiary">comandos</span>
+                <span className="font-pixel text-[11px] text-text-tertiary">COMANDOS</span>
               </div>
               {paletteCommands.map((cmd, i) => (
                 <button
@@ -815,15 +819,15 @@ export function Chat() {
                   onMouseDown={(e) => { e.preventDefault(); selectPaletteCommand(cmd); }}
                   onMouseEnter={() => setPaletteIndex(i)}
                   className={`w-full flex items-center gap-3 px-3 py-2 text-left transition-colors ${
-                    i === paletteIndex ? "bg-surface-1" : "hover:bg-surface-1/50"
+                    i === paletteIndex ? "bg-surface-3" : "hover:bg-surface-2"
                   }`}
                 >
                   <span className="font-mono text-[11px] text-text-tertiary w-4 shrink-0">{cmd.icon}</span>
-                  <span className="font-mono text-xs text-accent shrink-0">{cmd.name}</span>
+                  <span className="font-mono text-[12px] text-accent shrink-0">{cmd.name}</span>
                   {cmd.args && (
-                    <span className="font-mono text-[10px] text-text-tertiary shrink-0">{cmd.args}</span>
+                    <span className="font-mono text-[11px] text-text-tertiary shrink-0">{cmd.args}</span>
                   )}
-                  <span className="font-mono text-[10px] text-text-tertiary ml-auto truncate pl-4">
+                  <span className="text-xs text-text-tertiary ml-auto truncate pl-4">
                     {cmd.description}
                   </span>
                 </button>
@@ -832,10 +836,10 @@ export function Chat() {
           )}
 
           <form onSubmit={handleSubmit}>
-            <div className="flex items-end gap-3 bg-surface-1 rounded-xl border border-edge-strong px-4 py-3 focus-within:border-accent/30 transition-colors">
+            <div className="flex items-end gap-2">
               <textarea
                 ref={textareaRef}
-                className="flex-1 resize-none bg-transparent text-sm text-text-primary placeholder-text-tertiary focus:outline-none leading-relaxed"
+                className="px-input flex-1 resize-none text-sm"
                 rows={1}
                 placeholder="prompt..."
                 value={input}
@@ -895,12 +899,12 @@ export function Chat() {
                 disabled={!!activeRunId || analyzingFiles || talking}
                 aria-label="Platicar con el asistente por voz"
                 title="Plática por voz sin manos"
-                className="shrink-0 min-h-6 rounded-sm border border-edge px-2 font-mono text-[10px] text-text-secondary transition-colors hover:text-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-30"
+                className="px-btn px-btn-blue shrink-0"
               >
-                Platicar
+                PLATICAR
               </button>
               <label
-                className="shrink-0 flex cursor-pointer items-center gap-1 font-mono text-[10px] text-text-secondary"
+                className="shrink-0 flex cursor-pointer items-center gap-1 text-xs text-text-secondary"
                 title="Usa notas de Cerebro (Ollama, solo CPU) en /plan y en «Platicar»"
               >
                 <input type="checkbox" checked={useMemory} onChange={(e) => setUseMemory(e.target.checked)} className="accent-accent" />
@@ -912,11 +916,9 @@ export function Chat() {
                   type="button"
                   onClick={() => setShowFilePicker(true)}
                   title="Adjuntar archivos como contexto"
-                  className={`shrink-0 font-mono text-sm pb-0.5 transition-colors ${
-                    attachedFiles.length > 0 ? "text-accent" : "text-text-tertiary hover:text-text-secondary"
-                  }`}
+                  className={`px-btn shrink-0 ${attachedFiles.length > 0 ? "border-accent! text-accent!" : ""}`}
                 >
-                  📎{attachedFiles.length > 0 && <span className="text-[10px] ml-0.5">{attachedFiles.length}</span>}
+                  📎{attachedFiles.length > 0 && <span>{attachedFiles.length}</span>}
                 </button>
               )}
               {activeRunId || activeShellJobId ? (
@@ -925,21 +927,21 @@ export function Chat() {
                   onClick={activeShellJobId
                     ? () => { fetch(`/api/shell/${activeShellJobId}/kill`, { method: "POST" }); setActiveShellJobId(null); }
                     : handleStop}
-                  className="shrink-0 font-mono text-xs text-err hover:text-text-primary transition-colors pb-0.5"
+                  className="px-btn shrink-0 border-err! text-err!"
                 >
-                  detener
+                  DETENER
                 </button>
               ) : analyzingFiles ? (
-                <span className="shrink-0 font-mono text-[10px] text-sky-400/70 pb-0.5">
+                <span className="shrink-0 text-xs text-blue">
                   ◎ agy…
                 </span>
               ) : (
                 <button
                   type="submit"
                   disabled={!input.trim() || sendMutation.isPending}
-                  className="shrink-0 font-mono text-xs text-text-tertiary hover:text-accent disabled:opacity-20 disabled:cursor-default transition-colors pb-0.5"
+                  className="px-btn px-btn-pri shrink-0"
                 >
-                  enviar
+                  ENVIAR
                 </button>
               )}
             </div>
@@ -949,12 +951,12 @@ export function Chat() {
           {attachedFiles.length > 0 && (
             <div className="flex flex-wrap gap-1.5 mt-2">
               {attachedFiles.map(f => (
-                <div key={f.path} className="flex items-center gap-1 bg-surface-2 border border-edge rounded-lg px-2 py-0.5">
+                <div key={f.path} className="flex items-center gap-1 bg-surface-2 border-2 border-edge px-2 py-0.5">
                   <span className="font-mono text-[10px] text-text-secondary truncate max-w-[160px]">{f.path}</span>
-                  {f.truncated && <span className="font-mono text-[9px] text-text-tertiary">…</span>}
+                  {f.truncated && <span className="font-mono text-[10px] text-text-tertiary">…</span>}
                   <button
                     onClick={() => setAttachedFiles(prev => prev.filter(x => x.path !== f.path))}
-                    className="font-mono text-[10px] text-text-tertiary hover:text-err transition-colors ml-0.5"
+                    className="font-mono text-[12px] text-text-tertiary hover:text-err transition-colors ml-0.5"
                   >×</button>
                 </div>
               ))}
