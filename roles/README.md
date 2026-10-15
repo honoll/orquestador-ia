@@ -29,7 +29,8 @@ presupuestoTokens: 50000
 - `herramientasPermitidas`: lista informativa de herramientas de agy, en una sola línea `[a, b]`.
 - `presupuestoTokens` (opcional): entero positivo.
 - Las 6 secciones son obligatorias y van en ese orden. "Estado final" debe pedir como última línea
-  `<<<ESTADO terminado>>>`, `<<<ESTADO bloqueado {"detalle":"…"}>>>` o `<<<ESTADO necesita {"detalle":"…"}>>>`.
+  `<<<ESTADO terminado>>>`, `<<<ESTADO bloqueado {"detalle":"motivo concreto"}>>>` o
+  `<<<ESTADO necesita {"detalle":"qué necesitas"}>>>`.
 
 ## Agregar un rol
 

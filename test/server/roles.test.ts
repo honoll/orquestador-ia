@@ -65,7 +65,8 @@ describe("roles incluidos", () => {
     expect(roles.map((r) => r.id).sort()).toEqual(Object.keys(esperado).sort());
     for (const r of roles) {
       expect(r).toMatchObject(esperado[r.id as keyof typeof esperado]);
-      expect(r.body).toContain("<<<ESTADO terminado>>>");
+      for (const s of ["<<<ESTADO terminado>>>", "<<<ESTADO bloqueado {\"detalle\":", "<<<ESTADO necesita {\"detalle\":"]) expect(r.body).toContain(s);
+      expect(r.body).not.toContain("\"detalle\":\"…\"");
     }
   });
 
