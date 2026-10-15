@@ -9,6 +9,7 @@ import { QueuePanel } from "./QueuePanel";
 import { PlansPanel } from "./PlansPanel";
 import { LogPanel } from "./LogPanel";
 import { WorkersPanel } from "./WorkersPanel";
+import { OfficeWorld } from "./OfficeWorld";
 
 import type { OfficeState } from "../../lib/office-state";
 
@@ -60,6 +61,8 @@ export function OfficeView() {
         </p>
       )}
       <AgentCards agents={agents} />
+      {/* Provisional (tarea 4): el selector "mundo · escritorios" llega en la tarea 5. */}
+      <div className="px-3 pb-2.5"><OfficeWorld state={data} onOpenPlan={openPlan} onNear={() => {}} /></div>
       <div className="grid gap-2.5 px-3 pb-3 @min-[1060px]:grid-cols-[minmax(0,1fr)_300px]">
         <OfficeScene agents={agents} queue={queue} />
         <div className="grid content-start gap-2.5 @min-[700px]:grid-cols-3 @min-[1060px]:grid-cols-1">
