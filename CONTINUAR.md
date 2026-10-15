@@ -1,5 +1,22 @@
 # Orquestador-IA — Continuación y Estado
 
+## F11 — Roles de agentes · completada 2026-10-15
+
+**Rama:** `f11-roles` (encima de `f10-agy-cuentas`). Orden de merge: F7 → F8 → F10 → F11 → F12 → F9, solo cuando Alejandro lo diga. Detalle técnico en `CLAUDE.md`, sección "Roles (F11)".
+
+- Claude (Max) es el Jefe: planea y une; los agy hacen los pasos, cada uno con un **rol** (DEV, QA, IMAGEN, INVESTIGADOR, LECTOR, REDACTOR) y su prompt especializado en `roles/<id>.md`
+- Cada agente cierra con `<<<ESTADO terminado|bloqueado|necesita>>>`; lo que no termina falla con su detalle
+- IMAGEN guarda en `<proyecto>/.orquestador/salidas/<plan>/` (fuera de git); el plan muestra "Archivos del plan" con miniaturas
+- Vista **Roles** (junto a Chat | Oficina) para editar, restaurar y crear roles; etiqueta de rol en cada paso; Oficina dice "ROL · cuenta"
+- Verificado en vivo (2026-10-15, proyecto de prueba `C:\estudio\f11-demo`, se puede borrar): LECTOR en agy2, DEV en agy3 (slugify + 4 pruebas), IMAGEN en agy3 (logo PNG visible en el plan), QA en agy4 (4/4, PASA), síntesis del Jefe. 938 tests
+- Hallazgo: agy en solo lectura **no puede correr ningún comando**; por eso QA ahora "escribe" (su texto le prohíbe editar y la guardia lo revisa)
+
+Siguiente: **F12 (Oficina jugable)** — escribir el plan e implementarlo; después F9.
+
+Pendientes (tuyos), además de los de F10:
+- **Reiniciar las 3 tareas de trabajadores** (`schtasks /End` + `/Run`, como admin) para que tomen el `worker.mjs` nuevo (cancelar por id de corrida)
+- Aprobar los merges F7 → F8 → F10 → F11
+
 ## F10 — Cuentas de agy en paralelo · completada 2026-10-15
 
 **Rama:** `f10-agy-cuentas` (encima de `f8-oficina`). Orden de merge: F7 → F8 → F10 → F11 → F9, solo cuando Alejandro lo diga. Detalle técnico en `CLAUDE.md`, sección "Agy workers (F10)"; guía de alta en `docs/agy-cuentas-windows.md`.
