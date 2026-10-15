@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="es-MX"><head><meta charset="utf-8"><title>F12 · Oficina jugable (prototipo)</title>
+<link href="https://fonts.googleapis.com/css2?family=Silkscreen:wght@400;700&family=VT323&display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#050506;color:#e4e4e7;font:20px/1.15 "VT323",monospace;padding:12px;display:flex;flex-direction:column;align-items:center}
+h1{font:14px "Silkscreen";letter-spacing:.08em;margin:0 0 4px}.sub{color:#a1a1aa;margin:0 0 8px}
+#wrap{position:relative}canvas{image-rendering:pixelated;border:3px solid #26262e;display:block}
+#hud{position:absolute;left:8px;top:8px;font:11px "Silkscreen";background:#000c;padding:3px 8px;border:2px solid #3a3a45}
+#box{position:absolute;left:12px;right:12px;bottom:12px;background:#0b0b10;border:4px solid #e4e4e7;box-shadow:0 0 0 4px #000;padding:10px 14px;display:none;font-size:22px}
+#box b{font:12px "Silkscreen";display:block;margin-bottom:4px}
+#menu{position:absolute;right:20px;top:20px;background:#0b0b10;border:4px solid #e4e4e7;box-shadow:0 0 0 4px #000;padding:8px 16px;display:none;font-size:22px}
+.k{color:#a1a1aa;margin-top:8px}
+</style></head><body>
+<h1>F12 · OFICINA JUGABLE — PROTOTIPO</h1>
+<p class="sub">Haz clic donde quieras ir (o usa flechas/WASD). Acércate a un agente para ver qué hace. Entra al elevador (E) para cambiar de piso.</p>
+<div id="wrap"><canvas id="c" width="320" height="208"></canvas><div id="hud"></div><div id="box"></div><div id="menu"></div></div>
+<p class="k">Datos de ejemplo. En la versión real, los cuadros salen del estado en vivo del orquestador (rol, tarea, modelo, tokens, avance).</p>
+<script>
+const S=3,T=16,W=20,H=13;const cv=document.getElementById("c");cv.style.width=320*S+"px";cv.style.height=208*S+"px";const x=cv.getContext("2d");
+const box=document.getElementById("box"),menu=document.getElementById("menu"),hud=document.getElementById("hud");
+// mapas: # pared, . piso, D escritorio, E elevador, P planta, B estante, C cafetera, S sillon, L laboratorio, A caballete
+const FLOORS={
+ 1:{name:"PISO 1 · DIRECCIÓN Y RECEPCIÓN",floor:"#1b1b22",map:[
+"####################",
+"#..D....D......P...#",
+"#..................#",
+"#..................#",
+"#P........C...S S..#",
+"#..................#",
+"#####....####......#",
+"#..........#.......#",
+"#..D....D..#...B...#",
+"#..........#.......#",
+"#..........#.......#",
+"#.........E#......P#",
+"####################"],agents:[
+ {x:3,y:2,c:"#a78bfa",acc:"sombrero",name:"JEFE · Opus 5.5",on:true,txt:"Estoy juntando los resultados del plan «Revisar el README». Ya llegaron 3 de 4 partes. Síntesis en curso."},
+ {x:8,y:2,c:"#fbbf24",acc:"gorra",name:"GUARDIA · JEV",on:false,txt:"Sin pendientes. El último paso que revisé (escribir CONTINUAR.md) lo aprobaste a las 12:31."},
+ {x:14,y:5,c:"#a1a1aa",acc:"antena",name:"agy4 · libre",on:false,txt:"Estoy en la sala de descanso. Cuota de mi bolsa: 22% usado en 5 h. Listo para el siguiente paso."},
+ {x:3,y:9,c:"#fb923c",acc:"diadema",name:"RECEPCIÓN · voz",on:false,txt:"Platicar está apagado. Whisper descargado de la GPU hace 6 min."},
+ {x:8,y:9,c:"#f472b6",acc:"libros",name:"BIBLIO · memoria",on:false,txt:"441 notas indexadas. Solo trabajo en CPU y cuando pides «usar memoria»."}]},
+ 2:{name:"PISO 2 · DESARROLLO Y PRUEBAS",floor:"#16202a",map:[
+"####################",
+"#.D..D..D..#..L.L..#",
+"#..........#.......#",
+"#..........#.......#",
+"#.D..D..D..#.......#",
+"#..........#...P...#",
+"#..........###..####",
+"#..................#",
+"#P.................#",
+"#..................#",
+"#..................#",
+"#.........E.......P#",
+"####################"],agents:[
+ {x:2,y:2,c:"#60a5fa",acc:"antena",name:"DEV · agy3",on:true,txt:"Paso s3 de «Agregar modo oscuro»: editando ui/src/index.css y HudBar.tsx con Claude Sonnet 4.6. 6.2k tokens. Faltan las pruebas."},
+ {x:5,y:2,c:"#60a5fa",acc:"antena",name:"DEV · tu cuenta",on:true,txt:"Paso s2: agregando el interruptor de tema en AppStateContext. Claude Opus 4.6 (difícil). 11.4k tokens."},
+ {x:14,y:2,c:"#34d399",acc:"lentes",name:"QA · agy2",on:false,txt:"Esperando a que terminen s2 y s3 para correr npm test y revisar la página en el navegador."}]},
+ 3:{name:"PISO 3 · ESTUDIO Y BIBLIOTECA",floor:"#221a1a",map:[
+"####################",
+"#..A...A...#BBBBBB.#",
+"#..........#.......#",
+"#..........#..D..D.#",
+"#..........#.......#",
+"#P.........#.......#",
+"#####..#####...P...#",
+"#..................#",
+"#..D....D..........#",
+"#..................#",
+"#..................#",
+"#.........E.......P#",
+"####################"],agents:[
+ {x:3,y:2,c:"#fb923c",acc:"antena",name:"IMAGEN · agy2",on:true,txt:"Generando el ícono de la app (generate_image). Se guarda en .orquestador/salidas/plan-42/."},
+ {x:15,y:4,c:"#f472b6",acc:"antena",name:"INVESTIGADOR · agy4",on:false,txt:"Libre. Mi último trabajo: comparar motores de juego para la Oficina (3 fuentes)."},
+ {x:3,y:9,c:"#fbbf24",acc:"antena",name:"LECTOR · agy3",on:false,txt:"Libre. Último resumen: CONTINUAR.md en 3 viñetas (gemini flash low, 2.1k tokens)."}]}};
+let floor=1,px_=10,py_=10,dir=0,step=0,menuOpen=false,t=0;
+function sh(h,f){const n=parseInt(h.slice(1),16);let r=n>>16,g=n>>8&255,b=n&255;const m=v=>Math.max(0,Math.min(255,Math.round(f>1?v+(255-v)*(f-1):v*f)));return`rgb(${m(r)},${m(g)},${m(b)})`}
+function r(a,b,w,h,c){x.fillStyle=c;x.fillRect(a,b,w,h)}
+function tile(ch,X,Y){const a=X*T,b=Y*T,F=FLOORS[floor];
+ r(a,b,T,T,F.floor);r(a,b,T,1,"#ffffff08");r(a,b,1,T,"#ffffff08");
+ if(ch==="#"){r(a,b,T,T,"#2a2a33");r(a,b,T,4,"#3a3a45");r(a,b+12,T,4,"#1f1f26")}
+ if(ch==="D"){r(a,b+6,T,8,"#5b4636");r(a,b+6,T,2,"#7a5c45");r(a+3,b+1,9,6,"#09090b");r(a+4,b+2,7,4,"#1e293b")}
+ if(ch==="E"){r(a,b,T,T,"#52525b");r(a+1,b+1,6,14,"#a1a1aa");r(a+9,b+1,6,14,"#a1a1aa");r(a+7,b+1,2,14,"#27272a");r(a+6,b-0,4,2,(t%20<10)?"#fbbf24":"#78350f")}
+ if(ch==="P"){r(a+5,b+10,6,5,"#3f3f46");r(a+7,b+4,2,6,"#15803d");r(a+3,b+3,4,4,"#16a34a");r(a+9,b+2,4,4,"#16a34a");r(a+6,b,4,4,"#22c55e")}
+ if(ch==="B"){r(a,b,T,T,"#3b2a1a");for(let i=0;i<3;i++){r(a+1,b+1+i*5,T-2,1,"#2a1d12");for(let j=0;j<4;j++)r(a+2+j*3,b+2+i*5,2,3,["#7c3aed","#16a34a","#ca8a04","#dc2626"][(i+j)%4])}}
+ if(ch==="C"){r(a+4,b+2,8,12,"#27272a");r(a+6,b+4,4,3,"#dc2626")}
+ if(ch==="S"){r(a,b+6,T,8,"#9a3412");r(a,b+4,T,3,"#7c2d12")}
+ if(ch==="L"){r(a+1,b+2,14,9,"#09090b");r(a+2,b+3,12,7,"#14532d");r(a+3,b+5,(t%8)+2,1,"#4ade80");r(a,b+12,T,3,"#26262e")}
+ if(ch==="A"){r(a+7,b,2,T,"#7c5a33");r(a+2,b+2,12,8,"#f5f5f4");r(a+4,b+4,3,3,"#fb923c");r(a+8,b+5,4,3,"#60a5fa")}}
+function person(X,Y,c,acc,on,d,st,player){const a=X*T,b=Y*T,bob=(on&&t%8<4)||(player&&st)?-1:0,o="#09090b";
+ r(a+4,b+13,8,2,"#0007");r(a+3,b+1+bob,10,9,o);r(a+4,b+2+bob,8,7,c);r(a+4,b+2+bob,8,2,sh(c,1.35));
+ if(d!==1){r(a+5,b+5+bob,1,2,on||player?"#fff":"#d4d4d8");r(a+10,b+5+bob,1,2,on||player?"#fff":"#d4d4d8")}
+ r(a+4,b+10,8,3,sh(c,.62));r(a+4+(st&&player?1:0),b+13,2,2,o);r(a+10-(st&&player?1:0),b+13,2,2,o);
+ if(acc==="sombrero"){r(a+3,b+1+bob,10,1,o);r(a+5,b-1+bob,6,2,"#991b1b")}
+ if(acc==="gorra"){r(a+4,b+bob,8,2,"#1e3a8a")}
+ if(acc==="antena"){r(a+8,b-2+bob,1,3,"#a1a1aa");r(a+7,b-3+bob,3,1,on?"#fde047":"#71717a")}
+ if(acc==="lentes"){r(a+4,b+5+bob,3,1,"#e4e4e7");r(a+9,b+5+bob,3,1,"#e4e4e7")}
+ if(acc==="libros"){r(a+12,b+8,3,4,"#7c3aed")}
+ if(acc==="diadema"){r(a+3,b+1+bob,10,1,"#3f3f46");r(a+2,b+4+bob,2,3,"#52525b")}
+ if(on&&!player){r(a+12,b-4,4,4,"#fbbf24");r(a+13,b-3,2,2,"#09090b")}}
+function solid(X,Y){const F=FLOORS[floor];const ch=F.map[Y]?.[X];if(!ch||"#DPBCSLA".includes(ch))return true;return F.agents.some(a=>a.x===X&&a.y===Y)}
+function near(){return FLOORS[floor].agents.find(a=>Math.max(Math.abs(a.x-px_),Math.abs(a.y-py_))===1)}
+function draw(){t++;const F=FLOORS[floor];for(let Y=0;Y<H;Y++)for(let X=0;X<W;X++)tile(F.map[Y][X],X,Y);
+ F.agents.forEach(a=>person(a.x,a.y,a.on?a.c:"#6b6b76",a.acc,a.on,0,0,false));person(px_,py_,"#e11d48","",false,dir,step,true);
+ hud.textContent=F.name;const n=near();
+ if(n&&!menuOpen){box.style.display="block";box.innerHTML=`<b style="color:${n.c}">${n.name}${n.on?" · TRABAJANDO":" · EN REPOSO"}</b>${n.txt}`}else box.style.display="none";}
+setInterval(draw,80);
+// clic para caminar: BFS hasta la casilla (o a una vecina libre si es un agente/mueble)
+let path=[];
+function bfs(tx,ty){const goals=new Set();const ok=(X,Y)=>X>=0&&Y>=0&&X<W&&Y<H&&!solid(X,Y);
+ if(ok(tx,ty))goals.add(tx+","+ty);else[[1,0],[-1,0],[0,1],[0,-1]].forEach(([a,b])=>{if(ok(tx+a,ty+b))goals.add((tx+a)+","+(ty+b))});
+ if(!goals.size)return[];const prev=new Map([[px_+","+py_,null]]);const q=[[px_,py_]];
+ while(q.length){const[X,Y]=q.shift();if(goals.has(X+","+Y)){const out=[];let k=X+","+Y;while(k&&k!==px_+","+py_){out.unshift(k.split(",").map(Number));k=prev.get(k)}return out}
+  for(const[a,b]of[[1,0],[-1,0],[0,1],[0,-1]]){const nk=(X+a)+","+(Y+b);if(!prev.has(nk)&&ok(X+a,Y+b)){prev.set(nk,X+","+Y);q.push([X+a,Y+b])}}}return[]}
+cv.addEventListener("click",e=>{if(menuOpen)return;const rc=cv.getBoundingClientRect();const X=Math.floor((e.clientX-rc.left)/rc.width*W),Y=Math.floor((e.clientY-rc.top)/rc.height*H);path=bfs(X,Y)});
+cv.style.cursor="pointer";
+setInterval(()=>{if(menuOpen||!path.length)return;const[nx,ny]=path.shift();dir=ny<py_?1:ny>py_?0:nx<px_?2:3;step^=1;if(solid(nx,ny)){path=[];return}px_=nx;py_=ny;
+ if(FLOORS[floor].map[py_][px_]==="E"){path=[];openElevator()}},140);
+function openElevator(){menuOpen=true;menu.style.display="block";menu.innerHTML="<b style='font:12px Silkscreen'>ELEVADOR</b>"+[1,2,3].map(n=>`<div class='fl' data-f='${n}' style='cursor:pointer'>${n} · ${FLOORS[n].name.split("· ")[1]}</div>`).join("")+"<div class='fl' data-f='0' style='cursor:pointer;color:#a1a1aa'>salir</div>";
+ menu.querySelectorAll(".fl").forEach(d=>d.onclick=()=>{const f=+d.dataset.f;if(f)floor=f;px_=10;py_=f?10:10;menuOpen=false;menu.style.display="none"})}
+addEventListener("keydown",e=>{const k=e.key.toLowerCase();
+ if(menuOpen){if(["1","2","3"].includes(k)){floor=+k;px_=10;py_=10;menuOpen=false;menu.style.display="none"}if(k==="escape"){menuOpen=false;menu.style.display="none"}return}
+ const mv={arrowup:[0,-1,1],w:[0,-1,1],arrowdown:[0,1,0],s:[0,1,0],arrowleft:[-1,0,2],a:[-1,0,2],arrowright:[1,0,3],d:[1,0,3]}[k];
+ if(mv){e.preventDefault();dir=mv[2];step^=1;const nx=px_+mv[0],ny=py_+mv[1];if(!solid(nx,ny)){px_=nx;py_=ny}
+  if(FLOORS[floor].map[py_][px_]==="E")openElevator()}
+});
+</script></body></html>
