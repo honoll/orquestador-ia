@@ -89,3 +89,18 @@ describe("talkLabel", () => {
     expect(talkLabel("speaking", true)).toBe("HABLANDO");
   });
 });
+
+import { groupByPool, seatLabel } from "../../ui/src/lib/office-view";
+describe("groupByPool / seatLabel", () => {
+  const a = (id: string, o = {}) => ({ id, label: id, active: false, pool: null as string | null, quotaBlockedUntil: null as string | null, poolShortPct: null as number | null, ...o });
+  it("una columna por bolsa; sin pool usa el id; bloqueada si alguna cuenta lo está", () => {
+    const now = 1000;
+    const pools = groupByPool([
+      a("local", { active: true, poolShortPct: 12 }),
+      a("agy2", { pool: "p" }), a("agy3", { pool: "p", quotaBlockedUntil: new Date(now + 5000).toISOString(), poolShortPct: 40 }),
+      a("agy4", { quotaBlockedUntil: new Date(now - 5000).toISOString() }),
+    ], now);
+    expect(pools.map((p) => [p.key, p.accounts.length, p.pct, p.blocked])).toEqual([["local", 1, 12, false], ["p", 2, 40, true], ["agy4", 1, null, false]]);
+  });
+  it("etiqueta de asiento", () => expect(seatLabel("agy3")).toBe("AGY · agy3"));
+});

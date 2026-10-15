@@ -1,5 +1,25 @@
 # Orquestador-IA — Continuación y Estado
 
+## F10 — Cuentas de agy en paralelo · completada 2026-10-15
+
+**Rama:** `f10-agy-cuentas` (encima de `f8-oficina`). Orden de merge: F7 → F8 → F10 → F11 → F9, solo cuando Alejandro lo diga. Detalle técnico en `CLAUDE.md`, sección "Agy workers (F10)"; guía de alta en `docs/agy-cuentas-windows.md`.
+
+- Un trabajador (`scripts/agy-worker/worker.mjs`) por usuario de Windows (agy guarda su login en Credential Manager `gemini:antigravity`, uno por usuario); agy compartido en `C:\tools\agy`. Lo instaló **Alejandro** (agy2–agy4, grupo `agy-trabajadores`, tareas programadas sin sesión)
+- Bolsas de cuota, reparto por más cuota libre, reintento en otra bolsa, pausa solo si todas están bloqueadas; `max_parallel` ≤ trabajadores (≤ 16)
+- Planner: agy es el principal para código (opus-4-6-thinking / sonnet-4-6 / flash para lectura), Codex fuera, lectores siempre `read_only`
+- Oficina: un escritorio por cuenta, rack por bolsa y panel "Trabajadores de agy"
+- Verificado en vivo (2026-10-15): plan con 4 pasos simultáneos en las 4 cuentas, 5.º en agy2, síntesis de Opus, completado en ~40 s. 864 tests
+
+Siguiente: **F11 (roles)**, su spec y plan ya están en `main`; después F9.
+
+Pendientes (tuyos):
+- **Prueba de reinicio:** que las tareas programadas (ONSTART) levanten los trabajadores solos tras reiniciar Windows
+- Probar la instalación de F7 (app de escritorio)
+- Probar **Platicar con micrófono real** dentro de la Oficina
+- **Llave de JEV (`TYPESAFE_API_KEY`)** sigue pendiente
+- Sin verificar en vivo: un error de cuota que pase el paso a otra bolsa, y si el plan familiar comparte cuota entre cuentas
+- Riesgo aceptado por Alejandro: usar varias cuentas de Google con automatización puede violar los ToS; los cambiadores de credenciales se rechazaron
+
 ## F8 — Vista "Oficina" · completada 2026-10-15
 
 **Rama:** `f8-oficina` (encima de `f7-app-escritorio`). Orden de merge: F7 → F8 → F9, solo cuando Alejandro lo diga. Detalle técnico en `CLAUDE.md`, sección "Office view (F8)".

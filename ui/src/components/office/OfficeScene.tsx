@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ROLES, deskLabel } from "../../lib/office";
-import { clock, sceneScale, signLine } from "../../lib/office-view";
+import { clock, sceneScale, seatLabel, signLine } from "../../lib/office-view";
 import { AgentSprite } from "./AgentSprite";
 import { AccountRack } from "./AccountRack";
 import { OfficeTalkPanel } from "./OfficeTalkPanel";
@@ -34,14 +34,18 @@ function Plant({ className }: { className: string }) {
 function Desks({ agent }: { agent: AgentState }) {
   const role = ROLES[agent.id];
   const n = Math.max(1, Math.min(4, agent.desks));
-  return Array.from({ length: n }, (_, i) => (
-    <div key={i} className="w-[112px] text-center">
-      <AgentSprite role={agent.id} working={agent.working} />
-      <div className="mt-1 text-[11px] font-bold tracking-[.14em]" style={{ color: agent.working ? role.color : IDLE }}>
-        {i === 0 ? deskLabel(role.label, n) : role.label}
+  const total = agent.seats?.length ?? 0;
+  return Array.from({ length: n }, (_, i) => {
+    const seat = agent.seats?.[i];
+    const working = seat ? seat.working : agent.working;
+    const label = seat ? seatLabel(seat.account) + (i === 3 && total > 4 ? ` ×${total}` : "") : i === 0 ? deskLabel(role.label, n) : role.label;
+    return (
+      <div key={i} className="w-[112px] text-center">
+        <AgentSprite role={agent.id} working={working} />
+        <div className="mt-1 truncate text-[11px] font-bold tracking-[.14em]" style={{ color: working ? role.color : IDLE }} title={label}>{label}</div>
       </div>
-    </div>
-  ));
+    );
+  });
 }
 
 export function OfficeScene({ agents, queue }: { agents: AgentState[]; queue: QueueItem[] }) {

@@ -104,6 +104,22 @@ describe("createPlan", () => {
   });
 });
 
+describe("createPlan: lectores read_only (F10)", () => {
+  it("writes=0 → read_only 1; writes=1 → read_only 0", async () => {
+    h.generatePlan.mockResolvedValueOnce({
+      steps: [
+        { stepIndex: 0, key: "s1", dependsOn: [], writes: false, estimatedTokens: 1000, description: "lee", adapter: "agy", model: "gemini-3.8-flash-low", reason: "r", prompt: "p" },
+        { stepIndex: 1, key: "s2", dependsOn: ["s1"], writes: true, estimatedTokens: 1000, description: "escribe", adapter: "agy", model: "claude-sonnet-4-6", reason: "r", prompt: "p" },
+      ] as any,
+      estimatedTokens: 2000,
+    });
+    const { id } = await createPlan({ description: "lee y escribe" });
+    await waitFor(async () => (await db.select().from(schema.plans).where(eq(schema.plans.id, id)).then((r) => r[0]))?.status === "pending");
+    const steps = (await db.select().from(schema.planSteps).where(eq(schema.planSteps.planId, id))).sort((a, b) => a.stepIndex - b.stepIndex);
+    expect(steps.map((s) => [s.writes, s.readOnly])).toEqual([[0, 1], [1, 0]]);
+  });
+});
+
 describe("startPlanIfAllowed con requireJev (I6: voz sin JEV)", () => {
   it("tier por fallback o sin fuente: needs-jev-approval sin ejecutar", async () => {
     const a = await mk({ tier: "normal", tierSource: "fallback" });

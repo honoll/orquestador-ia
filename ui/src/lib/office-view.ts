@@ -77,3 +77,23 @@ const TALK_PHASE: Record<string, string> = {
 export function talkLabel(phase: string, active: boolean): string {
   return active ? TALK_PHASE[phase] ?? "" : "clic para platicar";
 }
+
+export interface RackAccount { id: string; label: string; active: boolean; pool: string | null; quotaBlockedUntil: string | null; poolShortPct: number | null }
+export interface RackPool { key: string; pct: number | null; blocked: boolean; accounts: RackAccount[] }
+
+/** Agrupa las cuentas por bolsa (pool, o su id si no tiene): una columna por bolsa, bloqueada si alguna de sus cuentas lo está. */
+export function groupByPool(accounts: RackAccount[], now: number = Date.now()): RackPool[] {
+  const map = new Map<string, RackAccount[]>();
+  for (const a of accounts) {
+    const k = a.pool ?? a.id;
+    map.set(k, [...(map.get(k) ?? []), a]);
+  }
+  return [...map].map(([key, accs]) => ({
+    key, accounts: accs,
+    pct: accs.find((a) => a.poolShortPct !== null)?.poolShortPct ?? null,
+    blocked: accs.some((a) => !!a.quotaBlockedUntil && Date.parse(a.quotaBlockedUntil) > now),
+  }));
+}
+
+/** Etiqueta de un escritorio de AGY: "AGY · <cuenta>". */
+export const seatLabel = (account: string): string => `AGY · ${account}`;

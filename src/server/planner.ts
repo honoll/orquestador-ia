@@ -4,6 +4,7 @@ import path from "node:path";
 import os from "node:os";
 import { CLAUDE_ISOLATION_ARGS, READ_ONLY_DISALLOWED_TOOLS } from "../adapters/claude/execute.js";
 import { validateDag } from "./plan-dag.js";
+import { CLAUDE_STEP_TEMPLATE, FLASH_STEP_TEMPLATE } from "./step-prompt-templates.js";
 import { MODEL_CATALOG, PLANNER_MODEL, ROUTABLE_ADAPTERS, plannerAdapters, type AdapterType } from "../config/models.js";
 
 export interface PlanStep {
@@ -32,9 +33,9 @@ interface ClaudeStreamMessage {
 }
 
 const ADAPTER_STRENGTHS: Record<AdapterType, string> = {
-  claude: "architecture decisions, code review, complex reasoning, validation, writing, explanations",
+  claude: "Claude Code itself, billed to the user's own Claude quota: use it only when a step truly needs Claude Code",
   codex: "code generation, debugging, refactoring, direct implementation, file editing",
-  agy: "fast and cheap analysis, reading and summarizing many files, routine implementation; Gemini 3.x and Claude models billed to the Antigravity quota (each call has ~11k tokens of fixed overhead, so prefer few dense steps)",
+  agy: "PRIMARY worker for code and reading; Claude and Gemini models billed to the Antigravity quota (each call has ~11k tokens of fixed overhead, so prefer few dense steps)",
 };
 
 function buildAdaptersSection(): string {
@@ -44,12 +45,40 @@ function buildAdaptersSection(): string {
   }).join("\n");
 }
 
+/** Reglas de modelo y plantillas; las de agy solo si agy está en plannerAdapters() (el prompt no nombra adapters excluidos). */
+function modelGuidance(): string {
+  if (!plannerAdapters().includes("agy")) {
+    return `Step prompt template (fill the <...> parts):
+${CLAUDE_STEP_TEMPLATE}
+`;
+  }
+  return `Model selection (always set "model"):
+- Hard code (architecture, multi-file refactors, tricky bugs) → adapter agy, model claude-opus-4-6-thinking.
+- Normal code (single-file changes, tests, small features) → adapter agy, model claude-sonnet-4-6.
+- Reading, search, summaries, listing → adapter agy, model gemini-3.8-flash-low (gemini-3.8-flash-medium for long documents).
+- Use the "claude" adapter only when the step truly needs Claude Code itself; otherwise prefer agy.
+
+Step prompt templates (fill the <...> parts):
+- Claude-family models (claude-opus-4-6-thinking, claude-sonnet-4-6, adapter claude):
+${CLAUDE_STEP_TEMPLATE}
+- Gemini Flash models:
+${FLASH_STEP_TEMPLATE}
+`;
+}
+
+/** Modelo cuando el planner no dio uno válido: agy sigue sus reglas (escritor → Sonnet, lector → Flash low). */
+function defaultModelFor(adapter: AdapterType, writes: boolean): string {
+  if (adapter === "agy") return writes ? "claude-sonnet-4-6" : "gemini-3.8-flash-low";
+  return MODEL_CATALOG[adapter].defaultModel;
+}
+
 export function routingSystem(): string {
   return `You are a planning agent for a local AI orchestrator that routes tasks to the best CLI tool.
 
 Available adapters and their strengths:
 ${buildAdaptersSection()}
 
+${modelGuidance()}
 Rules:
 - Break the request into 2-8 concrete steps that form a dependency graph (DAG).
 - Give each step a short unique "id" (s1, s2, ...). "dependsOn" lists ONLY the ids whose output this step needs; steps that do not need each other must not depend on each other, so they can run in parallel.
@@ -150,7 +179,8 @@ export function normalizeSteps(raw: unknown[]): PlanStep[] {
     }
     let rawModel = String(s.model ?? "");
     if (!(plannerAdapters() as string[]).includes(adapter)) {
-      const to = s.writes === false ? "agy" : "claude";
+      const allowed = plannerAdapters();
+      const to = allowed.includes("agy") ? "agy" : allowed[0];
       console.warn(`[planner] adapter ${adapter} excluido (PLANNER_ADAPTERS); paso ${i + 1} reasignado a ${to}`);
       adapter = to;
       rawModel = "";
@@ -166,7 +196,7 @@ export function normalizeSteps(raw: unknown[]): PlanStep[] {
       estimatedTokens: Number.isFinite(Number(s.estimatedTokens)) && Number(s.estimatedTokens) > 0 ? Math.round(Number(s.estimatedTokens)) : null,
       description: String(s.description ?? `Paso ${i + 1}`),
       adapter: adapter as AdapterType,
-      model: validModel ? model : cat.defaultModel,
+      model: validModel ? model : defaultModelFor(adapter as AdapterType, s.writes !== false),
       reason: String(s.reason ?? ""),
       prompt: String(s.prompt ?? s.description ?? ""),
     };

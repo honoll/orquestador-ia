@@ -115,3 +115,46 @@ describe("cuentas agy", () => {
     expect((await getActiveAccount())?.id).toBe(a.id);
   });
 });
+
+describe("bolsas de cuota (pool)", () => {
+  it("cada cuenta nueva es su propia bolsa; PATCH cambia la bolsa", async () => {
+    const a = await createAccount("A", NOW);
+    expect(a.pool).toBe("A");
+    expect((await updateAccount(a.id, { pool: "Plan 1" }, NOW)).pool).toBe("Plan 1");
+    await expect(updateAccount(a.id, { pool: "  " }, NOW)).rejects.toBeInstanceOf(AccountValidationError);
+  });
+
+  it("el uso de la bolsa suma a todos sus miembros; el de la cuenta queda aparte", async () => {
+    const a = await createAccount("A", NOW);
+    const b = await createAccount("B", NOW);
+    const c = await createAccount("C", NOW);
+    await updateAccount(a.id, { pool: "Plan 1", manualLimit5h: 1000 }, NOW);
+    await updateAccount(b.id, { pool: "Plan 1" }, NOW);
+    await recordAgyCall(a.id, ok(300), "plan", NOW - HOUR_MS);
+    await recordAgyCall(b.id, ok(500), "plan", NOW - HOUR_MS);
+    await recordAgyCall(c.id, ok(50), "plan", NOW - HOUR_MS);
+    const list = await listAccounts(NOW);
+    const vb = list.find((x) => x.id === b.id)!;
+    expect(vb.usage.short.usedTokens).toBe(500);
+    expect(vb.poolUsage.short).toMatchObject({ usedTokens: 800, limitTokens: 1000, pct: 80 });
+    expect(list.find((x) => x.id === c.id)!.poolUsage.short.usedTokens).toBe(50);
+  });
+
+  it("cuota en un miembro: calibra y bloquea toda la bolsa; un éxito posterior la limpia entera", async () => {
+    const a = await createAccount("A", NOW);
+    const b = await createAccount("B", NOW);
+    const c = await createAccount("C", NOW);
+    await updateAccount(a.id, { pool: "Plan 1" }, NOW);
+    await updateAccount(b.id, { pool: "Plan 1" }, NOW);
+    await recordAgyCall(a.id, ok(4000), "plan", NOW - HOUR_MS);
+    await recordAgyCall(b.id, quota("2026-10-06T14:00:00Z"), "plan", NOW);
+    let list = await listAccounts(NOW);
+    for (const id of [a.id, b.id]) {
+      expect(list.find((x) => x.id === id)).toMatchObject({ quotaBlockedUntil: "2026-10-06T14:00:00.000Z", calibratedLimit5h: 4000 });
+    }
+    expect(list.find((x) => x.id === c.id)!.quotaBlockedUntil).toBeNull();
+    await recordAgyCall(a.id, ok(10), "plan", NOW + 1000, NOW + 500);
+    list = await listAccounts(NOW + 1000);
+    expect(list.filter((x) => x.quotaBlockedUntil !== null)).toHaveLength(0);
+  });
+});

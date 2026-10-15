@@ -32,13 +32,14 @@ export const MODEL_CATALOG = {
   },
   agy: {
     defaultModel: "gemini-3.8-flash-medium",
+    // Exactamente lo que imprime `agy models` (verificado 2026-10-15); ids tal cual.
     models: [
-      { id: "gemini-3.8-flash-low", label: "Gemini 3.8 Flash (Low)" },
-      { id: "gemini-3.8-flash-medium", label: "Gemini 3.8 Flash (Medium)" },
       { id: "gemini-3.8-flash-high", label: "Gemini 3.8 Flash (High)" },
-      { id: "gemini-3.1-pro-high", label: "Gemini 3.1 Pro (High)" },
-      { id: "claude-sonnet-5-5-medium", label: "Claude Sonnet 5.5 vía Antigravity (Medium)" },
-      { id: "claude-opus-5-5-high", label: "Claude Opus 5.5 vía Antigravity (High)" },
+      { id: "gemini-3.8-flash-medium", label: "Gemini 3.8 Flash (Medium)" },
+      { id: "gemini-3.8-flash-low", label: "Gemini 3.8 Flash (Low)" },
+      { id: "claude-sonnet-4-6", label: "Claude Sonnet 4.6 (Thinking)" },
+      { id: "claude-opus-4-6-thinking", label: "Claude Opus 4.6 (Thinking)" },
+      { id: "gpt-oss-120b-medium", label: "GPT-OSS 120B (Medium)" },
     ],
   },
 } as const satisfies Record<AdapterType, { defaultModel: string; models: readonly ModelEntry[] }>;

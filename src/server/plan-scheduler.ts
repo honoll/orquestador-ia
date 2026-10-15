@@ -6,7 +6,7 @@ import { db, schema } from "../db/index.js";
 import { broadcast } from "./ws.js";
 import { startWatch, stopWatch } from "./file-watcher.js";
 import { runPlanStep, type StepOutcome } from "./plan-runner.js";
-import { getActiveAccount } from "./agy-accounts.js";
+import { agyAvailability, pickWorker, waitAgyRelease, cwdAllowsWorkers, type AgyLease } from "./agy-workers.js";
 import { guardStep } from "./plan-guard.js";
 import { getAdapter } from "../adapters/registry.js";
 import { PLANNER_MODEL } from "../config/models.js";
@@ -84,9 +84,10 @@ async function addUsedTokens(planId: string, tokens: number) {
   emit({ type: "plan:budget", planId, usedTokens: p.usedTokens, budgetTokens: p.budgetTokens });
 }
 
-async function agyBlockedNow(): Promise<boolean> {
-  const account = await getActiveAccount();
-  return !!account?.quotaBlockedUntil && Date.parse(account.quotaBlockedUntil) > Date.now();
+/** Todas las cuentas de agy (local + trabajadores habilitados) tienen su bolsa sin cuota. */
+async function agyBlockedNow(localOnly: boolean): Promise<boolean> {
+  const { total, usable } = await agyAvailability(Date.now(), { localOnly });
+  return total > 0 && usable === 0;
 }
 
 /**
@@ -108,11 +109,23 @@ export async function runPlanDag(planId: string, cwd: string, opts: { mode?: "al
       .where(and(eq(schema.plans.id, planId), eq(schema.plans.synthesisStatus, "running")));
     await setPlan(planId, { status: "running", pauseReason: null });
     startWatch(planId, cwd);
+    // Los trabajadores solo aceptan carpetas bajo C:\estudio: fuera de ahí los pasos agy van solo a la cuenta local.
+    const localOnly = !cwdAllowsWorkers(cwd);
+    if (localOnly) log.warn({ planId, cwd }, "proyecto fuera de C:\\estudio: los pasos agy usan solo la cuenta local (los trabajadores no aceptan esa carpeta)");
 
     const inFlight = new Map<string, Promise<{ stepId: string; outcome: StepOutcome }>>();
     let failed = false;
     let pause: "quota" | "budget" | "guard" | null = null;
     let launched = 0;
+    // Reintentos gastados por pasos que volvieron como requeued: se siguen contando al relanzarlos.
+    const attempts = new Map<string, number>();
+    const waitForAgy = async () => {
+      const ac = new AbortController();
+      const abort = () => ac.abort();
+      registerKill(run, abort);
+      await waitAgyRelease(ac.signal);
+      run.kills.delete(abort);
+    };
 
     for (;;) {
       const plan = await getPlan(planId);
@@ -122,12 +135,14 @@ export async function runPlanDag(planId: string, cwd: string, opts: { mode?: "al
       const dagByKey = new Map(dag.map((d) => [d.key, d]));
 
       let picks: DagStep[] = [];
+      // Un paso agy solo se lanza con una cuenta libre ya reservada; si no hay, queda pending (nunca "running" esperando).
+      let agyStarved = false;
       const stopLaunching = run.cancelled || failed || pause !== null || (mode === "next" && launched >= 1);
       if (!stopLaunching) {
         if (budgetExceeded(plan.usedTokens, plan.budgetTokens)) {
           pause = "budget";
         } else {
-          const agyBlocked = await agyBlockedNow();
+          const agyBlocked = await agyBlockedNow(localOnly);
           picks = pickRunnable(dag, {
             maxParallel: plan.maxParallel,
             agyBlocked,
@@ -156,17 +171,34 @@ export async function runPlanDag(planId: string, cwd: string, opts: { mode?: "al
           }
           await db.update(schema.planSteps).set({ guardFlags: null }).where(eq(schema.planSteps.id, step.id));
         }
+        let agyLease: AgyLease | undefined;
+        if (step.adapter === "agy") {
+          agyLease = (await pickWorker(Date.now(), { localOnly })) ?? undefined;
+          if (run.cancelled) { agyLease?.release(); break; }
+          // Sin cuenta libre pero con alguna usable (ocupada): se espera fuera, con el paso en pending.
+          // Sin ninguna usable se lanza igual: runPlanStep falla (sin cuentas) o pausa por cuota con su mensaje.
+          if (!agyLease && (await agyAvailability(Date.now(), { localOnly })).usable > 0) { agyStarved = true; continue; }
+        }
         // Marcar running aquí (no solo dentro de runPlanStep) para que la siguiente vuelta no lo vuelva a elegir.
         // La aprobación de la guardia vale una vez: se consume al lanzar junto con sus banderas (un reintento vuelve a evaluarla).
-        await db.update(schema.planSteps).set({ status: "running", startedAt: now(), errorMessage: null, ...(row.guardApproved === 1 ? { guardApproved: 0, guardFlags: null } : {}) }).where(eq(schema.planSteps.id, step.id));
+        try {
+          await db.update(schema.planSteps).set({ status: "running", startedAt: now(), errorMessage: null, ...(row.guardApproved === 1 ? { guardApproved: 0, guardFlags: null } : {}) }).where(eq(schema.planSteps.id, step.id));
+        } catch (err) {
+          agyLease?.release();
+          throw err;
+        }
         launched++;
+        // Los kills del paso salen de la lista al terminar: cancelar el plan después no debe tocar su trabajador.
+        const stepKills: (() => void)[] = [];
         const promise = runPlanStep({
           planId,
           stepId: step.id,
           cwd,
           promptOverride: buildStepPrompt(row.prompt, deps),
           // Si cancelaron entre el arranque del paso y el spawn, se mata en cuanto haya proceso.
-          onKillRegistered: (kill) => registerKill(run, kill),
+          onKillRegistered: (kill) => { stepKills.push(kill); registerKill(run, kill); },
+          agyLease,
+          startAttempt: attempts.get(step.id),
         })
           .catch(async (err: Error) => {
             log.error({ err, stepId: step.id }, "runPlanStep lanzó una excepción");
@@ -174,11 +206,21 @@ export async function runPlanDag(planId: string, cwd: string, opts: { mode?: "al
             emit({ type: "plan:step", planId, stepId: step.id, status: "failed", adapter: row.adapter, error: err.message });
             return { status: "failed", tokensUsed: 0 } as StepOutcome;
           })
-          .then((outcome) => ({ stepId: step.id, outcome }));
+          .then((outcome) => {
+            for (const k of stepKills) run.kills.delete(k);
+            return { stepId: step.id, outcome };
+          });
         inFlight.set(step.id, promise);
       }
 
-      if (inFlight.size === 0) break;
+      if (inFlight.size === 0) {
+        // Pasos agy listos pero todas las cuentas ocupadas (p. ej. por otro plan): esperar a que se libere una.
+        if (agyStarved && !run.cancelled && !failed && pause === null) {
+          await waitForAgy();
+          continue;
+        }
+        break;
+      }
 
       const { stepId, outcome } = await Promise.race(inFlight.values());
       inFlight.delete(stepId);
@@ -191,6 +233,11 @@ export async function runPlanDag(planId: string, cwd: string, opts: { mode?: "al
       }
       if (outcome.status === "failed") failed = true;
       if (outcome.status === "paused_quota") pause = "quota";
+      if (outcome.status === "requeued") {
+        attempts.set(stepId, outcome.attempt ?? 0);
+        // Sin nada más en vuelo, no relanzar al instante: esperar a que se libere una cuenta (o unos segundos).
+        if (inFlight.size === 0) await waitForAgy();
+      }
     }
 
     stopWatch(planId);

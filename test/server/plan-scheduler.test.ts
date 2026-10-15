@@ -140,6 +140,95 @@ describe("planificador", () => {
     await db.update(schema.agyAccounts).set({ quotaBlockedUntil: null }).where(eq(schema.agyAccounts.id, a.id));
   });
 
+  it("cuota por bolsas: con una bolsa libre corre ahí, en paralelo un paso por cuenta; pausa solo con todas bloqueadas", async () => {
+    const { createWorker } = await import("../../src/server/agy-workers.js");
+    const local = (await db.select().from(schema.agyAccounts).where(eq(schema.agyAccounts.active, 1)))[0];
+    const b = await createAccount("Otra bolsa");
+    const c = await createAccount("Tercera");
+    await createWorker({ accountId: b.id, port: 3121, keyPath: "C:/k/b.key" });
+    await createWorker({ accountId: c.id, port: 3122, keyPath: "C:/k/c.key" });
+    const block = (id: string, until: string | null) => db.update(schema.agyAccounts).set({ quotaBlockedUntil: until }).where(eq(schema.agyAccounts.id, id));
+    const later = new Date(Date.now() + 3_600_000).toISOString();
+    await block(local.id, later);
+    const id = await mkPlan([{ key: "s1", adapter: "agy" }, { key: "s2", adapter: "agy" }, { key: "s3", adapter: "agy" }]);
+    await runPlanDag(id, cwd);
+    expect(stepCalls()).toHaveLength(3);
+    expect(h.state.max).toBe(2); // dos cuentas libres → dos a la vez
+    expect(await plan(id)).toMatchObject({ status: "completed" });
+    await block(b.id, later); await block(c.id, later);
+    h.state.calls = [];
+    const id2 = await mkPlan([{ key: "s1", adapter: "agy" }]);
+    await runPlanDag(id2, cwd);
+    expect(h.state.calls).toHaveLength(0);
+    expect(await plan(id2)).toMatchObject({ status: "pending", pauseReason: "quota" });
+    await db.delete(schema.agyWorkers);
+    await block(local.id, null);
+  });
+
+  it("F10: con una sola cuenta los pasos agy van de uno en uno y el que espera sigue pending", async () => {
+    const id = await mkPlan([{ key: "s1", adapter: "agy" }, { key: "s2", adapter: "agy" }, { key: "s3", adapter: "agy" }]);
+    const seen: Promise<string[]>[] = [];
+    h.state.onStart = () => { seen.push(steps(id).then((r) => r.map((x) => x.status))); };
+    await runPlanDag(id, cwd);
+    expect(h.state.max).toBe(1);
+    expect(stepCalls()).toHaveLength(3);
+    expect((await seen[0]).filter((st) => st === "running")).toHaveLength(1);
+    expect(await plan(id)).toMatchObject({ status: "completed" });
+  });
+
+  it("F10: si un paso falla, el agy que no tenía cuenta nunca corre y queda pending", async () => {
+    h.state.fail.add("s1");
+    const id = await mkPlan([{ key: "s1", adapter: "agy" }, { key: "s2", adapter: "agy" }]);
+    await runPlanDag(id, cwd);
+    expect(stepCalls().map((c) => c.key)).toEqual(["s1"]);
+    expect((await steps(id)).map((x) => x.status)).toEqual(["failed", "pending"]);
+    expect(await plan(id)).toMatchObject({ status: "failed" });
+  });
+
+  it("F10: si se acaba el presupuesto, el agy que no tenía cuenta nunca corre", async () => {
+    const id = await mkPlan([{ key: "s1", adapter: "agy" }, { key: "s2", adapter: "agy" }], { budgetTokens: 100 });
+    await runPlanDag(id, cwd);
+    expect(stepCalls().map((c) => c.key)).toEqual(["s1"]);
+    expect((await steps(id)).map((x) => x.status)).toEqual(["succeeded", "pending"]);
+    expect(await plan(id)).toMatchObject({ status: "pending", pauseReason: "budget" });
+  });
+
+  it("F10: cuenta ocupada por otro plan → el paso espera en pending y arranca al liberarse", async () => {
+    const { pickWorker } = await import("../../src/server/agy-workers.js");
+    const held = (await pickWorker())!;
+    const id = await mkPlan([{ key: "s1", adapter: "agy" }]);
+    const done = runPlanDag(id, cwd);
+    await new Promise((r) => setTimeout(r, 80));
+    expect(h.state.calls).toHaveLength(0);
+    expect((await steps(id))[0].status).toBe("pending");
+    held.release();
+    await done;
+    expect(await plan(id)).toMatchObject({ status: "completed" });
+  });
+
+  it("F10: un trabajador que responde 409 no hace girar el bucle (enfriamiento + espera)", async () => {
+    const { pickWorker, createWorker } = await import("../../src/server/agy-workers.js");
+    const { WorkerUnavailableError } = await import("../../src/adapters/agy/worker-client.js");
+    const local = (await db.select().from(schema.agyAccounts).where(eq(schema.agyAccounts.active, 1)))[0];
+    const b = await createAccount("Ocupada409");
+    await createWorker({ accountId: b.id, port: 3127, keyPath: "C:/k/o.key" });
+    const held = (await pickWorker(Date.now(), { accounts: new Set([b.id]) }))!;
+    expect(held.accountId).toBe(local.id);
+    const orig = h.adapters.agy.execute;
+    let calls = 0;
+    h.adapters.agy.execute = async () => { calls++; throw new WorkerUnavailableError("ocupado", 409); };
+    const id = await mkPlan([{ key: "s1", adapter: "agy" }]);
+    const done = runPlanDag(id, cwd);
+    await new Promise((r) => setTimeout(r, 400));
+    expect(calls).toBe(1);
+    expect((await steps(id))[0].status).toBe("pending");
+    cancelPlanRun(id);
+    await done;
+    h.adapters.agy.execute = orig;
+    held.release();
+    await db.delete(schema.agyWorkers);
+  });
+
   it("plan viejo sin claves corre en orden, uno a la vez", async () => {
     const planId = randomUUID();
     await db.insert(schema.plans).values({ id: planId, description: "viejo", status: "pending" });
@@ -173,6 +262,31 @@ describe("planificador", () => {
     expect(stepCalls()).toHaveLength(1);
     expect(isPlanRunning(id)).toBe(false);
     expect(await plan(id)).toMatchObject({ status: "cancelled", pauseReason: null });
+  });
+
+  it("F10: cancelar no llama el kill de un paso ya terminado (su trabajador puede estar corriendo otro plan)", async () => {
+    const orig = h.adapters.codex;
+    const killedKeys: string[] = [];
+    let waiting = false;
+    h.adapters.codex = {
+      ...orig,
+      execute: async (ctx: any) => {
+        const key = /\[(s\d+)\]/.exec(ctx.prompt)?.[1] ?? "synth";
+        if (key === "s1") { ctx.onKill?.(() => killedKeys.push("s1")); return orig.execute(ctx); }
+        await new Promise<void>((r) => { waiting = true; ctx.onKill?.(() => { killedKeys.push(key); r(); }); });
+        return orig.execute({ ...ctx, onKill: undefined });
+      },
+    };
+    try {
+      const id = await mkPlan([{ key: "s1" }, { key: "s2", deps: ["s1"] }]);
+      const p = runPlanDag(id, cwd);
+      await vi.waitFor(() => expect(waiting).toBe(true));
+      cancelPlanRun(id);
+      await p;
+      expect(killedKeys).toEqual(["s2"]);
+    } finally {
+      h.adapters.codex = orig;
+    }
   });
 
   it("si la síntesis falla, el plan queda completed con synthesis_status failed", async () => {

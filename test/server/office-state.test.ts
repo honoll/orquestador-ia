@@ -5,7 +5,7 @@ const NOW = 1_000_000;
 const base = (o: Partial<OfficeInput> = {}): OfficeInput => ({
   now: NOW, generatingPlans: [], synthesisRunning: [], steps: [], chatRuns: [], tokensByAdapter: {},
   lastTierOrGuardAt: null, guardPausedCount: 0, memoryIndexing: false, lastMemoryLoadingAt: null, memoryNotes: 410,
-  voiceActive: false, whisperState: "stopped", recentPlans: [], ...o,
+  voiceActive: false, whisperState: "stopped", recentPlans: [], agySeats: [], ...o,
 });
 const step = (o: Partial<OfficeInput["steps"][number]> = {}): OfficeInput["steps"][number] => ({
   planId: "p", stepId: "s1", stepKey: "s1", description: "hacer", adapter: "codex", model: null, status: "running",
@@ -80,5 +80,33 @@ describe("collectOfficeInput (BD temporal)", () => {
     const i = await collectOfficeInput(123);
     expect(i).toMatchObject({ now: 123, steps: [], chatRuns: [], whisperState: "stopped", voiceActive: false });
     expect(Array.isArray(i.recentPlans)).toBe(true);
+  });
+
+  describe("asientos de agy por cuenta", () => {
+    const seat = (account: string, working = false, o = {}) => ({ local: account === "local", account, pool: account, working, activity: working ? `tarea ${account}` : "libre", model: null, ...o });
+    const stepAgy = (o = {}) => step({ adapter: "agy", ...o });
+    it("sin trabajo: un asiento por cuenta, todo inactivo", () => {
+      const a = agent(buildOfficeState(base({ agySeats: [seat("local"), seat("agy2")] })), "agy");
+      expect(a).toMatchObject({ working: false, desks: 2 });
+      expect(a.seats!.map((x) => x.working)).toEqual([false, false]);
+    });
+    it("chat de agy sin lease: ilumina el asiento local", () => {
+      const a = agent(buildOfficeState(base({ agySeats: [seat("local"), seat("agy2")], chatRuns: [{ adapter: "agy", model: null, prompt: "hola" }] })), "agy");
+      expect(a.seats!.map((x) => [x.account, x.working, x.activity])).toEqual([["local", true, "chat"], ["agy2", false, "libre"]]);
+      const v = agent(buildOfficeState(base({ agySeats: [seat("local")], voiceActive: true })), "agy");
+      expect(v.seats![0]).toMatchObject({ working: true, activity: "voz" });
+    });
+    it("un trabajador ocupado", () => {
+      const a = agent(buildOfficeState(base({ agySeats: [seat("local"), seat("agy2", true)], steps: [stepAgy()] })), "agy");
+      expect(a.working).toBe(true);
+      expect(a.seats!.filter((x) => x.working).map((x) => x.account)).toEqual(["agy2"]);
+    });
+    it("local + 2 trabajadores ocupados; escritorios con tope de 4", () => {
+      const three = buildOfficeState(base({ agySeats: [seat("local", true), seat("agy2", true), seat("agy3", true)], steps: [stepAgy(), stepAgy({ stepId: "s2" }), stepAgy({ stepId: "s3" })] }));
+      expect(agent(three, "agy")).toMatchObject({ working: true, desks: 3 });
+      const six = buildOfficeState(base({ agySeats: ["a", "b", "c", "d", "e", "f"].map((n) => seat(n)) }));
+      expect(agent(six, "agy")).toMatchObject({ desks: 4 });
+      expect(agent(six, "agy").seats).toHaveLength(6);
+    });
   });
 });

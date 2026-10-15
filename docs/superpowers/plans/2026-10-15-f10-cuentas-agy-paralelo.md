@@ -46,16 +46,16 @@ el usuario lo corra él — el script NO lo corre), `docs/agy-cuentas-windows.md
 - Guía (es-MX, pasos numerados con comandos): crear usuario local (Configuración o `net user` lo corre el usuario),
   `icacls C:\estudio /grant agy2:(OI)(CI)M`, `runas /user:agy2 "C:\tools\agy\agy.exe"` para el login de Google,
   `register-worker.ps1`, crear la tarea programada (comando que imprime el script) y cómo verificar `/health`.
-- [ ] Tests de `worker-core` (llave correcta/incorrecta/ausente, `cwd` dentro/fuera/`..`, args readOnly) y del servidor
+- [x] Tests de `worker-core` (llave correcta/incorrecta/ausente, `cwd` dentro/fuera/`..`, args readOnly) y del servidor
   con un agy falso (inyectar ruta del ejecutable) → implementar → checks → commit
   `feat(agy-worker): trabajador por usuario de Windows, scripts y guía (F10)` → `git push -u origin f10-agy-cuentas`.
 
 ### Task 2: Prueba de concepto en vivo (compuerta)
-- [ ] Controlador: correr `install-agy-shared.ps1`; pedir al usuario los pasos de la guía para `agy2` (cuenta 2).
-- [ ] Verificar: (a) tras reiniciar sesión/sin sesión de `agy2`, la tarea arranca el trabajador y `/health` responde;
+- [x] Controlador: correr `install-agy-shared.ps1`; pedir al usuario los pasos de la guía para `agy2` (cuenta 2).
+- [x] Verificar: (a) tras reiniciar sesión/sin sesión de `agy2`, la tarea arranca el trabajador y `/health` responde;
   (b) `/run` con `gemini-3.8-flash-low` contesta (cuenta 2); (c) en paralelo, un `agy` local (cuenta 1) y un `/run`
   (cuenta 2) contestan sin cruzarse; (d) sin llave → 401. Registrar resultados.
-- [ ] Si (a) falla: detener y decidir con el usuario (alternativa: trabajador solo con sesión abierta).
+- [x] Si (a) falla: detener y decidir con el usuario (alternativa: trabajador solo con sesión abierta).
 
 ### Task 3: Trabajadores en el orquestador y reparto por cuota
 **Files:** `src/db/schema.ts` + `src/db/migrate.ts` (tabla `agy_workers`: `id`, `account_id` FK, `port`,
@@ -65,22 +65,22 @@ del trabajador), `src/server/plan-scheduler.ts` (reintento en otra cuenta si `qu
 agotadas), rutas `GET/POST/PATCH/DELETE /api/agy-workers` + `GET /api/agy-workers/:id/health`.
 - `pickWorker`: entre cuentas `enabled`, no ocupadas, no `quota_blocked_until > now`, la de mayor cuota libre
   estimada (medidor de F1); la cuenta local cuenta como trabajador sin puerto. Devuelve null si ninguna.
-- [ ] Tests (selección por cuota, ocupado, bloqueado, todas agotadas → pausa, reintento en otra cuenta, cliente con
+- [x] Tests (selección por cuota, ocupado, bloqueado, todas agotadas → pausa, reintento en otra cuenta, cliente con
   servidor falso, uso registrado en la cuenta correcta) → implementar → checks → commit → push.
 
 ### Task 4: Catálogo, reglas de modelo y prompts de agy
 **Files:** `src/config/models.ts` (catálogo agy al día), `src/server/planner.ts` (reglas: código difícil → opus-4-6,
 normal → sonnet-4-6, lectura → flash low/medium; plantillas de prompt por familia), `src/server/plan-create.ts`
 (`read_only = 1` cuando `writes = 0`), tests de planner/plan-create.
-- [ ] Tests (prompt del planner lista los modelos nuevos y las reglas; lectores quedan read_only; escritores no) →
+- [x] Tests (prompt del planner lista los modelos nuevos y las reglas; lectores quedan read_only; escritores no) →
   implementar → checks → commit → push.
 
 ### Task 5: Oficina y UI de trabajadores
 **Files:** `src/server/office-state.ts` (escritorios de AGY por cuenta: `desks` por trabajador ocupado y etiqueta de
 cuenta), `ui/src/components/office/*` (etiqueta por escritorio, rack con cuota por cuenta), panel "Trabajadores de
 agy" en la columna izquierda (estado/salud/habilitar).
-- [ ] Tests de `buildOfficeState` por cuenta → implementar → checks + `build:ui` → captura → commit → push.
+- [x] Tests de `buildOfficeState` por cuenta → implementar → checks + `build:ui` → captura → commit → push.
 
 ### Task 6: Verificación final y documentación
-- [ ] Con 3+ cuentas: plan con 3 pasos de lectura en paralelo en 3 cuentas; un paso que agote cuota pasa a otra cuenta.
-- [ ] Docs: sección `## Agy workers (F10)` en `CLAUDE.md`, `CONTINUAR.md`, nota de Cerebro. Integrar solo con OK del usuario.
+- [x] Con 3+ cuentas: plan con 3 pasos de lectura en paralelo en 3 cuentas; un paso que agote cuota pasa a otra cuenta. (en vivo: 4 pasos en 4 cuentas a la vez; el paso de cuota→otra cuenta quedó cubierto solo por tests)
+- [x] Docs: sección `## Agy workers (F10)` en `CLAUDE.md`, `CONTINUAR.md`, nota de Cerebro. Integrar solo con OK del usuario. (Nota de Cerebro: pendiente.)

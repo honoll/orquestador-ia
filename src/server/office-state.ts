@@ -6,9 +6,10 @@ import { activeAssistant } from "../voice/assistant/session.js";
 import { whisper } from "../voice/whisper.js";
 import { onBroadcast } from "./ws.js";
 import { SERVER_STARTED_AT } from "./routes/usage.js";
+import { agySeats, type AgySeat } from "./agy-workers.js";
 
 export type AgentId = "jefe" | "guardia" | "agy" | "codex" | "claude" | "biblio" | "recepcion";
-export interface AgentState { id: AgentId; working: boolean; desks: number; activity: string; model: string; tokens: number; paused?: boolean }
+export interface AgentState { id: AgentId; working: boolean; desks: number; activity: string; model: string; tokens: number; paused?: boolean; seats?: AgySeat[] }
 export interface QueueItem { planId: string; stepId: string; stepKey: string | null; description: string; adapter: string; status: "running" | "pending" | "paused"; project: string | null }
 export interface PlanSummary { id: string; description: string; status: string; pauseReason: string | null; updatedAt: string }
 export interface OfficeState { agents: AgentState[]; queue: QueueItem[]; plans: PlanSummary[]; generatedAt: string }
@@ -23,6 +24,7 @@ export interface OfficeInput {
   memoryIndexing: boolean; lastMemoryLoadingAt: number | null; memoryNotes: number;
   voiceActive: boolean; whisperState: string;
   recentPlans: PlanSummary[]; // últimos 8 por updated_at
+  agySeats: AgySeat[]; // una por cuenta de agy habilitada (local + trabajadores)
 }
 
 const GUARD_WINDOW_MS = 8000;
@@ -45,9 +47,16 @@ export function buildOfficeState(i: OfficeInput): OfficeState {
   for (const id of ["agy", "codex", "claude"] as const satisfies readonly AdapterType[]) {
     const running = i.steps.filter((s) => s.adapter === id && s.status === "running");
     const chats = i.chatRuns.filter((r) => r.adapter === id);
-    const n = running.length + chats.length;
+    // chat/análisis/voz de agy no toman lease: corren en la cuenta local, así que su asiento trabaja.
+    const loose = id === "agy" ? (chats.length ? "chat" : i.voiceActive ? "voz" : null) : null;
+    const seats = id === "agy" && i.agySeats.length
+      ? i.agySeats.map((x) => (x.local && !x.working && loose ? { ...x, working: true, activity: loose } : x))
+      : undefined;
+    // Con asientos, un escritorio por cuenta; el resto de adaptadores, uno por paso/chat en curso.
+    const n = seats ? Math.max(seats.length, 1) : running.length + chats.length;
+    const working = seats ? seats.some((x) => x.working) || running.length + chats.length > 0 : n > 0;
     agents.push({
-      id, working: n > 0, desks: Math.min(4, Math.max(1, n)),
+      id, working, desks: Math.min(4, Math.max(1, n)), ...(seats ? { seats } : {}),
       activity: running[0]?.description ?? (chats.length ? "chat" : "libre"),
       model: running[0]?.model ?? chats[0]?.model ?? MODEL_CATALOG[id].defaultModel,
       tokens: i.tokensByAdapter[id] ?? 0,
@@ -116,6 +125,6 @@ export async function collectOfficeInput(now: number = Date.now()): Promise<Offi
     now, generatingPlans, synthesisRunning, steps, chatRuns, tokensByAdapter,
     lastTierOrGuardAt, guardPausedCount,
     memoryIndexing: isIndexing(), lastMemoryLoadingAt, memoryNotes: num(notes),
-    voiceActive: activeAssistant() !== null, whisperState: whisper.status(), recentPlans,
+    voiceActive: activeAssistant() !== null, whisperState: whisper.status(), recentPlans, agySeats: await agySeats(now),
   };
 }

@@ -13,3 +13,6 @@ process.env.CEREBRO_PATH = fs.mkdtempSync(path.join(os.tmpdir(), "cerebro-test-"
 // Respaldo: si un test olvida simular el embedder, Ollama real no responde (puerto 9, discard).
 process.env.OLLAMA_URL = "http://127.0.0.1:9";
 delete process.env.MEMORY_EMBED_MODEL;
+
+// Raíz de los trabajadores agy (en producción C:\estudio): los cwd temporales de los tests caen dentro.
+process.env.AGY_WORKER_ROOT = os.tmpdir();

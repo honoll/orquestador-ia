@@ -1,6 +1,7 @@
 import { runProcess } from "../../lib/process-runner.js";
 import { resolveAgyPath } from "../../lib/agy-path.js";
 import { parse } from "./parse.js";
+import { runOnWorker, MAX_WORKER_TIMEOUT_SEC } from "./worker-client.js";
 import type { AdapterExecutionContext, AdapterExecutionResult } from "../../lib/types.js";
 
 export function buildAgyArgs(model?: string, conversationId?: string, opts: { readOnly?: boolean } = {}): string[] {
@@ -20,6 +21,19 @@ export function buildAgyStdin(prompt: string): string {
 }
 
 export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExecutionResult> {
+  if (ctx.agyWorker) {
+    // Otra cuenta (otro usuario de Windows): mismo NDJSON, mismo parse. WorkerUnavailableError sube al llamador.
+    const { promise, kill } = runOnWorker(ctx.agyWorker, {
+      prompt: ctx.prompt,
+      cwd: ctx.cwd,
+      model: ctx.model,
+      readOnly: ctx.readOnly === true,
+      timeoutSec: Math.min(ctx.timeoutSec ?? MAX_WORKER_TIMEOUT_SEC, MAX_WORKER_TIMEOUT_SEC),
+    }, { onLog: ctx.onLog, graceSec: ctx.graceSec });
+    ctx.onKill?.(kill);
+    return parse(await promise);
+  }
+
   const exe = resolveAgyPath();
   if (!exe) {
     return parse({

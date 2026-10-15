@@ -27,7 +27,6 @@ export interface RawStepRow {
 }
 
 export const DEFAULT_MAX_PARALLEL = 3;
-export const MAX_PARALLEL_LIMIT = 5;
 export const BUDGET_FACTOR = 1.5;
 export const DEP_RESULT_MAX_CHARS = 4000;
 export const SYNTH_RESULT_MAX_CHARS = 6000;

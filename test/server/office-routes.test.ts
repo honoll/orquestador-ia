@@ -13,7 +13,7 @@ describe("GET /state", () => {
     h.collect.mockResolvedValueOnce({
       now: 5, generatingPlans: [], synthesisRunning: [], steps: [], chatRuns: [], tokensByAdapter: {},
       lastTierOrGuardAt: null, guardPausedCount: 0, memoryIndexing: false, lastMemoryLoadingAt: null, memoryNotes: 1,
-      voiceActive: false, whisperState: "stopped", recentPlans: [],
+      voiceActive: false, whisperState: "stopped", recentPlans: [], agySeats: [],
     });
     const res = await officeRoute.request("/state");
     expect(res.status).toBe(200);

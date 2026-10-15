@@ -199,6 +199,8 @@ export interface Plan {
   budgetTokens: number | null;
   usedTokens: number;
   maxParallel: number;
+  /** Tope de paralelismo según los trabajadores de agy (F10); falta en respuestas viejas. */
+  maxParallelLimit?: number;
   pauseReason: "quota" | "budget" | "guard" | null;
   tier: "trivial" | "normal" | "critical" | null;
   tierConfidence: number | null;
@@ -1240,7 +1242,7 @@ function BudgetBar({ plan, disabled, onSave }: { plan: Plan; disabled: boolean; 
           value={plan.maxParallel}
           onChange={(e) => onSave({ maxParallel: Number(e.target.value) })}
         >
-          {[1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>{n}</option>)}
+          {Array.from({ length: Math.max(plan.maxParallelLimit ?? 5, plan.maxParallel) }, (_, i) => i + 1).map((n) => <option key={n} value={n}>{n}</option>)}
         </select>
       </label>
     </div>
