@@ -27,7 +27,12 @@ export interface WorkerHealth {
 }
 
 /** El trabajador no pudo tomar el paso (apagado, ocupado, llave mala, 5xx…): se prueba otra cuenta. */
-export class WorkerUnavailableError extends Error {}
+export class WorkerUnavailableError extends Error {
+  /** Código HTTP si el trabajador respondió (409 = ocupado, no caído). */
+  constructor(message: string, readonly status?: number) {
+    super(message);
+  }
+}
 
 export const MAX_WORKER_TIMEOUT_SEC = 1800;
 
@@ -108,7 +113,7 @@ export function runOnWorker(
         const text = await res.text().catch(() => "");
         let msg = "";
         try { msg = String(JSON.parse(text).error ?? ""); } catch { /* sin cuerpo JSON */ }
-        throw new WorkerUnavailableError(`trabajador agy en el puerto ${t.port} respondió ${res.status}${msg ? `: ${msg}` : ""}`);
+        throw new WorkerUnavailableError(`trabajador agy en el puerto ${t.port} respondió ${res.status}${msg ? `: ${msg}` : ""}`, res.status);
       }
 
       const handle = (line: string) => {

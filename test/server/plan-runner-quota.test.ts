@@ -100,6 +100,19 @@ describe("runPlanStep", () => {
     expect(runs).toHaveLength(0);
   });
 
+  it("reintento sin cuenta libre (la otra está ocupada): vuelve a pending como requeued, sin esperar", async () => {
+    await addWorker("agy2", 3121);
+    const { pickWorker } = await import("../../src/server/agy-workers.js");
+    const { planId, stepId, cwd } = await mk();
+    const first = (await pickWorker())!; // la mejor; el paso usa la otra y se queda sin alternativa libre
+    const out = await runPlanStep({ planId, stepId, cwd });
+    first.release();
+    expect(out.status).toBe("requeued");
+    expect(h.execute).toHaveBeenCalledTimes(1);
+    const step = await db.select().from(schema.planSteps).where(eq(schema.planSteps.id, stepId)).then((r) => r[0]);
+    expect(step.status).toBe("pending");
+  });
+
   it("promptOverride reemplaza el prompt guardado", async () => {
     const { planId, stepId, cwd } = await mk();
     await runPlanStep({ planId, stepId, cwd, promptOverride: "con contexto" });

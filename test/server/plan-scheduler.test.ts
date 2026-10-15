@@ -165,6 +165,47 @@ describe("planificador", () => {
     await block(local.id, null);
   });
 
+  it("F10: con una sola cuenta los pasos agy van de uno en uno y el que espera sigue pending", async () => {
+    const id = await mkPlan([{ key: "s1", adapter: "agy" }, { key: "s2", adapter: "agy" }, { key: "s3", adapter: "agy" }]);
+    const seen: Promise<string[]>[] = [];
+    h.state.onStart = () => { seen.push(steps(id).then((r) => r.map((x) => x.status))); };
+    await runPlanDag(id, cwd);
+    expect(h.state.max).toBe(1);
+    expect(stepCalls()).toHaveLength(3);
+    expect((await seen[0]).filter((st) => st === "running")).toHaveLength(1);
+    expect(await plan(id)).toMatchObject({ status: "completed" });
+  });
+
+  it("F10: si un paso falla, el agy que no tenía cuenta nunca corre y queda pending", async () => {
+    h.state.fail.add("s1");
+    const id = await mkPlan([{ key: "s1", adapter: "agy" }, { key: "s2", adapter: "agy" }]);
+    await runPlanDag(id, cwd);
+    expect(stepCalls().map((c) => c.key)).toEqual(["s1"]);
+    expect((await steps(id)).map((x) => x.status)).toEqual(["failed", "pending"]);
+    expect(await plan(id)).toMatchObject({ status: "failed" });
+  });
+
+  it("F10: si se acaba el presupuesto, el agy que no tenía cuenta nunca corre", async () => {
+    const id = await mkPlan([{ key: "s1", adapter: "agy" }, { key: "s2", adapter: "agy" }], { budgetTokens: 100 });
+    await runPlanDag(id, cwd);
+    expect(stepCalls().map((c) => c.key)).toEqual(["s1"]);
+    expect((await steps(id)).map((x) => x.status)).toEqual(["succeeded", "pending"]);
+    expect(await plan(id)).toMatchObject({ status: "pending", pauseReason: "budget" });
+  });
+
+  it("F10: cuenta ocupada por otro plan → el paso espera en pending y arranca al liberarse", async () => {
+    const { pickWorker } = await import("../../src/server/agy-workers.js");
+    const held = (await pickWorker())!;
+    const id = await mkPlan([{ key: "s1", adapter: "agy" }]);
+    const done = runPlanDag(id, cwd);
+    await new Promise((r) => setTimeout(r, 80));
+    expect(h.state.calls).toHaveLength(0);
+    expect((await steps(id))[0].status).toBe("pending");
+    held.release();
+    await done;
+    expect(await plan(id)).toMatchObject({ status: "completed" });
+  });
+
   it("plan viejo sin claves corre en orden, uno a la vez", async () => {
     const planId = randomUUID();
     await db.insert(schema.plans).values({ id: planId, description: "viejo", status: "pending" });

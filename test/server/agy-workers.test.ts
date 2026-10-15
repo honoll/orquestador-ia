@@ -6,8 +6,8 @@ import { migrationDone } from "../../src/db/migrate.js";
 import { db, schema } from "../../src/db/index.js";
 import { createAccount, updateAccount, recordAgyCall } from "../../src/server/agy-accounts.js";
 import {
-  createWorker, listWorkers, updateWorker, deleteWorker, importWorkers, pickWorker, agyAvailability, acquireAgy,
-  parallelLimit, markWorkerHealth, WorkerValidationError, MAX_PARALLEL_CEILING,
+  createWorker, listWorkers, updateWorker, deleteWorker, importWorkers, pickWorker, agyAvailability, waitAgyRelease,
+  parallelLimit, markWorkerHealth, WorkerValidationError, MAX_PARALLEL_CEILING, UNHEALTHY_SKIP_MS,
 } from "../../src/server/agy-workers.js";
 import type { AdapterExecutionResult } from "../../src/lib/types.js";
 
@@ -134,36 +134,45 @@ describe("pickWorker", () => {
     p!.release();
   });
 
-  it("acquireAgy espera a que se libere una cuenta; null si todas están excluidas o bloqueadas", async () => {
-    const s = await setup([{ label: "local" }]);
-    const a = (await acquireAgy())!;
-    let got: string | null = null;
-    const waiting = acquireAgy().then((l) => { got = l?.accountId ?? null; l?.release(); });
-    await new Promise((r) => setTimeout(r, 30));
-    expect(got).toBeNull();
+  it("waitAgyRelease despierta al liberar una cuenta, al abortar o por tiempo", async () => {
+    await setup([{ label: "local" }]);
+    const a = (await pickWorker(NOW))!;
+    let woke = false;
+    const w = waitAgyRelease(undefined, 10_000).then(() => { woke = true; });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(woke).toBe(false);
     a.release();
-    await waiting;
-    expect(got).toBe(s.local.accountId);
-    expect(await acquireAgy({ accounts: new Set([s.local.accountId]) })).toBeNull();
+    await w;
+    expect(woke).toBe(true);
     const ac = new AbortController();
-    const held = (await acquireAgy())!;
-    const aborted = acquireAgy({}, ac.signal);
+    const aborted = waitAgyRelease(ac.signal, 10_000);
     ac.abort();
-    expect(await aborted).toBeNull();
-    held.release();
+    await aborted;
+    await waitAgyRelease(undefined, 10);
+  });
+
+  it("un trabajador que no respondió se salta un rato; un 409 no lo marca", async () => {
+    const s = await setup([{ label: "local" }, { label: "agy2", port: 3121 }]);
+    await updateAccount(s.local.accountId, { manualLimit5h: 1000 }, NOW);
+    await recordAgyCall(s.local.accountId, ok(900), "plan", NOW - 1000); // agy2 sería la preferida
+    markWorkerHealth(s.agy2.workerId!, false);
+    const p = await pickWorker(Date.now());
+    expect(p?.accountId).toBe(s.local.accountId);
+    p!.release();
+    expect(await pickWorker(Date.now() + UNHEALTHY_SKIP_MS + 1)).toMatchObject({ accountId: s.agy2.accountId });
+    markWorkerHealth(s.agy2.workerId!, true);
   });
 });
 
 describe("parallelLimit", () => {
-  it("= trabajadores habilitados y sanos-o-desconocidos (local incluida), mínimo 3, tope 16", async () => {
-    expect(await parallelLimit()).toBe(3);
+  it("= trabajadores habilitados (local incluida), mínimo 1, tope 16; la salud no lo baja", async () => {
+    expect(await parallelLimit()).toBe(1);
     const s = await setup([{ label: "local" }, { label: "agy2", port: 3121 }, { label: "agy3", port: 3122 }, { label: "agy4", port: 3123 }, { label: "agy5", port: 3124 }]);
     expect(await parallelLimit()).toBe(5);
     markWorkerHealth(s.agy5.workerId!, false);
     await updateWorker(s.agy4.workerId!, { enabled: false });
-    expect(await parallelLimit()).toBe(3);
-    markWorkerHealth(s.agy5.workerId!, true);
     expect(await parallelLimit()).toBe(4);
+    markWorkerHealth(s.agy5.workerId!, true);
     expect(MAX_PARALLEL_CEILING).toBe(16);
   });
 });

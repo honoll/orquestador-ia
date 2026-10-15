@@ -5,7 +5,7 @@ import { getAdapter } from "../adapters/registry.js";
 import { broadcast } from "./ws.js";
 import { claudeProfileManager } from "../adapters/claude/profile-manager.js";
 import { recordAgyCall, NoActiveAccountError } from "./agy-accounts.js";
-import { acquireAgy, agyAvailability, markWorkerHealth, type AgyLease } from "./agy-workers.js";
+import { pickWorker, agyAvailability, markWorkerHealth, type AgyLease } from "./agy-workers.js";
 import { WorkerUnavailableError } from "../adapters/agy/worker-client.js";
 import pino from "pino";
 
@@ -16,7 +16,8 @@ const UNKNOWN_SESSION_RE = /unknown session|session.*not found|invalid.*session/
 const MAX_RETRIES = 2;
 export const QUOTA_PAUSE_PREFIX = "Pausado por cuota";
 
-export type StepOutcomeStatus = "succeeded" | "failed" | "paused_quota";
+/** requeued: el paso agy volvió a pending sin gastar llamada porque no había cuenta libre (el planificador lo relanza). */
+export type StepOutcomeStatus = "succeeded" | "failed" | "paused_quota" | "requeued";
 export interface StepOutcome { status: StepOutcomeStatus; tokensUsed: number }
 
 export interface StepRunOptions {
@@ -27,12 +28,13 @@ export interface StepRunOptions {
   promptOverride?: string;
   /** Kill handle set externally to allow cancellation */
   onKillRegistered?: (kill: () => void) => void;
+  /** agy: cuenta ya reservada por el planificador para el primer intento (se libera siempre al terminar). */
+  agyLease?: AgyLease;
 }
 
 /** No quedó cuenta de agy para el paso: cancelado, sin cuentas, todas las bolsas sin cuota (pausa) o trabajadores caídos. */
-async function agyNoAccount(o: { planId: string; stepId: string; aborted: boolean; lastQuotaLabel: string | null; lastError: string | null; tokensUsed: number }): Promise<StepOutcome> {
+async function agyNoAccount(o: { planId: string; stepId: string; lastQuotaLabel: string | null; lastError: string | null; tokensUsed: number }): Promise<StepOutcome> {
   const { planId, stepId, tokensUsed } = o;
-  if (o.aborted) return { status: "failed", tokensUsed }; // cancelado mientras esperaba: el planificador lo marca cancelled
   const avail = await agyAvailability();
   if (avail.total > 0 && avail.usable === 0) {
     const msg = `${QUOTA_PAUSE_PREFIX}: todas las bolsas de agy están sin cuota${o.lastQuotaLabel ? ` (última cuenta: "${o.lastQuotaLabel}")` : ""}; vuelve a ejecutar el plan cuando se libere alguna.`;
@@ -48,8 +50,23 @@ async function agyNoAccount(o: { planId: string; stepId: string; aborted: boolea
   return { status: "failed", tokensUsed };
 }
 
+/** Hay cuentas usables pero todas ocupadas: el paso vuelve a pending en vez de quedarse "running" esperando. */
+async function requeue(planId: string, stepId: string, tokensUsed: number): Promise<StepOutcome> {
+  await db.update(schema.planSteps).set({ status: "pending", startedAt: null }).where(eq(schema.planSteps.id, stepId));
+  broadcast({ type: "plan:step", planId, stepId, status: "pending", adapter: "agy", timestamp: new Date().toISOString() } as any);
+  return { status: "requeued", tokensUsed };
+}
+
 /** Execute a single plan step with retry logic. Solo ejecuta: no toca el estado del plan. */
 export async function runPlanStep(options: StepRunOptions): Promise<StepOutcome> {
+  try {
+    return await runPlanStepInner(options);
+  } finally {
+    options.agyLease?.release(); // idempotente: cubre las salidas antes del primer intento
+  }
+}
+
+async function runPlanStepInner(options: StepRunOptions): Promise<StepOutcome> {
   const { planId, stepId, cwd } = options;
 
   const stepRows = await db.select().from(schema.planSteps).where(eq(schema.planSteps.id, stepId));
@@ -66,13 +83,12 @@ export async function runPlanStep(options: StepRunOptions): Promise<StepOutcome>
 
   broadcast({ type: "plan:step", planId, stepId, status: "running", adapter: step.adapter, timestamp: new Date().toISOString() } as any);
 
-  // agy (F10): cada intento toma una cuenta (local o trabajador). Cuota → se excluye su bolsa; trabajador caído →
-  // se excluye la cuenta; ninguna cuenta ni intento cuenta como reintento.
+  // agy (F10): cada intento toma una cuenta libre (local o trabajador), sin esperar. Cuota → se excluye su bolsa;
+  // trabajador caído → se excluye la cuenta; ninguno de los dos gasta reintento. Sin cuenta libre → requeued.
   const isAgy = step.adapter === "agy";
   const quotaPools = new Set<string>();
   const downAccounts = new Set<string>();
-  const waitAbort = new AbortController();
-  if (isAgy) options.onKillRegistered?.(() => waitAbort.abort());
+  let preLease = options.agyLease ?? null;
   let lastQuotaLabel: string | null = null;
 
   let sessionId = step.sessionId ?? undefined;
@@ -94,8 +110,13 @@ export async function runPlanStep(options: StepRunOptions): Promise<StepOutcome>
 
     let lease: AgyLease | null = null;
     if (isAgy) {
-      lease = await acquireAgy({ pools: quotaPools, accounts: downAccounts }, waitAbort.signal);
-      if (!lease) return agyNoAccount({ planId, stepId, aborted: waitAbort.signal.aborted, lastQuotaLabel, lastError, tokensUsed });
+      const ex = { pools: quotaPools, accounts: downAccounts };
+      lease = preLease ?? await pickWorker(Date.now(), ex);
+      preLease = null;
+      if (!lease) {
+        if ((await agyAvailability(Date.now(), ex)).usable > 0) return requeue(planId, stepId, tokensUsed);
+        return agyNoAccount({ planId, stepId, lastQuotaLabel, lastError, tokensUsed });
+      }
     }
 
     const runId = randomUUID();
@@ -255,7 +276,7 @@ export async function runPlanStep(options: StepRunOptions): Promise<StepOutcome>
       lastError = err.message;
       if (lease && err instanceof WorkerUnavailableError) {
         // El trabajador no tomó el paso: no es fallo del paso, se prueba otra cuenta.
-        if (lease.worker) markWorkerHealth(lease.worker.id, false);
+        if (lease.worker && err.status !== 409) markWorkerHealth(lease.worker.id, false); // 409 = ocupado, no caído
         downAccounts.add(lease.accountId);
         await db.update(schema.runs).set({ status: "failed", errorMessage: err.message, errorFamily: "worker_unavailable", finishedAt: new Date().toISOString() }).where(eq(schema.runs.id, runId));
         await db.update(schema.tasks).set({ status: "failed", updatedAt: new Date().toISOString() }).where(eq(schema.tasks.id, taskId));

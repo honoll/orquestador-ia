@@ -11,11 +11,11 @@ import { eq } from "drizzle-orm";
 import { db, schema } from "../db/index.js";
 import { broadcast } from "./ws.js";
 import { listAccounts, getActiveAccount, poolKey, type AccountView } from "./agy-accounts.js";
-import { DEFAULT_MAX_PARALLEL } from "./plan-dag.js";
 
 export const DEFAULT_WORKERS_DIR = "C:\\ProgramData\\orquestador-ia\\workers";
 export const MAX_PARALLEL_CEILING = 16;
-export const MIN_PARALLEL_LIMIT = DEFAULT_MAX_PARALLEL; // el default de max_parallel siempre es válido aunque haya menos trabajadores
+/** Un trabajador que no respondió se salta este tiempo en el reparto (luego se vuelve a probar solo). */
+export const UNHEALTHY_SKIP_MS = 60_000;
 
 export type WorkerRow = typeof schema.agyWorkers.$inferSelect;
 
@@ -54,17 +54,16 @@ export class WorkerValidationError extends Error {}
 // Estado en memoria del proceso (el orquestador es el único cliente de los trabajadores).
 const reserved = new Set<string>();
 const lastUsed = new Map<string, number>();
-const health = new Map<string, boolean>();
+const health = new Map<string, { ok: boolean; at: number }>();
 const waiters = new Set<() => void>();
 let useSeq = 0;
-let releaseSeq = 0;
 
 function notify() {
   broadcast({ type: "accounts:changed", timestamp: new Date().toISOString() } as any);
 }
 
 export function markWorkerHealth(workerId: string, ok: boolean): void {
-  health.set(workerId, ok);
+  health.set(workerId, { ok, at: Date.now() });
 }
 
 function validPort(v: unknown): number {
@@ -97,7 +96,7 @@ export async function listWorkers(): Promise<WorkerView[]> {
     port: w.port,
     keyPath: w.keyPath,
     enabled: w.enabled === 1,
-    healthy: health.get(w.id) ?? null,
+    healthy: health.get(w.id)?.ok ?? null,
     busy: reserved.has(w.accountId),
     createdAt: w.createdAt,
   }));
@@ -206,6 +205,11 @@ function usable(c: Candidate, now: number, ex: AgyExclude): boolean {
   return !isBlocked(c.view, now) && !ex.pools?.has(c.pool) && !ex.accounts?.has(c.view.id);
 }
 
+function recentlyDown(c: Candidate, now: number): boolean {
+  const h = c.worker ? health.get(c.worker.id) : undefined;
+  return !!h && !h.ok && now - h.at < UNHEALTHY_SKIP_MS;
+}
+
 /** total = cuentas candidatas; usable = no bloqueadas ni excluidas (ocupadas cuentan como usables). */
 export async function agyAvailability(now: number = Date.now(), ex: AgyExclude = {}): Promise<{ total: number; usable: number }> {
   const cands = await candidates(now);
@@ -220,7 +224,7 @@ export async function pickWorker(now: number = Date.now(), ex: AgyExclude = {}):
   const cands = (await candidates(now)).filter((c) => usable(c, now, ex));
   // Sin await desde aquí hasta reservar: dos pasos concurrentes nunca toman la misma cuenta.
   const pick = cands
-    .filter((c) => !reserved.has(c.view.id))
+    .filter((c) => !reserved.has(c.view.id) && !recentlyDown(c, now))
     .sort((a, b) =>
       poolPct(a.view) - poolPct(b.view) ||
       a.view.poolUsage.short.usedTokens - b.view.poolUsage.short.usedTokens ||
@@ -240,38 +244,29 @@ export async function pickWorker(now: number = Date.now(), ex: AgyExclude = {}):
       if (released) return;
       released = true;
       reserved.delete(accountId);
-      releaseSeq++;
       for (const wake of [...waiters]) wake();
     },
   };
 }
 
-/** Como pickWorker, pero si todas las usables están ocupadas espera a que se libere una. null si no queda ninguna usable o se abortó. */
-export async function acquireAgy(ex: AgyExclude = {}, signal?: AbortSignal): Promise<AgyLease | null> {
-  for (;;) {
-    if (signal?.aborted) return null;
-    const seen = releaseSeq;
-    const lease = await pickWorker(Date.now(), ex);
-    if (lease) {
-      if (signal?.aborted) { lease.release(); return null; }
-      return lease;
-    }
-    if ((await agyAvailability(Date.now(), ex)).usable === 0) return null;
-    if (signal?.aborted) return null;
-    if (releaseSeq !== seen) continue; // se liberó una mientras se consultaba la base
-    await new Promise<void>((resolve) => {
-      const wake = () => { waiters.delete(wake); signal?.removeEventListener("abort", wake); resolve(); };
-      waiters.add(wake);
-      signal?.addEventListener("abort", wake, { once: true });
-    });
-  }
+/**
+ * Espera a que se libere alguna cuenta (o a `maxMs`, por si se desbloquea una bolsa o la liberó otro proceso).
+ * Se usa en vez de dejar pasos "running" esperando cuenta: el planificador no lanza un paso agy sin cuenta.
+ */
+export function waitAgyRelease(signal?: AbortSignal, maxMs = 5000): Promise<void> {
+  return new Promise<void>((resolve) => {
+    if (signal?.aborted) return resolve();
+    const timer = setTimeout(() => wake(), maxMs);
+    const wake = () => { clearTimeout(timer); waiters.delete(wake); signal?.removeEventListener("abort", wake); resolve(); };
+    waiters.add(wake);
+    signal?.addEventListener("abort", wake, { once: true });
+  });
 }
 
-/** Tope de max_parallel: trabajadores habilitados sanos o sin saber (local incluida), entre 3 y 16. */
+/** Tope de max_parallel: trabajadores habilitados (local incluida), entre 1 y 16. */
 export async function parallelLimit(): Promise<number> {
   const [workers, active] = await Promise.all([db.select().from(schema.agyWorkers), getActiveAccount()]);
   const withWorker = new Set(workers.map((w) => w.accountId));
-  const count = workers.filter((w) => w.enabled === 1 && health.get(w.id) !== false).length
-    + (active && !withWorker.has(active.id) ? 1 : 0);
-  return Math.min(MAX_PARALLEL_CEILING, Math.max(MIN_PARALLEL_LIMIT, count));
+  const count = workers.filter((w) => w.enabled === 1).length + (active && !withWorker.has(active.id) ? 1 : 0);
+  return Math.min(MAX_PARALLEL_CEILING, Math.max(1, count));
 }

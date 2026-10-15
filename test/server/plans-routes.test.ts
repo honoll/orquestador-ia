@@ -102,17 +102,18 @@ describe("rutas de planes (F2)", () => {
     const id = await mk();
     expect((await req(`/${id}/settings`, "PATCH", { maxParallel: 9 })).status).toBe(400);
     expect((await req(`/${id}/settings`, "PATCH", { budgetTokens: -1 })).status).toBe(400);
-    const r = await req(`/${id}/settings`, "PATCH", { budgetTokens: 50000, maxParallel: 2 });
+    expect((await req(`/${id}/settings`, "PATCH", { maxParallel: 2 })).status).toBe(400); // sin trabajadores el tope es 1
+    const r = await req(`/${id}/settings`, "PATCH", { budgetTokens: 50000, maxParallel: 1 });
     expect(r.status).toBe(200);
-    expect(await r.json()).toMatchObject({ budgetTokens: 50000, maxParallel: 2 });
+    expect(await r.json()).toMatchObject({ budgetTokens: 50000, maxParallel: 1 });
     expect(((await (await req(`/${id}/settings`, "PATCH", { budgetTokens: null })).json()) as { budgetTokens: unknown }).budgetTokens).toBeNull();
   });
 
-  it("F10: el tope de paralelismo = trabajadores habilitados (mínimo 3) y GET lo informa", async () => {
+  it("F10: el tope de paralelismo = trabajadores habilitados (mínimo 1) y GET lo informa", async () => {
     const { createAccount } = await import("../../src/server/agy-accounts.js");
     const { createWorker } = await import("../../src/server/agy-workers.js");
     const id = await mk();
-    expect(((await (await plansRoute.request(`/${id}`)).json()) as { maxParallelLimit: number }).maxParallelLimit).toBe(3);
+    expect(((await (await plansRoute.request(`/${id}`)).json()) as { maxParallelLimit: number }).maxParallelLimit).toBe(1);
     expect((await req(`/${id}/settings`, "PATCH", { maxParallel: 4 })).status).toBe(400);
     await createAccount("local");
     for (const [i, n] of ["w2", "w3", "w4"].entries()) {
