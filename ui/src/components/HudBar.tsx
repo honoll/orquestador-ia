@@ -41,7 +41,7 @@ export function HudBar() {
         sesión: {formatTokens(session?.tokens ?? 0)} tok
       </span>
       <div role="group" aria-label="Vista" className="flex overflow-hidden rounded-md border border-edge-strong">
-        {(["chat", "oficina"] as View[]).map((v) => (
+        {(["chat", "oficina", "roles"] as View[]).map((v) => (
           <button
             key={v}
             type="button"
@@ -51,7 +51,7 @@ export function HudBar() {
             title={viewLocked(v, view, talkActive) ? "Termina la plática para cambiar de vista" : undefined}
             className={`px-3 py-0.5 focus-visible:outline focus-visible:outline-1 focus-visible:-outline-offset-1 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-50 ${view === v ? "bg-surface-3 text-text-primary" : "text-text-secondary hover:text-text-primary"}`}
           >
-            {v === "chat" ? "Chat" : "Oficina"}
+            {v === "chat" ? "Chat" : v === "oficina" ? "Oficina" : "Roles"}
           </button>
         ))}
       </div>

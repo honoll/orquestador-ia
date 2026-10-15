@@ -411,6 +411,27 @@ Introduced in F10 (2026-10-15, branch `f10-agy-cuentas`, on top of `f8-oficina`)
 
 **Known deferred (skipped minors):** no worker disconnect test; worker version is the constant `"1"`; pool = label (two equal labels share a pool; a member added to a blocked pool is not cleared by a success, it expires); import is by label (renaming and re-importing duplicates); mixed quota + down ends `failed`; health and leases live in memory (lost on restart); a down worker can still be picked first if its pool is best (fails fast, then skipped 60 s); the free-quota ranking does not compare pools with different limits in absolute tokens; seat `activity`/`model` are not rendered and working seats beyond desk 4 are invisible; the planner rules name agy even when excluded only in edge cases; a codex writer remap is not tested live.
 
+## Roles (F11)
+
+Introduced in F11 (2026-10-15, branch `f11-roles`, on top of `f10-agy-cuentas`). Claude (Max, "the Jefe") plans and synthesizes; agy accounts do the step work, each step with a **role** that carries its own specialized prompt. Inspired by Paperclip (`paperclipai`, MIT). Plan: `docs/superpowers/plans/2026-10-15-f11-roles-agentes.md`.
+
+**Role files:** `roles/<id>.md` (editable; pristine copies in `roles/_originales/`, guide in `roles/README.md`). Frontmatter `id`, `nombre`, `modelo`, optional `modeloDificil`, `escribe` (`true` | `false` | `salidas`), `herramientasPermitidas`; body sections `## Identidad`, `## Qué haces`, `## Qué no haces`, `## Cómo entregas`, `## Terminado cuando`, `## Estado final`. `src/server/roles.ts`: `parseRole`, `loadRoles(dir?)`, `getRole(id, dir?)` (mtime cache). Roles: `dev` (sonnet-4-6 / opus-4-6-thinking when `dificil`, writes), `qa` (sonnet-4-6, **writes**), `imagen` (flash-high, `salidas`), `investigador`, `lector` (read-only), `redactor` (writes).
+- **`escribe: false` means no commands at all:** read-only agy runs without `--dangerously-skip-permissions`, and agy then denies **every** `run_command` (verified 2026-10-15, also with `--mode auto`/`accept-edits`). That is why QA is `escribe: true` (it must run tests); its "do not edit" rule lives in its text and the guard checks it like any writer.
+
+**Planner:** the routing prompt lists the roles; every step gets `role` (+ `dificil`). `normalizeSteps` forces adapter `agy` and takes `model`/`writes` from the role (unknown role → `lector` if it reads, `dev` if it writes). `plan_steps.role` and `plan_steps.status_detail` store it.
+
+**Step prompt:** role body, then the fenced dependency results, then the closing line with the task. **Final status:** the agent must end with `<<<ESTADO terminado|bloqueado {"detalle":…}|necesita {"detalle":…}>>>` as the **last line of its own answer** (`src/server/step-status.ts`; parsed only there, stripped from the stored result). `bloqueado`/`necesita`/no status → the step fails with that `status_detail` (e.g. "sin estado final"). A role step that ends with an empty answer (agy denied its tools) gets "sin estado final".
+
+**Outputs (`escribe: salidas`):** `<project>/.orquestador/salidas/<planId>/` (`src/server/outputs.ts`), `.orquestador/` added to the project's `.gitignore` idempotently. After every step attempt a git-status snapshot diff warns (in `status_detail`) if the step changed files outside that folder. Routes `GET /api/plans/:id/outputs` (`name,size,mtime,isImage`) and `GET /api/plans/:id/outputs/:name` (`nosniff`, `Content-Security-Policy: sandbox`; no symlinks/junctions out of the folder).
+
+**Roles API (`src/server/routes/roles.ts`, originGuard, JSON required, ≤ 64 KB):** `GET /api/roles` (list with `error` for invalid files, no paths; missing `roles/` → `[]`), `GET /:id` (raw markdown), `PUT /:id` (`{ markdown }`, validated with `parseRole`, id must match, edits existing files only, tmp + rename), `POST /` (new role, id `[a-z0-9-]{2,32}`, not `_originales`; created with `link` so a concurrent create gets 409), `POST /:id/restore` (from `_originales`, 404 if none — roles created in the UI have no original).
+
+**UI:** `Roles` view (third button next to Chat | Oficina, same Platicar lock): list, monospace editor, inline validation error, restore, "nuevo rol". `PlanView`: colored role tag per step, `status_detail` under it, "Archivos del plan" with image thumbnails. Office: seat `role`, desk label "<ROL> · <account>".
+
+**Live results (2026-10-15, plan `a726ae22`, project `C:\estudio\f11-demo`):** LECTOR on agy2, DEV on agy3 (`src/slug.mjs` + 4 `node:test` tests, exit 0), IMAGEN on agy3 (`slug-logo.png` 1024², thumbnail shown in PlanView), Jefe synthesis OK, 165k/229k tokens. QA first failed "sin estado final" (read-only → `node --test` denied) → fixed by `escribe: true`; retried on agy4 it ran the tests (4/4) and reported PASA with untested edge cases. The guard (no JEV) paused DEV once and a budget pause needed "continuar".
+
+**Known deferred:** a step that throws in the adapter takes no outside-folder snapshot for that attempt, and a requeue (409/quota) takes a new snapshot, so writes of the earlier attempt become baseline; the snapshot (hash of dirty files, 20 s git timeout) runs while the agy lease is held; INVESTIGADOR (`search_web`/`read_url_content` read-only) was not run live; changing a role does not update already-planned steps (`writes`/`read_only` are stored at planning time).
+
 ## Antigravity Accounts
 
 Introduced in F1 (2026-10-06). Support for multiple agy accounts with usage tracking and quota management.

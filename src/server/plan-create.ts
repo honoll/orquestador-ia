@@ -197,6 +197,7 @@ export async function createPlan(input: { description: string; projectId?: strin
         model: step.model || null,
         reason: step.reason,
         prompt: step.prompt,
+        role: step.role ?? null,
         status: "pending",
       });
     }

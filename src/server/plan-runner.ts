@@ -7,6 +7,9 @@ import { claudeProfileManager } from "../adapters/claude/profile-manager.js";
 import { recordAgyCall, NoActiveAccountError } from "./agy-accounts.js";
 import { pickWorker, agyAvailability, markWorkerHealth, markWorkerBusy, tagLease, cwdAllowsWorkers, type AgyLease } from "./agy-workers.js";
 import { WorkerUnavailableError } from "../adapters/agy/worker-client.js";
+import { parseStepStatus, stripStepStatus } from "./step-status.js";
+import { getRole } from "./roles.js";
+import { ensureOutputsDir, ensureGitignore, gitSnapshot, changedOutside } from "./outputs.js";
 import pino from "pino";
 
 const log = pino({ name: "plan-runner" });
@@ -79,13 +82,32 @@ async function runPlanStepInner(options: StepRunOptions): Promise<StepOutcome> {
   const stepRows = await db.select().from(schema.planSteps).where(eq(schema.planSteps.id, stepId));
   if (stepRows.length === 0) throw new Error(`Step ${stepId} not found`);
   const step = stepRows[0];
-  const prompt = options.promptOverride ?? step.prompt;
+  let prompt = options.promptOverride ?? step.prompt;
+  const planLog = (stream: "stdout" | "stderr", data: string) =>
+    broadcast({ type: "plan:log", planId, stepId, stream, data, timestamp: new Date().toISOString() } as any);
+
+  // F11: los roles que escriben "salidas" (imagen) guardan todo en una carpeta propia del plan, dentro del proyecto.
+  let gitBefore: Map<string, string> | null = null;
+  let outsideWarn: string | null = null; // aviso de escritura fuera de la carpeta de salidas (cualquier desenlace del paso)
+  if (step.role && getRole(step.role)?.escribe === "salidas") {
+    try {
+      if (ensureGitignore(cwd)) planLog("stdout", "\n[orquestador] se agregó .orquestador/ al .gitignore del proyecto\n");
+      const outDir = ensureOutputsDir(cwd, planId);
+      prompt += `\n\nCARPETA DE SALIDAS de este plan: ${outDir}\nGuarda TODO lo que generes únicamente aquí; no escribas ni modifiques nada fuera de esa carpeta.`;
+      gitBefore = await gitSnapshot(cwd);
+    } catch (err) {
+      log.error({ err, stepId }, "No se pudo preparar la carpeta de salidas");
+      planLog("stderr", `
+[orquestador] AVISO: no se pudo preparar la carpeta de salidas (${(err as Error).message}); el paso corre sin restricción de carpeta
+`);
+    }
+  }
 
   const adapter = getAdapter(step.adapter);
   if (!adapter) throw new Error(`Unknown adapter: ${step.adapter}`);
 
   await db.update(schema.planSteps)
-    .set({ status: "running", startedAt: new Date().toISOString(), errorMessage: null })
+    .set({ status: "running", startedAt: new Date().toISOString(), errorMessage: null, statusDetail: null })
     .where(eq(schema.planSteps.id, stepId));
 
   broadcast({ type: "plan:step", planId, stepId, status: "running", adapter: step.adapter, timestamp: new Date().toISOString() } as any);
@@ -123,7 +145,7 @@ async function runPlanStepInner(options: StepRunOptions): Promise<StepOutcome> {
       const ex = { pools: quotaPools, accounts: downAccounts, localOnly };
       lease = preLease ?? await pickWorker(Date.now(), ex);
       preLease = null;
-      if (lease) tagLease(lease.accountId, step.description, step.model ?? null);
+      if (lease) tagLease(lease.accountId, step.description, step.model ?? null, step.role ?? null);
       if (!lease) {
         if ((await agyAvailability(Date.now(), ex)).usable > 0) return requeue(planId, stepId, tokensUsed, attempt);
         return agyNoAccount({ planId, stepId, lastQuotaLabel, lastError, tokensUsed, localOnly });
@@ -205,15 +227,29 @@ async function runPlanStepInner(options: StepRunOptions): Promise<StepOutcome> {
         continue;
       }
 
+      if (gitBefore) {
+        const after = await gitSnapshot(cwd);
+        const outside = after ? changedOutside(gitBefore, after) : [];
+        if (outside.length) {
+          outsideWarn = `AVISO: el paso de salidas tocó archivos fuera de su carpeta: ${outside.slice(0, 10).join(", ")}${outside.length > 10 ? ` y ${outside.length - 10} más` : ""}`;
+          planLog("stderr", `\n[orquestador] ${outsideWarn}\n`);
+        }
+      }
+      const withWarn = (d: string | null) => (outsideWarn ? (d ? `${d} — ${outsideWarn}` : outsideWarn) : d);
+
       const succeeded = result.exitCode === 0 && !result.timedOut;
       const isSilentRateLimit = step.adapter === "claude" && result.exitCode === 1 && !(result.stderr ?? "").trim();
       const isTransient = TRANSIENT_RE.test((result.errorMessage ?? "") + result.stderr) || isSilentRateLimit;
       const isUnknownSession = UNKNOWN_SESSION_RE.test(result.stderr + (result.errorMessage ?? ""));
+      // F11: un paso con rol debe cerrar su propia respuesta (summary, no el stdout crudo) con el estado final.
+      const finalStatus = succeeded && step.role ? parseStepStatus(result.summary ?? "") : null;
+      const roleFailed = succeeded && !!step.role && finalStatus?.kind !== "terminado";
+      const stepResult = step.role ? stripStepStatus(result.summary ?? "") : result.summary || result.stdout.slice(0, 4000);
 
       // Update the run record
       await db.update(schema.runs)
         .set({
-          status: succeeded ? "succeeded" : "failed",
+          status: succeeded && !roleFailed ? "succeeded" : "failed",
           result: result.stdout,
           summary: result.summary,
           sessionId: result.sessionId,
@@ -230,15 +266,32 @@ async function runPlanStepInner(options: StepRunOptions): Promise<StepOutcome> {
         .where(eq(schema.runs.id, runId));
 
       await db.update(schema.tasks)
-        .set({ status: succeeded ? "succeeded" : "failed", updatedAt: new Date().toISOString() })
+        .set({ status: succeeded && !roleFailed ? "succeeded" : "failed", updatedAt: new Date().toISOString() })
         .where(eq(schema.tasks.id, taskId));
+
+      // Bloqueado, necesita o sin estado → failed sin reintento.
+      if (roleFailed) {
+        const statusDetail = withWarn(finalStatus ? (finalStatus.detalle ?? "(sin detalle)") : "sin estado final")!;
+        const msg = finalStatus ? `${finalStatus.kind}: ${statusDetail}` : statusDetail;
+        await db.update(schema.planSteps)
+          .set({
+            status: "failed", runId, result: stepResult, errorMessage: msg, statusDetail, costUsd: result.costUsd,
+            inputTokens: result.inputTokens, outputTokens: result.outputTokens, sessionId: result.sessionId, finishedAt: new Date().toISOString(),
+          })
+          .where(eq(schema.planSteps.id, stepId));
+        broadcast({ type: "plan:step", planId, stepId, status: "failed", adapter: step.adapter, error: msg, timestamp: new Date().toISOString() } as any);
+        return { status: "failed", tokensUsed };
+      }
+
+      const statusDetail = withWarn(finalStatus?.detalle ?? null);
 
       if (succeeded) {
         await db.update(schema.planSteps)
           .set({
             status: "succeeded",
+            statusDetail,
             runId,
-            result: result.summary || result.stdout.slice(0, 4000),
+            result: stepResult,
             costUsd: result.costUsd,
             inputTokens: result.inputTokens,
             outputTokens: result.outputTokens,
@@ -320,6 +373,7 @@ async function runPlanStepInner(options: StepRunOptions): Promise<StepOutcome> {
     .set({
       status: "failed",
       errorMessage: lastError,
+      ...(outsideWarn ? { statusDetail: outsideWarn } : {}),
       finishedAt: new Date().toISOString(),
     })
     .where(eq(schema.planSteps.id, stepId));

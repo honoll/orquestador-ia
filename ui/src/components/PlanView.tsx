@@ -10,6 +10,7 @@ import { useAppState } from "../context/AppStateContext";
 import { parseStreamingText } from "../lib/parse-stream";
 import { stepLevels } from "../lib/plan-levels";
 import { formatTokens } from "../lib/format";
+import { roleColor, roleTag } from "../lib/roles";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { ResizableGroup, ResizableHandle, ResizablePanel } from "./ResizableDivider";
@@ -184,6 +185,9 @@ interface PlanStep {
   readOnly: number;
   guardFlags: string | null;
   guardApproved: number;
+  /** F11: id del rol (null en planes viejos y en la revisión crítica) y detalle de bloqueado/necesita. */
+  role?: string | null;
+  statusDetail?: string | null;
 }
 
 export interface Plan {
@@ -439,6 +443,52 @@ function FlowDiagram({ steps }: { steps: PlanStep[] }) {
   );
 }
 
+// ─── Archivos del plan (F11: carpeta de salidas) ─────────────────────────────
+
+interface OutputFile { name: string; size: number; mtime: string; isImage: boolean }
+
+function PlanOutputs({ planId, refreshKey }: { planId: string; refreshKey: string }) {
+  const { data: files = [] } = useQuery<OutputFile[]>({
+    queryKey: ["plan-outputs", planId, refreshKey],
+    queryFn: async () => {
+      const r = await fetch(`/api/plans/${planId}/outputs`);
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      return r.json();
+    },
+  });
+  if (files.length === 0) return null;
+  const url = (f: OutputFile) => `/api/plans/${planId}/outputs/${encodeURIComponent(f.name)}`;
+  const images = files.filter((f) => f.isImage);
+  const others = files.filter((f) => !f.isImage);
+  return (
+    <section aria-label="Archivos del plan" className="mt-6 rounded-xl border border-edge bg-surface-1 p-4">
+      <p className="font-mono text-[10px] uppercase tracking-widest text-text-tertiary mb-3">archivos del plan</p>
+      {images.length > 0 && (
+        <ul className="grid grid-cols-[repeat(auto-fill,minmax(120px,1fr))] gap-3 mb-3">
+          {images.map((f) => (
+            <li key={f.name}>
+              <a href={url(f)} target="_blank" rel="noreferrer" className="block rounded-lg border border-edge overflow-hidden hover:border-accent">
+                <img src={url(f)} alt={f.name} loading="lazy" className="h-24 w-full object-cover bg-surface-0" />
+                <span className="block truncate px-2 py-1 font-mono text-[10px] text-text-secondary">{f.name}</span>
+              </a>
+            </li>
+          ))}
+        </ul>
+      )}
+      {others.length > 0 && (
+        <ul className="space-y-1 font-mono text-[11px]">
+          {others.map((f) => (
+            <li key={f.name} className="flex gap-2">
+              <a href={url(f)} target="_blank" rel="noreferrer" className="text-accent hover:underline truncate">{f.name}</a>
+              <span className="text-text-tertiary shrink-0">{formatTokens(f.size)} B</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
 // ─── Step card ─────────────────────────────────────────────────────────────────
 
 function StepCard({
@@ -498,6 +548,15 @@ function StepCard({
         <div className="flex-1 min-w-0">
           {/* Header row */}
           <div className="flex items-center gap-2 flex-wrap">
+            {step.role && (
+              <span
+                className="font-mono text-[10px] font-semibold px-1.5 py-0.5 rounded border shrink-0"
+                style={{ color: roleColor(step.role), borderColor: `${roleColor(step.role)}66` }}
+                title={`rol ${step.role}`}
+              >
+                {roleTag(step.role)}
+              </span>
+            )}
             <span className="text-sm font-medium text-text-primary leading-snug">
               {step.description}
             </span>
@@ -539,6 +598,9 @@ function StepCard({
             <p className="font-mono text-[10px] text-text-tertiary mt-1 leading-relaxed">
               {step.reason}
             </p>
+          )}
+          {step.statusDetail && (
+            <p className="font-mono text-[11px] text-accent mt-1 leading-relaxed">{step.statusDetail}</p>
           )}
 
           {/* Running: streaming */}
@@ -1905,6 +1967,7 @@ export function PlanView({
                     );
                   })}
                 </div>
+                <PlanOutputs planId={plan.id} refreshKey={`${plan.status}:${succeededCount}`} />
                 </div>
               </div>
             </ResizablePanel>

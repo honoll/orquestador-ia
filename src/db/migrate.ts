@@ -109,7 +109,9 @@ CREATE TABLE IF NOT EXISTS plan_steps (
   estimated_tokens INTEGER,
   read_only INTEGER NOT NULL DEFAULT 0,
   guard_flags TEXT,
-  guard_approved INTEGER NOT NULL DEFAULT 0
+  guard_approved INTEGER NOT NULL DEFAULT 0,
+  role TEXT,
+  status_detail TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project_id);
@@ -315,6 +317,8 @@ async function migrate() {
     "ALTER TABLE plan_steps ADD COLUMN read_only INTEGER NOT NULL DEFAULT 0",
     "ALTER TABLE plan_steps ADD COLUMN guard_flags TEXT",
     "ALTER TABLE plan_steps ADD COLUMN guard_approved INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE plan_steps ADD COLUMN role TEXT",
+    "ALTER TABLE plan_steps ADD COLUMN status_detail TEXT",
   ]) {
     try { await client.execute(stmt); } catch { /* column already exists */ }
   }

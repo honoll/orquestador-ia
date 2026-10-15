@@ -17,7 +17,7 @@ modelo/read_only salen del rol; `<<<ESTADO …>>>` decide succeeded/failed; UI: 
 - Roles iniciales e ids exactos: `dev`, `qa`, `imagen`, `investigador`, `lector`, `redactor`. Modelos por defecto:
   dev `claude-sonnet-4-6` (difícil: `claude-opus-4-6-thinking`), qa `claude-sonnet-4-6`, imagen
   `gemini-3.8-flash-high`, investigador `gemini-3.8-flash-medium`, lector `gemini-3.8-flash-low`, redactor
-  `claude-sonnet-4-6`. `escribe`: dev true, qa false, imagen `salidas`, investigador false, lector false, redactor true.
+  `claude-sonnet-4-6`. `escribe`: dev true, qa true (2026-10-15: agy en solo lectura niega todo `run_command`), imagen `salidas`, investigador false, lector false, redactor true.
 - Secciones obligatorias del archivo de rol (en este orden, español de México): `## Identidad`, `## Qué haces`,
   `## Qué no haces`, `## Cómo entregas`, `## Terminado cuando`, `## Estado final`.
 - Estado final: `<<<ESTADO terminado>>>` | `<<<ESTADO bloqueado {"detalle":"…"}>>>` |

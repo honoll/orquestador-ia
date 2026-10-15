@@ -433,3 +433,33 @@ describe("rutas de planes (F2)", () => {
     expect(h.runPlanDag).toHaveBeenLastCalledWith(id, expect.any(String), { mode: "all" });
   });
 });
+
+describe("rutas de salidas del plan (F11)", () => {
+  it("lista y sirve archivos de la carpeta; 404 para traversal o plan inexistente", async () => {
+    const fs = await import("node:fs");
+    const os = await import("node:os");
+    const pth = await import("node:path");
+    const dir = fs.mkdtempSync(pth.join(os.tmpdir(), "proj-"));
+    const projectId = randomUUID();
+    await db.insert(schema.projects).values({ id: projectId, name: "p", path: dir });
+    const id = await mk({ projectId });
+    const out = pth.join(dir, ".orquestador", "salidas", id);
+    fs.mkdirSync(out, { recursive: true });
+    fs.writeFileSync(pth.join(out, "logo.png"), Buffer.from([1, 2, 3]));
+    fs.writeFileSync(pth.join(dir, "secreto.txt"), "no");
+
+    const list = await (await req(`/${id}/outputs`, "GET")).json();
+    expect(list).toEqual([expect.objectContaining({ name: "logo.png", size: 3, isImage: true })]);
+
+    const ok = await req(`/${id}/outputs/logo.png`, "GET");
+    expect(ok.status).toBe(200);
+    expect(ok.headers.get("content-type")).toBe("image/png");
+    expect(Array.from(new Uint8Array(await ok.arrayBuffer()))).toEqual([1, 2, 3]);
+
+    for (const bad of ["..%2Fsecreto.txt", "%2e%2e", "..%5Csecreto.txt", "nada.png", "C%3A%5Cx.txt"]) {
+      expect((await req(`/${id}/outputs/${bad}`, "GET")).status, bad).toBe(404);
+    }
+    expect((await req(`/${randomUUID()}/outputs`, "GET")).status).toBe(404);
+    expect((await req(`/${randomUUID()}/outputs/logo.png`, "GET")).status).toBe(404);
+  });
+});

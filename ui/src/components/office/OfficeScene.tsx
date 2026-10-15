@@ -38,7 +38,7 @@ function Desks({ agent }: { agent: AgentState }) {
   return Array.from({ length: n }, (_, i) => {
     const seat = agent.seats?.[i];
     const working = seat ? seat.working : agent.working;
-    const label = seat ? seatLabel(seat.account) + (i === 3 && total > 4 ? ` ×${total}` : "") : i === 0 ? deskLabel(role.label, n) : role.label;
+    const label = seat ? seatLabel(seat.account, seat.role) + (i === 3 && total > 4 ? ` ×${total}` : "") : i === 0 ? deskLabel(role.label, n) : role.label;
     return (
       <div key={i} className="w-[112px] text-center">
         <AgentSprite role={agent.id} working={working} />

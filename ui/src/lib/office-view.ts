@@ -9,14 +9,17 @@ export function appendLog<T>(log: T[], entry: T, max: number = LOG_MAX): T[] {
   return [entry, ...log].slice(0, max);
 }
 
-export type View = "chat" | "oficina";
+export type View = "chat" | "oficina" | "roles";
 export const VIEW_KEY = "orquestador.vista";
+
+const VIEWS: readonly string[] = ["chat", "oficina", "roles"];
+const isView = (v: string | null): v is View => v !== null && VIEWS.includes(v);
 
 /** `?vista=` manda; si no, lo guardado; cualquier otra cosa → "chat". */
 export function readView(search: string, stored: string | null): View {
   const q = new URLSearchParams(search).get("vista");
-  if (q === "chat" || q === "oficina") return q;
-  return stored === "oficina" ? "oficina" : "chat";
+  if (isView(q)) return q;
+  return isView(stored) ? stored : "chat";
 }
 
 /** Eventos de WebSocket que cambian la foto de la oficina. */
@@ -95,5 +98,5 @@ export function groupByPool(accounts: RackAccount[], now: number = Date.now()): 
   }));
 }
 
-/** Etiqueta de un escritorio de AGY: "AGY · <cuenta>". */
-export const seatLabel = (account: string): string => `AGY · ${account}`;
+/** Etiqueta de un escritorio de AGY: "<ROL> · <cuenta>" si corre un paso con rol, si no "AGY · <cuenta>". */
+export const seatLabel = (account: string, role: string | null = null): string => `${role ? role.toUpperCase() : "AGY"} · ${account}`;

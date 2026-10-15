@@ -7,6 +7,8 @@ import { ROUTABLE_ADAPTERS } from "../../config/models.js";
 import { runPlanDag, cancelPlanRun, isPlanRunning, retrySynthesis } from "../plan-scheduler.js";
 import { broadcast } from "../ws.js";
 import { createPlan, planCwd, generatingKills } from "../plan-create.js";
+import { listOutputs, resolveOutput } from "../outputs.js";
+import fs from "node:fs";
 
 const app = new Hono();
 
@@ -298,6 +300,20 @@ app.get("/:id/file-changes", async (c) => {
     .where(eq(schema.planFileChanges.planId, id))
     .orderBy(asc(schema.planFileChanges.changedAt));
   return c.json(rows);
+});
+
+// Archivos de salida del plan (<proyecto>/.orquestador/salidas/<planId>/)
+app.get("/:id/outputs", async (c) => {
+  const plan = await getPlan(c.req.param("id"));
+  if (!plan) return c.json({ error: "Plan no encontrado" }, 404);
+  return c.json(listOutputs(await planCwd(plan), plan.id));
+});
+
+app.get("/:id/outputs/:name", async (c) => {
+  const plan = await getPlan(c.req.param("id"));
+  const hit = plan && resolveOutput(await planCwd(plan), plan.id, c.req.param("name"));
+  if (!hit) return c.json({ error: "Archivo no encontrado" }, 404);
+  return new Response(new Uint8Array(await fs.promises.readFile(hit.file)), { headers: { "Content-Type": hit.type, "X-Content-Type-Options": "nosniff", "Content-Security-Policy": "sandbox" } });
 });
 
 // Get chat history for a plan
