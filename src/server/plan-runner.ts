@@ -5,7 +5,7 @@ import { getAdapter } from "../adapters/registry.js";
 import { broadcast } from "./ws.js";
 import { claudeProfileManager } from "../adapters/claude/profile-manager.js";
 import { recordAgyCall, NoActiveAccountError } from "./agy-accounts.js";
-import { pickWorker, agyAvailability, markWorkerHealth, type AgyLease } from "./agy-workers.js";
+import { pickWorker, agyAvailability, markWorkerHealth, markWorkerBusy, type AgyLease } from "./agy-workers.js";
 import { WorkerUnavailableError } from "../adapters/agy/worker-client.js";
 import pino from "pino";
 
@@ -18,7 +18,12 @@ export const QUOTA_PAUSE_PREFIX = "Pausado por cuota";
 
 /** requeued: el paso agy volvió a pending sin gastar llamada porque no había cuenta libre (el planificador lo relanza). */
 export type StepOutcomeStatus = "succeeded" | "failed" | "paused_quota" | "requeued";
-export interface StepOutcome { status: StepOutcomeStatus; tokensUsed: number }
+export interface StepOutcome {
+  status: StepOutcomeStatus;
+  tokensUsed: number;
+  /** requeued: reintentos ya gastados, para seguir la cuenta al relanzar (startAttempt). */
+  attempt?: number;
+}
 
 export interface StepRunOptions {
   planId: string;
@@ -30,6 +35,8 @@ export interface StepRunOptions {
   onKillRegistered?: (kill: () => void) => void;
   /** agy: cuenta ya reservada por el planificador para el primer intento (se libera siempre al terminar). */
   agyLease?: AgyLease;
+  /** Reintentos ya gastados en un lanzamiento anterior que terminó requeued. */
+  startAttempt?: number;
 }
 
 /** No quedó cuenta de agy para el paso: cancelado, sin cuentas, todas las bolsas sin cuota (pausa) o trabajadores caídos. */
@@ -51,10 +58,10 @@ async function agyNoAccount(o: { planId: string; stepId: string; lastQuotaLabel:
 }
 
 /** Hay cuentas usables pero todas ocupadas: el paso vuelve a pending en vez de quedarse "running" esperando. */
-async function requeue(planId: string, stepId: string, tokensUsed: number): Promise<StepOutcome> {
+async function requeue(planId: string, stepId: string, tokensUsed: number, attempt: number): Promise<StepOutcome> {
   await db.update(schema.planSteps).set({ status: "pending", startedAt: null }).where(eq(schema.planSteps.id, stepId));
   broadcast({ type: "plan:step", planId, stepId, status: "pending", adapter: "agy", timestamp: new Date().toISOString() } as any);
-  return { status: "requeued", tokensUsed };
+  return { status: "requeued", tokensUsed, attempt };
 }
 
 /** Execute a single plan step with retry logic. Solo ejecuta: no toca el estado del plan. */
@@ -102,9 +109,11 @@ async function runPlanStepInner(options: StepRunOptions): Promise<StepOutcome> {
     ? claudeProfileManager.getEnvForProfile(claudeProfile.id)
     : undefined;
 
-  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+  let linkedRunId = step.runId ?? null;
+  for (let attempt = Math.max(0, options.startAttempt ?? 0); attempt <= MAX_RETRIES; attempt++) {
     // Retry delay for transient errors
-    if (attempt > 0) {
+    // Al relanzar tras un requeued la espera de este intento ya se hizo antes de quedarse sin cuenta.
+    if (attempt > 0 && attempt > (options.startAttempt ?? 0)) {
       await new Promise((r) => setTimeout(r, 3000 * attempt));
     }
 
@@ -114,12 +123,13 @@ async function runPlanStepInner(options: StepRunOptions): Promise<StepOutcome> {
       lease = preLease ?? await pickWorker(Date.now(), ex);
       preLease = null;
       if (!lease) {
-        if ((await agyAvailability(Date.now(), ex)).usable > 0) return requeue(planId, stepId, tokensUsed);
+        if ((await agyAvailability(Date.now(), ex)).usable > 0) return requeue(planId, stepId, tokensUsed, attempt);
         return agyNoAccount({ planId, stepId, lastQuotaLabel, lastError, tokensUsed });
       }
     }
 
     const runId = randomUUID();
+    let prevRunId: string | null = linkedRunId;
 
     // Create a task + run record for traceability
     const taskId = randomUUID();
@@ -143,6 +153,8 @@ async function runPlanStepInner(options: StepRunOptions): Promise<StepOutcome> {
       });
       // Liga el paso a su run desde el arranque: la Oficina excluye estos runs del "chat suelto".
       await db.update(schema.planSteps).set({ runId }).where(eq(schema.planSteps.id, stepId));
+      prevRunId = linkedRunId;
+      linkedRunId = runId;
     } catch (err) {
       lease?.release(); // un error de base no deja la cuenta reservada para siempre
       throw err;
@@ -276,10 +288,19 @@ async function runPlanStepInner(options: StepRunOptions): Promise<StepOutcome> {
       lastError = err.message;
       if (lease && err instanceof WorkerUnavailableError) {
         // El trabajador no tomó el paso: no es fallo del paso, se prueba otra cuenta.
-        if (lease.worker && err.status !== 409) markWorkerHealth(lease.worker.id, false); // 409 = ocupado, no caído
         downAccounts.add(lease.accountId);
-        await db.update(schema.runs).set({ status: "failed", errorMessage: err.message, errorFamily: "worker_unavailable", finishedAt: new Date().toISOString() }).where(eq(schema.runs.id, runId));
-        await db.update(schema.tasks).set({ status: "failed", updatedAt: new Date().toISOString() }).where(eq(schema.tasks.id, taskId));
+        if (err.status === 409) {
+          // Ocupado (p. ej. un trabajo huérfano tras reiniciar): enfriamiento corto y no cuenta como intento, sin run fallido.
+          if (lease.worker) markWorkerBusy(lease.worker.id);
+          await db.update(schema.planSteps).set({ runId: prevRunId }).where(eq(schema.planSteps.id, stepId));
+          linkedRunId = prevRunId;
+          await db.delete(schema.runs).where(eq(schema.runs.id, runId));
+          await db.delete(schema.tasks).where(eq(schema.tasks.id, taskId));
+        } else {
+          if (lease.worker) markWorkerHealth(lease.worker.id, false);
+          await db.update(schema.runs).set({ status: "failed", errorMessage: err.message, errorFamily: "worker_unavailable", finishedAt: new Date().toISOString() }).where(eq(schema.runs.id, runId));
+          await db.update(schema.tasks).set({ status: "failed", updatedAt: new Date().toISOString() }).where(eq(schema.tasks.id, taskId));
+        }
         broadcast({ type: "plan:log", planId, stepId, stream: "stderr", data: `\n[orquestador] ${err.message}; probando otra cuenta...\n`, timestamp: new Date().toISOString() } as any);
         attempt--;
         continue;

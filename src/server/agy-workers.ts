@@ -16,6 +16,8 @@ export const DEFAULT_WORKERS_DIR = "C:\\ProgramData\\orquestador-ia\\workers";
 export const MAX_PARALLEL_CEILING = 16;
 /** Un trabajador que no respondió se salta este tiempo en el reparto (luego se vuelve a probar solo). */
 export const UNHEALTHY_SKIP_MS = 60_000;
+/** Un trabajador que respondió 409 (ocupado) se salta este tiempo, o hasta que /health diga busy:false. */
+export const BUSY_COOLDOWN_MS = 15_000;
 
 export type WorkerRow = typeof schema.agyWorkers.$inferSelect;
 
@@ -55,6 +57,7 @@ export class WorkerValidationError extends Error {}
 const reserved = new Set<string>();
 const lastUsed = new Map<string, number>();
 const health = new Map<string, { ok: boolean; at: number }>();
+const busyUntil = new Map<string, number>();
 const waiters = new Set<() => void>();
 let useSeq = 0;
 
@@ -64,6 +67,12 @@ function notify() {
 
 export function markWorkerHealth(workerId: string, ok: boolean): void {
   health.set(workerId, { ok, at: Date.now() });
+}
+
+/** busy=true: enfriamiento de BUSY_COOLDOWN_MS; busy=false (p. ej. /health): vuelve a ser elegible ya. */
+export function markWorkerBusy(workerId: string, busy = true, now: number = Date.now()): void {
+  if (busy) busyUntil.set(workerId, now + BUSY_COOLDOWN_MS);
+  else busyUntil.delete(workerId);
 }
 
 function validPort(v: unknown): number {
@@ -205,9 +214,9 @@ function usable(c: Candidate, now: number, ex: AgyExclude): boolean {
   return !isBlocked(c.view, now) && !ex.pools?.has(c.pool) && !ex.accounts?.has(c.view.id);
 }
 
-function recentlyDown(c: Candidate, now: number): boolean {
+function skipForNow(c: Candidate, now: number): boolean {
   const h = c.worker ? health.get(c.worker.id) : undefined;
-  return !!h && !h.ok && now - h.at < UNHEALTHY_SKIP_MS;
+  return (!!h && !h.ok && now - h.at < UNHEALTHY_SKIP_MS) || (!!c.worker && (busyUntil.get(c.worker.id) ?? 0) > now);
 }
 
 /** total = cuentas candidatas; usable = no bloqueadas ni excluidas (ocupadas cuentan como usables). */
@@ -224,7 +233,7 @@ export async function pickWorker(now: number = Date.now(), ex: AgyExclude = {}):
   const cands = (await candidates(now)).filter((c) => usable(c, now, ex));
   // Sin await desde aquí hasta reservar: dos pasos concurrentes nunca toman la misma cuenta.
   const pick = cands
-    .filter((c) => !reserved.has(c.view.id) && !recentlyDown(c, now))
+    .filter((c) => !reserved.has(c.view.id) && !skipForNow(c, now))
     .sort((a, b) =>
       poolPct(a.view) - poolPct(b.view) ||
       a.view.poolUsage.short.usedTokens - b.view.poolUsage.short.usedTokens ||

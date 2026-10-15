@@ -8,6 +8,7 @@ import { createAccount, updateAccount, recordAgyCall } from "../../src/server/ag
 import {
   createWorker, listWorkers, updateWorker, deleteWorker, importWorkers, pickWorker, agyAvailability, waitAgyRelease,
   parallelLimit, markWorkerHealth, WorkerValidationError, MAX_PARALLEL_CEILING, UNHEALTHY_SKIP_MS,
+  markWorkerBusy, BUSY_COOLDOWN_MS,
 } from "../../src/server/agy-workers.js";
 import type { AdapterExecutionResult } from "../../src/lib/types.js";
 
@@ -161,6 +162,24 @@ describe("pickWorker", () => {
     p!.release();
     expect(await pickWorker(Date.now() + UNHEALTHY_SKIP_MS + 1)).toMatchObject({ accountId: s.agy2.accountId });
     markWorkerHealth(s.agy2.workerId!, true);
+  });
+});
+
+describe("enfriamiento por 409", () => {
+  it("un trabajador ocupado se salta hasta que pasa el enfriamiento o /health dice libre", async () => {
+    const s = await setup([{ label: "local" }, { label: "agy2", port: 3121 }]);
+    const held = (await pickWorker(NOW, { accounts: new Set([s.agy2.accountId]) }))!; // local ocupada
+    markWorkerBusy(s.agy2.workerId!, true, NOW);
+    expect(await pickWorker(NOW + 1000)).toBeNull();
+    const later = await pickWorker(NOW + BUSY_COOLDOWN_MS + 1);
+    expect(later?.accountId).toBe(s.agy2.accountId);
+    later!.release();
+    markWorkerBusy(s.agy2.workerId!, true, NOW);
+    markWorkerBusy(s.agy2.workerId!, false);
+    const freed = await pickWorker(NOW + 1000);
+    expect(freed?.accountId).toBe(s.agy2.accountId);
+    freed!.release();
+    held.release();
   });
 });
 

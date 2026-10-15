@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import {
-  listWorkers, createWorker, updateWorker, deleteWorker, importWorkers, markWorkerHealth, WorkerValidationError,
+  listWorkers, createWorker, updateWorker, deleteWorker, importWorkers, markWorkerHealth, markWorkerBusy, WorkerValidationError,
 } from "../agy-workers.js";
 import { workerHealth } from "../../adapters/agy/worker-client.js";
 
@@ -66,6 +66,7 @@ app.get("/:id/health", async (c) => {
   try {
     const h = await workerHealth({ port: w.port, keyPath: w.keyPath });
     markWorkerHealth(w.id, true);
+    markWorkerBusy(w.id, h.busy === true);
     return c.json(h);
   } catch (err) {
     markWorkerHealth(w.id, false);

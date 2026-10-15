@@ -114,6 +114,15 @@ export async function runPlanDag(planId: string, cwd: string, opts: { mode?: "al
     let failed = false;
     let pause: "quota" | "budget" | "guard" | null = null;
     let launched = 0;
+    // Reintentos gastados por pasos que volvieron como requeued: se siguen contando al relanzarlos.
+    const attempts = new Map<string, number>();
+    const waitForAgy = async () => {
+      const ac = new AbortController();
+      const abort = () => ac.abort();
+      registerKill(run, abort);
+      await waitAgyRelease(ac.signal);
+      run.kills.delete(abort);
+    };
 
     for (;;) {
       const plan = await getPlan(planId);
@@ -184,6 +193,7 @@ export async function runPlanDag(planId: string, cwd: string, opts: { mode?: "al
           // Si cancelaron entre el arranque del paso y el spawn, se mata en cuanto haya proceso.
           onKillRegistered: (kill) => registerKill(run, kill),
           agyLease,
+          startAttempt: attempts.get(step.id),
         })
           .catch(async (err: Error) => {
             log.error({ err, stepId: step.id }, "runPlanStep lanzó una excepción");
@@ -198,11 +208,7 @@ export async function runPlanDag(planId: string, cwd: string, opts: { mode?: "al
       if (inFlight.size === 0) {
         // Pasos agy listos pero todas las cuentas ocupadas (p. ej. por otro plan): esperar a que se libere una.
         if (agyStarved && !run.cancelled && !failed && pause === null) {
-          const ac = new AbortController();
-          const abort = () => ac.abort();
-          registerKill(run, abort);
-          await waitAgyRelease(ac.signal);
-          run.kills.delete(abort);
+          await waitForAgy();
           continue;
         }
         break;
@@ -219,6 +225,11 @@ export async function runPlanDag(planId: string, cwd: string, opts: { mode?: "al
       }
       if (outcome.status === "failed") failed = true;
       if (outcome.status === "paused_quota") pause = "quota";
+      if (outcome.status === "requeued") {
+        attempts.set(stepId, outcome.attempt ?? 0);
+        // Sin nada más en vuelo, no relanzar al instante: esperar a que se libere una cuenta (o unos segundos).
+        if (inFlight.size === 0) await waitForAgy();
+      }
     }
 
     stopWatch(planId);

@@ -113,6 +113,29 @@ describe("runPlanStep", () => {
     expect(step.status).toBe("pending");
   });
 
+  it("409 (ocupado): sin run fallido, el trabajador se enfría y el paso vuelve a pending", async () => {
+    const w = await addWorker("agy2", 3121);
+    const { pickWorker } = await import("../../src/server/agy-workers.js");
+    const held = (await pickWorker(Date.now(), { accounts: new Set([w]) }))!; // la local queda ocupada
+    h.execute.mockImplementationOnce(async () => { throw new WorkerUnavailableError("ocupado", 409); });
+    const { planId, stepId, cwd } = await mk();
+    const before = (await db.select().from(schema.runs)).length;
+    const out = await runPlanStep({ planId, stepId, cwd });
+    expect(out).toMatchObject({ status: "requeued", attempt: 0 });
+    expect((await db.select().from(schema.runs)).length).toBe(before);
+    const step = await db.select().from(schema.planSteps).where(eq(schema.planSteps.id, stepId)).then((r) => r[0]);
+    expect(step).toMatchObject({ status: "pending", runId: null });
+    held.release();
+    expect((await pickWorker(Date.now(), { accounts: new Set([localId]) }))).toBeNull(); // agy2 enfriándose
+  });
+
+  it("startAttempt sigue la cuenta de reintentos tras un requeued", async () => {
+    h.execute.mockImplementation(async () => ({ ...h.ok, exitCode: 1, errorMessage: "boom", errorFamily: "unknown" }));
+    const { planId, stepId, cwd } = await mk();
+    await runPlanStep({ planId, stepId, cwd, startAttempt: 2 });
+    expect(h.execute).toHaveBeenCalledTimes(1);
+  });
+
   it("promptOverride reemplaza el prompt guardado", async () => {
     const { planId, stepId, cwd } = await mk();
     await runPlanStep({ planId, stepId, cwd, promptOverride: "con contexto" });

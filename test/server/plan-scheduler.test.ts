@@ -206,6 +206,29 @@ describe("planificador", () => {
     expect(await plan(id)).toMatchObject({ status: "completed" });
   });
 
+  it("F10: un trabajador que responde 409 no hace girar el bucle (enfriamiento + espera)", async () => {
+    const { pickWorker, createWorker } = await import("../../src/server/agy-workers.js");
+    const { WorkerUnavailableError } = await import("../../src/adapters/agy/worker-client.js");
+    const local = (await db.select().from(schema.agyAccounts).where(eq(schema.agyAccounts.active, 1)))[0];
+    const b = await createAccount("Ocupada409");
+    await createWorker({ accountId: b.id, port: 3127, keyPath: "C:/k/o.key" });
+    const held = (await pickWorker(Date.now(), { accounts: new Set([b.id]) }))!;
+    expect(held.accountId).toBe(local.id);
+    const orig = h.adapters.agy.execute;
+    let calls = 0;
+    h.adapters.agy.execute = async () => { calls++; throw new WorkerUnavailableError("ocupado", 409); };
+    const id = await mkPlan([{ key: "s1", adapter: "agy" }]);
+    const done = runPlanDag(id, cwd);
+    await new Promise((r) => setTimeout(r, 400));
+    expect(calls).toBe(1);
+    expect((await steps(id))[0].status).toBe("pending");
+    cancelPlanRun(id);
+    await done;
+    h.adapters.agy.execute = orig;
+    held.release();
+    await db.delete(schema.agyWorkers);
+  });
+
   it("plan viejo sin claves corre en orden, uno a la vez", async () => {
     const planId = randomUUID();
     await db.insert(schema.plans).values({ id: planId, description: "viejo", status: "pending" });
