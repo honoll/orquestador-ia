@@ -1,5 +1,22 @@
 # Orquestador-IA — Continuación y Estado
 
+## F12 — Oficina jugable · completada 2026-10-15
+
+**Rama:** `f12-oficina-jugable` (encima de `f11-roles`). Orden de merge: F7 → F8 → F10 → F11 → F12 → F9, solo cuando Alejandro lo diga. Detalle técnico en `CLAUDE.md`, sección "Playable office (F12)".
+
+- Modo **mundo** en la Oficina: 3 pisos con pasillos, cubículos con mamparas, salas con puerta y elevador; tu personaje camina con clic o flechas/WASD (Shift corre), mecánica estilo GBA escrita desde cero (sala limpia: nada de `C:\GAMES_N_SHIT\`)
+- Los agentes caminan a la zona de su rol al tomar un paso y vuelven a la sala de descanso; los libres deambulan
+- Cuadro de texto estilo GBA al acercarte a un agente (rol, cuenta, tarea, paso y avance, modelo; "abrir plan", "ver log")
+- Sprites: 7 originales hechos por el propio orquestador (gato = tú, búho Jefe, guardia, recepción, biblio, claude, dev); el resto son criaturas por código; tus skins en `C:\tools\sprites` (formato `gen3`, fuera de git) ganan
+- Arreglo de la guardia incluido (`fix-guardia-rutas`): rutas del proyecto con puntuación pegada ya no son "fuera del proyecto"; `..` que escapa sí
+- Verificado en vivo: sprites cargan; asiento con rol/paso/avance; un paso DEV llevó al agente al cubículo DEV del piso 2. 984 tests
+
+Siguiente: **F9 (toda la app estilo pixel)**.
+
+Pendientes (tuyos), además de los de F10/F11:
+- Probar el mundo a mano (caminar, elevador, cuadro, "abrir plan") y Platicar desde la columna lateral
+- Si quieres personajes propios: hojas `gen3` + `sprites.json` en `C:\tools\sprites`
+
 ## F11 — Roles de agentes · completada 2026-10-15
 
 **Rama:** `f11-roles` (encima de `f10-agy-cuentas`). Orden de merge: F7 → F8 → F10 → F11 → F12 → F9, solo cuando Alejandro lo diga. Detalle técnico en `CLAUDE.md`, sección "Roles (F11)".

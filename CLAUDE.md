@@ -432,6 +432,30 @@ Introduced in F11 (2026-10-15, branch `f11-roles`, on top of `f10-agy-cuentas`).
 
 **Known deferred:** a step that throws in the adapter takes no outside-folder snapshot for that attempt, and a requeue (409/quota) takes a new snapshot, so writes of the earlier attempt become baseline; the snapshot (hash of dirty files, 20 s git timeout) runs while the agy lease is held; INVESTIGADOR (`search_web`/`read_url_content` read-only) was not run live; changing a role does not update already-planned steps (`writes`/`read_only` are stored at planning time).
 
+## Playable office (F12)
+
+Introduced in F12 (2026-10-15, branch `f12-oficina-jugable`, on top of `f11-roles`). The Oficina view gets a **"mundo"** mode (selector `mundo · escritorios`, `localStorage["orquestador.oficina.modo"]`, default mundo): a top-down pixel world in GBA 3rd-gen style where the user walks around and agents walk to the zone of the role they are running. Plan: `docs/superpowers/plans/2026-10-15-f12-oficina-jugable.md`. No new dependencies.
+
+**Clean room (user decision):** the mechanics were written from observable rules only. `C:\GAMES_N_SHIT\` (pokeemerald / esmeralda-port, Nintendo-derived code without a license) is never opened, copied or translated. No third-party sprites in the repo.
+
+**Modules (`ui/src/office/`):**
+- `world/maps.ts`: 3 floors as ASCII rows + zones + fixed posts. Legend `#` wall, `.` floor, `=` desk, `*` plant, `B` shelf, `S` sofa, `|`/`-` cubicle partition, `d` door, `E` elevator (always at (15,1); arrival tile (15,2)), `s` seat, `p` player spawn. Solid: `#=*BS|-`. Floor 1: Dirección (jefe, guardia fixed), Recepción y Memoria (recepcion, biblio fixed), Sala de descanso (11 seats). Floor 2: DEV cubicles (6), Claude y Codex (fixed), QA lab (3). Floor 3: Imagen, Investigador, Lector, Redactor rooms (2 seats each). A test checks every seat is reachable from the elevator.
+- `world/path.ts`: `findPath` (BFS 4-dir; solid target → free neighbour), `isNear` (Chebyshev 1), `zoneSeats`, `freeTileIn` (never door or elevator), `zoneAt`.
+- `world/placement.ts`: `placeAgents(state, prev)`: fixed agents at their posts; one agy agent per seat (`agy:<account>`), zone = role if working with a known role, `dev` if working without one, `descanso` if idle; stable seat (keeps its previous tile if still in the same zone); overflow → free tile of the zone → arrival tile. `planRoute` crosses floors through the elevator.
+- `world/input.ts`: `tickMover` (fixed 60 Hz step): walk 16 ticks/tile, run (Shift) 8, tap-to-turn with an 8-tick wait, bump in place, chained tiles while held; `screenToTile`, `keyToDir`, `fitScale` (integer ×3 default, min ×1), `dirBetween`.
+- `world/render.ts` (tiles, upper layer that covers the lower part of a character behind `B`/`#`/`*`), `world/dialog.ts` (`dialogFor`, `paginate`).
+- `components/office/OfficeWorld.tsx`: canvas + rAF loop (≤ 4 steps/frame, paused while hidden), click-to-move and arrows/WASD **only with the canvas focused**, elevator menu (keys 1–3, Esc; `role="group"`), idle NPCs wander every 2–5 s, teleport when a route > 40 tiles or > 12 tiles pending, reduced motion = instant. `WorldDialog.tsx`: GBA text box (2-line pages, typewriter 1 char/2 ticks, ▼, Enter/Space/Z/click; sr-only live text), "abrir plan" (respects the Platicar lock) and "ver log". In mundo mode `AccountRack` and `OfficeTalkPanel` move to the side column.
+
+**Seat data (server):** `tagLease(..., role, { planId, stepKey })`; `AgySeat` gains `planId`, `stepKey`, `progress { done, total }` (filled by `collectOfficeInput` with one `inArray` query over working seats' plans).
+
+**Sprites:** priority = user skins → repo base sprites → code creatures (`sprites/creatures.ts`, 14 original 16×16 species). Sheets in **`gen3` format**: 144×32, 9 frames of 16×32 (stand down, up, left; walk down 1/2, up 1/2, left 1/2; right = mirrored left; `gen3Frame`). `normalizeSkins(raw, baseUrl)` expands `{ "file": "x.png", "formato": "gen3" }`, adds each sheet's URL (`src`) and drops junk; images load and are looked up by URL.
+- **Repo base sprites** `ui/public/oficina/sprites/` (+ `sprites.json`, `README.md`): original art made by the orchestrator itself (plan `fa75a0a7`, project `C:\estudio\oficina-sprites`, IMAGEN on agy + a Pillow script). Approved by the user: jugador (cat), jefe (owl), guardia, recepcion, biblio, claude, dev. The other 7 failed QA (one looked like Charmander) and use code creatures.
+- **User skins:** folder `OFFICE_SPRITES_DIR` (default `C:\tools\sprites`, never in git) with `sprites.json` (`player`, `roles`, `agents`, by account or role). Server: `GET /api/office/sprites` (validated, ≤ 64 KB, `__proto__` rejected) and `GET /sprites/:file` (name `[A-Za-z0-9_-]{1,64}.(png|gif|webp)`, realpath must stay inside the folder, `nosniff`, `CSP: sandbox`). Vite proxies `/sprites` in dev.
+
+**Live results (2026-10-15):** the 7 base sprites load in the world; seat data verified (`lector · s1 · 0/3`, then `dev · s2 · 1/3`, `qa · s3 · 2/3`); a DEV-only plan moved the local account's agent into the first DEV cubicle (3,3) on floor 2 (canvas pixel diff). Tests 984, lint 0 errors, typecheck and `build:ui` OK.
+
+**Known deferred:** agents on a route walk through each other and the player; at ×1 the dialog covers the lower half; the live region is mounted with its text (some screen readers skip the first announce); zone labels (DOM) can cover an agent in a zone's top-left corner; two agents can share the arrival tile when a zone is full; no symlink-escape test for `/sprites`; reduced motion and "abrir plan" were not exercised live.
+
 ## Antigravity Accounts
 
 Introduced in F1 (2026-10-06). Support for multiple agy accounts with usage tracking and quota management.
