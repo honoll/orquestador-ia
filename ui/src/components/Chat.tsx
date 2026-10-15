@@ -92,7 +92,7 @@ export function Chat() {
   const {
     selectedAdapter, selectedModel, setAdapter, setModel,
     selectedProjectId, conversationId, setConversation, newChat,
-    activePlanId, setActivePlanId, setTalkActive,
+    activePlanId, setActivePlanId,
   } = useAppState();
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<Message[]>([]);
@@ -107,7 +107,6 @@ export function Chat() {
   const [activeShellJobId, setActiveShellJobId] = useState<string | null>(null);
   const [analyzingFiles, setAnalyzingFiles] = useState(false);
   const [talking, setTalking] = useState(false);
-  useEffect(() => { setTalkActive(talking); }, [talking, setTalkActive]);
   const [toast, setToast] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
