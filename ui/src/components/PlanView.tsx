@@ -8,6 +8,7 @@ import { fetchMemoryStatus, obsidianUrl, type MemoryStatusData } from "../lib/me
 import { useWs } from "../context/WebSocketProvider";
 import { useAppState } from "../context/AppStateContext";
 import { parseStreamingText } from "../lib/parse-stream";
+import { stripStatusLine } from "../lib/step-status";
 import { stepLevels } from "../lib/plan-levels";
 import { formatTokens } from "../lib/format";
 import { roleColor, roleTag } from "../lib/roles";
@@ -1050,7 +1051,7 @@ function PlanChat({ plan }: { plan: Plan }) {
         if (run.status !== "running") {
           clearInterval(interval);
           const finalContent = parseStreamingText(logs.get(activeRunId) ?? "", activeParseAdapter)
-            || run.summary || run.result || "(sin respuesta)";
+            || stripStatusLine(run.summary || run.result || "") || "(sin respuesta)";
           if (hybridMode && hybridPhase === "claude") {
             setMessages((prev) =>
               prev.map((m, i) =>

@@ -7,6 +7,7 @@ import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
 import { useWs } from "../context/WebSocketProvider";
 import { useAppState } from "../context/AppStateContext";
 import { parseStreamingText } from "../lib/parse-stream";
+import { stripStatusLine } from "../lib/step-status";
 import { PlanView, type Plan } from "./PlanView";
 import { GitHubCloneModal } from "./GitHubCloneModal";
 import { FileContextPicker, buildFileContext } from "./FileContextPicker";
@@ -152,7 +153,7 @@ export function Chat() {
           const run = runs[0];
           loaded.push({
             role: "assistant",
-            content: run.summary || "(sin respuesta)",
+            content: stripStatusLine(run.summary ?? "") || "(sin respuesta)",
             adapter: run.adapter,
             model: run.model,
             costUsd: run.costUsd ?? 0,
@@ -278,7 +279,7 @@ export function Chat() {
       if (run.status !== "running") {
         clearInterval(interval);
         setActiveRunId(null);
-        const finalContent = run.summary ||
+        const finalContent = stripStatusLine(run.summary ?? "") ||
           (logs.get(activeRunId) ? parseStreamingText(logs.get(activeRunId)!, run.adapter) : "") ||
           "(sin respuesta)";
         // Solo respuestas que terminan en esta sesión (nunca el historial cargado).

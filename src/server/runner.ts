@@ -10,6 +10,7 @@ import fs from "node:fs";
 
 import { requireActiveAccount, recordAgyCall } from "./agy-accounts.js";
 import { cavemanFlagFile, findCavemanSkill } from "../lib/caveman.js";
+import { stripStepStatus } from "./step-status.js";
 const HOME = process.env.HOME || process.env.USERPROFILE || "";
 const log = pino({ name: "runner" });
 
@@ -91,7 +92,7 @@ async function buildHistoryPrefix(taskId: string, sessionId: string | undefined)
 
     const run = runs[0];
     if (run?.summary) {
-      lines.push(`Assistant: ${run.summary}`);
+      lines.push(`Assistant: ${stripStepStatus(run.summary)}`);
     } else {
       lines.push("Assistant: (no response)");
     }
