@@ -356,13 +356,14 @@ export function ProjectPanel({ onClose }: { onClose?: () => void }) {
                           >
                             ×
                           </button>
-                          <PlanStatusBadge status={plan.status} paused={!!plan.pauseReason} />
                         </div>
                       </div>
+                      {/* El estado va en la fila de la fecha: en columnas angostas dejaba el título en "Haz …". */}
                       <div className="flex items-center gap-2">
                         <span className="text-xs text-text-tertiary">
                           {formatDate(plan.updatedAt)}
                         </span>
+                        <PlanStatusBadge status={plan.status} paused={!!plan.pauseReason} />
                       </div>
                     </div>
                   ))}
