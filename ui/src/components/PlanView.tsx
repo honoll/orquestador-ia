@@ -582,6 +582,7 @@ function StepCard({
             <div className="mt-3">
               <button
                 onClick={() => setExpanded(!expanded)}
+                aria-expanded={expanded}
                 className="px-btn"
               >
                 {expanded ? "▲ OCULTAR RESULTADO" : "▼ VER RESULTADO"}
@@ -598,6 +599,7 @@ function StepCard({
                 {stepFiles.length > 0 && (
                   <button
                     onClick={() => setShowFiles((v) => !v)}
+                    aria-expanded={showFiles}
                     className="text-text-tertiary hover:text-ok transition-colors flex items-center gap-1"
                   >
                     <span>📄</span>
