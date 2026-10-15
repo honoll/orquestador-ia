@@ -4,3 +4,5 @@ Instalar o actualizar (desde tu PowerShell, no desde la app de Claude): `powersh
 Compila `Launcher.cs` a `%USERPROFILE%\.orquestador-ia\app\OrquestadorIA.exe`, corre su `--self-test`, genera el icono, escribe `launcher.json` (solo si no existe), hace `npm run build:ui` si hace falta y crea los accesos "Orquestador IA" en Escritorio y menú Inicio.
 Para actualizar tras un `git pull`: cierra el lanzador (bandeja → Salir) y vuelve a correr el script; `launcher.json` (repo, port, npmDir, edge, notifications) se conserva.
 Registros: `%USERPROFILE%\.orquestador-ia\logs\server.log` (servidor, rota a 5 MB) y `launcher.log` (avisos del lanzador).
+
+**Si Claude responde "(sin respuesta)" / "The system cannot find the path specified":** `npmDir` de `launcher.json` apunta a una carpeta npm cuyo `claude.cmd` ya no tiene su `claude.exe`. Instala Claude Code desde tu PowerShell (`npm install -g @anthropic-ai/claude-code`), pon `"npmDir": "C:\\Users\\<tú>\\AppData\\Roaming\\npm"` en `%USERPROFILE%\.orquestador-ia\app\launcher.json` y reinicia el lanzador (bandeja → Salir).

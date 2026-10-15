@@ -66,10 +66,16 @@ $cfg = Join-Path $AppDir 'launcher.json'
 if (-not (Test-Path -LiteralPath $cfg)) {
   $edge = 'C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe'
   if (-not (Test-Path -LiteralPath $edge)) { $edge = Join-Path $env:ProgramFiles 'Microsoft\Edge\Application\msedge.exe' }
+  # Claude Code instalado desde la terminal del usuario (%APPDATA%\npm real) gana; si no, la copia de la app de Claude
+  # (MSIX). Esa copia puede quedar con un claude.cmd huérfano cuya claude.exe ya no existe ("cannot find the path").
+  $npmDir = Join-Path $env:APPDATA 'npm'
+  if (-not (Test-Path -LiteralPath (Join-Path $npmDir 'node_modules\@anthropic-ai\claude-code'))) {
+    $npmDir = Join-Path $env:LOCALAPPDATA 'Packages\Claude_pzs8sxrjxfjjc\LocalCache\Roaming\npm'
+  }
   [ordered]@{
     repo          = $repo
     port          = 3110
-    npmDir        = Join-Path $env:LOCALAPPDATA 'Packages\Claude_pzs8sxrjxfjjc\LocalCache\Roaming\npm'
+    npmDir        = $npmDir
     edge          = $edge
     notifications = $true
   } | ConvertTo-Json | Set-Content -LiteralPath $cfg -Encoding UTF8
