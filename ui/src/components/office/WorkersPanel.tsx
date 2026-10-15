@@ -17,17 +17,21 @@ export function WorkersPanel() {
     refetchInterval: 30_000,
   });
   const [probed, setProbed] = useState<Record<string, boolean | "wait">>({});
+  const [error, setError] = useState<string | null>(null);
   const probe = async (id: string) => {
     setProbed((p) => ({ ...p, [id]: "wait" }));
     const ok = await fetch(`/api/agy-workers/${id}/health`).then((r) => r.ok).catch(() => false);
     setProbed((p) => ({ ...p, [id]: ok }));
   };
   const toggle = async (w: Worker) => {
-    await fetch(`/api/agy-workers/${w.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ enabled: !w.enabled }) });
-    void qc.invalidateQueries({ queryKey: ["agy-workers"] });
+    setError(null);
+    const ok = await fetch(`/api/agy-workers/${w.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ enabled: !w.enabled }) }).then((r) => r.ok).catch(() => false);
+    if (!ok) setError(`No se pudo cambiar ${w.accountLabel}`);
+    void qc.invalidateQueries({ queryKey: ["agy-workers"] }); // el checkbox sigue al servidor: si falló, vuelve solo
   };
   return (
     <Panel title="TRABAJADORES DE AGY">
+      {error && <p role="alert" className="mb-1 text-err">{error}</p>}
       {workers.length === 0 ? <p className="text-text-secondary">sin trabajadores</p> : (
         <ul>
           {workers.map((w) => {

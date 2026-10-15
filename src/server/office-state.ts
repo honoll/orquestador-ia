@@ -47,7 +47,11 @@ export function buildOfficeState(i: OfficeInput): OfficeState {
   for (const id of ["agy", "codex", "claude"] as const satisfies readonly AdapterType[]) {
     const running = i.steps.filter((s) => s.adapter === id && s.status === "running");
     const chats = i.chatRuns.filter((r) => r.adapter === id);
-    const seats = id === "agy" && i.agySeats.length ? i.agySeats : undefined;
+    // chat/análisis/voz de agy no toman lease: corren en la cuenta local, así que su asiento trabaja.
+    const loose = id === "agy" ? (chats.length ? "chat" : i.voiceActive ? "voz" : null) : null;
+    const seats = id === "agy" && i.agySeats.length
+      ? i.agySeats.map((x) => (x.local && !x.working && loose ? { ...x, working: true, activity: loose } : x))
+      : undefined;
     // Con asientos, un escritorio por cuenta; el resto de adaptadores, uno por paso/chat en curso.
     const n = seats ? Math.max(seats.length, 1) : running.length + chats.length;
     const working = seats ? seats.some((x) => x.working) || running.length + chats.length > 0 : n > 0;

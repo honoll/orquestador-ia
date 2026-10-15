@@ -163,17 +163,19 @@ describe("Oficina: escritorios con filas reales (regresión: contaban doble)", (
   it("1 paso corriendo → 1 escritorio; 2 pasos → 2", async () => {
     await addWorker("agy2", 3121); // un paso por cuenta: el segundo va al trabajador
     const seen: number[] = [];
-    h.execute.mockImplementationOnce(async () => { seen.push(await agyDesks()); return h.ok; });
+    const loose: number[] = []; // chats sueltos vistos: la run de un paso corriendo NO debe contar (run_id se enlaza al iniciar)
+    h.execute.mockImplementationOnce(async () => { seen.push(await agyDesks()); loose.push((await collectOfficeInput()).chatRuns.length); return h.ok; });
     const a = await mk();
     await runPlanStep({ planId: a.planId, stepId: a.stepId, cwd: a.cwd });
 
     let release!: () => void;
     const gate = new Promise<void>((r) => { release = r; });
     let started = 0;
-    const both = async () => { if (++started === 2) { seen.push(await agyDesks()); release(); } await gate; return h.ok; };
+    const both = async () => { if (++started === 2) { seen.push(await agyDesks()); loose.push((await collectOfficeInput()).chatRuns.length); release(); } await gate; return h.ok; };
     h.execute.mockImplementationOnce(both).mockImplementationOnce(both);
     const b = await mk(); const c = await mk();
     await Promise.all([runPlanStep({ planId: b.planId, stepId: b.stepId, cwd: b.cwd }), runPlanStep({ planId: c.planId, stepId: c.stepId, cwd: c.cwd })]);
     expect(seen).toEqual([1, 2]);
+    expect(loose).toEqual([0, 0]);
   });
 });

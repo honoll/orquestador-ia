@@ -83,12 +83,18 @@ describe("collectOfficeInput (BD temporal)", () => {
   });
 
   describe("asientos de agy por cuenta", () => {
-    const seat = (account: string, working = false, o = {}) => ({ account, pool: account, working, activity: working ? `tarea ${account}` : "libre", model: null, ...o });
+    const seat = (account: string, working = false, o = {}) => ({ local: account === "local", account, pool: account, working, activity: working ? `tarea ${account}` : "libre", model: null, ...o });
     const stepAgy = (o = {}) => step({ adapter: "agy", ...o });
     it("sin trabajo: un asiento por cuenta, todo inactivo", () => {
       const a = agent(buildOfficeState(base({ agySeats: [seat("local"), seat("agy2")] })), "agy");
       expect(a).toMatchObject({ working: false, desks: 2 });
       expect(a.seats!.map((x) => x.working)).toEqual([false, false]);
+    });
+    it("chat de agy sin lease: ilumina el asiento local", () => {
+      const a = agent(buildOfficeState(base({ agySeats: [seat("local"), seat("agy2")], chatRuns: [{ adapter: "agy", model: null, prompt: "hola" }] })), "agy");
+      expect(a.seats!.map((x) => [x.account, x.working, x.activity])).toEqual([["local", true, "chat"], ["agy2", false, "libre"]]);
+      const v = agent(buildOfficeState(base({ agySeats: [seat("local")], voiceActive: true })), "agy");
+      expect(v.seats![0]).toMatchObject({ working: true, activity: "voz" });
     });
     it("un trabajador ocupado", () => {
       const a = agent(buildOfficeState(base({ agySeats: [seat("local"), seat("agy2", true)], steps: [stepAgy()] })), "agy");

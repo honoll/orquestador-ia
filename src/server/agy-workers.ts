@@ -288,13 +288,13 @@ export function tagLease(accountId: string, activity: string, model: string | nu
   if (reserved.has(accountId)) leaseInfo.set(accountId, { activity, model });
 }
 
-export interface AgySeat { account: string; pool: string | null; working: boolean; activity: string; model: string | null }
+export interface AgySeat { local: boolean; account: string; pool: string | null; working: boolean; activity: string; model: string | null }
 
 /** Un asiento por cuenta que puede correr pasos (trabajadores habilitados + la local): ocupado si tiene reserva. */
 export async function agySeats(now: number = Date.now()): Promise<AgySeat[]> {
   return (await candidates(now)).map((c) => {
     const working = reserved.has(c.view.id);
     const info = leaseInfo.get(c.view.id);
-    return { account: c.view.label, pool: c.view.pool, working, activity: working ? (info?.activity ?? "trabajando") : "libre", model: working ? (info?.model ?? null) : null };
+    return { local: c.worker === null, account: c.view.label, pool: c.view.pool, working, activity: working ? (info?.activity ?? "trabajando") : "libre", model: working ? (info?.model ?? null) : null };
   });
 }

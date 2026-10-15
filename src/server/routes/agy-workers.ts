@@ -6,6 +6,9 @@ import { workerHealth } from "../../adapters/agy/worker-client.js";
 
 const app = new Hono();
 
+// keyPath se queda en el servidor: ninguna respuesta lo devuelve.
+const pub = ({ keyPath: _k, ...w }: Awaited<ReturnType<typeof listWorkers>>[number]) => w;
+
 const fail = (err: unknown) => {
   if (err instanceof WorkerValidationError) {
     return { status: (/no encontrado/i.test(err.message) ? 404 : 400) as 400 | 404, error: err.message };
@@ -18,12 +21,12 @@ const body = async (c: { req: { json: () => Promise<unknown> } }) => {
   return (b && typeof b === "object" ? b : {}) as Record<string, unknown>;
 };
 
-app.get("/", async (c) => c.json(await listWorkers()));
+app.get("/", async (c) => c.json((await listWorkers()).map(pub)));
 
 app.post("/", async (c) => {
   try {
     const b = await body(c);
-    return c.json(await createWorker({ accountId: b.accountId, port: b.port, keyPath: b.keyPath, enabled: b.enabled }), 201);
+    return c.json(await createWorker({ accountId: b.accountId, port: b.port, keyPath: b.keyPath, enabled: b.enabled }).then(pub), 201);
   } catch (err) {
     const f = fail(err);
     return c.json({ error: f.error }, f.status === 404 ? 400 : f.status);
@@ -43,7 +46,7 @@ app.post("/import", async (c) => {
 app.patch("/:id", async (c) => {
   try {
     const b = await body(c);
-    return c.json(await updateWorker(c.req.param("id"), { port: b.port, keyPath: b.keyPath, enabled: b.enabled }));
+    return c.json(await updateWorker(c.req.param("id"), { port: b.port, keyPath: b.keyPath, enabled: b.enabled }).then(pub));
   } catch (err) {
     const f = fail(err);
     return c.json({ error: f.error }, f.status);
