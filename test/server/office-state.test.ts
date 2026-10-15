@@ -33,7 +33,7 @@ describe("buildOfficeState", () => {
   });
   it("adaptadores: N = pasos running + chats; clamp de escritorios 1..4", () => {
     const idle = agent(buildOfficeState(base()), "codex");
-    expect(idle).toMatchObject({ working: false, desks: 1, model: "gpt-5.5", tokens: 0 });
+    expect(idle).toMatchObject({ working: false, desks: 1, model: "gpt-5.6-sol", tokens: 0 });
     const s = buildOfficeState(base({
       steps: [step({ model: "gpt-x" }), step({ stepId: "s2" }), step({ stepId: "s3", status: "pending" })],
       chatRuns: [{ adapter: "codex", model: null, prompt: "hola" }],

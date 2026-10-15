@@ -47,7 +47,7 @@ describe("normalizeSteps", () => {
       { adapter: "codex", model: "gpt-5.4" },
       { adapter: "claude", model: "" },
     ]);
-    expect(a.model).toBe("gpt-5.5");
+    expect(a.model).toBe("gpt-5.6-sol");
     expect(b.model).toBe("claude-opus-5-5");
   });
 

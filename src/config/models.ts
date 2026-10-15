@@ -25,9 +25,13 @@ export const MODEL_CATALOG = {
     ],
   },
   codex: {
-    defaultModel: "gpt-5.5",
+    // Lo que ofrece la cuenta ChatGPT Plus al CLI 0.146.1 (models_cache del perfil de trabajador, 2026-10-15).
+    // gpt-5.5 ya no existe; los gpt-6.x requieren un CLI más nuevo.
+    defaultModel: "gpt-5.6-sol",
     models: [
-      { id: "gpt-5.5", label: "GPT-5.5" },
+      { id: "gpt-5.6-sol", label: "GPT-5.6 Sol" },
+      { id: "gpt-5.6-terra", label: "GPT-5.6 Terra" },
+      { id: "gpt-5.6-luna", label: "GPT-5.6 Luna" },
     ],
   },
   agy: {
@@ -49,7 +53,7 @@ export const ROUTABLE_ADAPTERS: readonly AdapterType[] = ["claude", "codex", "ag
 
 /**
  * Adapters que Opus puede asignar al generar un plan (env PLANNER_ADAPTERS, lista con comas; se lee en cada
- * llamada). Por defecto sin codex (la cuenta de ChatGPT no soporta Codex). Siempre ⊆ ROUTABLE_ADAPTERS.
+ * llamada). Por defecto sin codex; con la cuenta Plus se activa con PLANNER_ADAPTERS=claude,agy,codex en .env. Siempre ⊆ ROUTABLE_ADAPTERS.
  * Codex sigue disponible a mano (picker del chat, PATCH de pasos).
  */
 export function plannerAdapters(): AdapterType[] {
