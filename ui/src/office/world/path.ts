@@ -54,10 +54,10 @@ export function zoneSeats(map: FloorMap, zoneId: string): Tile[] {
   return out;
 }
 
-/** Primera casilla pisable del rectángulo que nadie ocupa (para cuando no quedan asientos). */
+/** Primera casilla pisable del rectángulo que nadie ocupa (para cuando no quedan asientos); nunca elevador ni puerta. */
 export function freeTileIn(map: FloorMap, z: Zone, taken: ReadonlySet<string>): Tile | null {
   for (let y = z.y; y < z.y + z.h; y++) for (let x = z.x; x < z.x + z.w; x++) {
-    if (!isSolid(map, x, y) && !taken.has(`${x},${y}`) && map.filas[y][x] !== "E") return [x, y];
+    if (!isSolid(map, x, y) && !taken.has(`${x},${y}`) && !"Ed".includes(map.filas[y][x])) return [x, y];
   }
   return null;
 }
