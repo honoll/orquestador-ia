@@ -10,7 +10,7 @@ Fecha: 2026-10-15 · Estado: aprobado en conversación · Base: F8 (`f8-oficina`
 2. **Fuentes locales (descarga aprobada, ya bajadas):** subconjunto latino de Google Fonts, licencia OFL —
    `vt323-400.woff2` 17 936 B, `silkscreen-400.woff2` 8 404 B, `silkscreen-700.woff2` 7 524 B, más `OFL-VT323.txt` y
    `OFL-Silkscreen.txt`. Copia de trabajo en
-   `C:\Users\sidel\AppData\Local\Temp\claude\C--\f5b352d1-366d-4594-8baf-5c3a3529cab3\scratchpad\fonts\` → destino
+   `C:\tools\fonts\f9\` → destino
    `ui/public/fonts/` (servidas por la app, sin red al usarla).
 3. **Capa de tema global + ajustes por pantalla** (no se reescriben componentes):
    - `ui/src/index.css`: `@font-face` de las 3 fuentes (`font-display: swap`); `body` en VT323 con tamaño base
