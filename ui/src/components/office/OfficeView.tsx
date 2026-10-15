@@ -93,7 +93,7 @@ export function OfficeView() {
       </div>
       <div className="grid gap-2.5 px-3 pb-3 @min-[1060px]:grid-cols-[minmax(0,1fr)_300px]">
         {mode === "mundo" ? (
-          <OfficeWorld state={data} onOpenPlan={openPlan} onNear={setNear} onAdvance={() => dialog.current?.advance()}>
+          <OfficeWorld state={data} onNear={setNear} onAdvance={() => dialog.current?.advance()}>
             {near && <WorldDialog key={near.key} ref={dialog} agent={near} log={officeLog} onOpenPlan={openPlan} />}
           </OfficeWorld>
         ) : (

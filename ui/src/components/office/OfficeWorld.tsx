@@ -11,7 +11,7 @@ import { loadSkinImages, skinSrc } from "../../office/sprites/skin-images";
 import type { Tile } from "../../office/world/types";
 
 interface Props {
-  state: OfficeState | undefined; onOpenPlan: (id: string) => void; onNear: (a: WorldAgent | null) => void;
+  state: OfficeState | undefined; onNear: (a: WorldAgent | null) => void;
   /** Enter/Espacio/Z con el foco en el canvas y un agente cerca: avanza el cuadro de diálogo. */
   onAdvance?: () => void;
   /** Cuadro de diálogo: se pinta sobre el canvas y se oculta con el menú del elevador. */

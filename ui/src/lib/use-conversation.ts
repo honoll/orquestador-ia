@@ -269,6 +269,8 @@ export function useConversationSession(opts: {
     }
 
     function onKey(e: KeyboardEvent) {
+      // Una tecla que ya usó otro control (cuadro o elevador del mundo de la Oficina) no interrumpe la plática.
+      if (e.defaultPrevented) return;
       if (e.key === "Escape") {
         e.preventDefault();
         interrupt();
@@ -277,7 +279,7 @@ export function useConversationSession(opts: {
       if (e.key === " " || e.code === "Space") {
         const t = e.target as HTMLElement | null;
         // En campos de texto y botones el espacio conserva su función normal.
-        if (t && (t.isContentEditable || ["INPUT", "TEXTAREA", "SELECT", "BUTTON"].includes(t.tagName))) return;
+        if (t && (t.isContentEditable || ["INPUT", "TEXTAREA", "SELECT", "BUTTON", "CANVAS"].includes(t.tagName))) return;
         e.preventDefault();
         interrupt();
       }
