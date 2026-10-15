@@ -430,7 +430,7 @@ Introduced in F11 (2026-10-15, branch `f11-roles`, on top of `f10-agy-cuentas`).
 
 **Live results (2026-10-15, plan `a726ae22`, project `C:\estudio\f11-demo`):** LECTOR on agy2, DEV on agy3 (`src/slug.mjs` + 4 `node:test` tests, exit 0), IMAGEN on agy3 (`slug-logo.png` 1024², thumbnail shown in PlanView), Jefe synthesis OK, 165k/229k tokens. QA first failed "sin estado final" (read-only → `node --test` denied) → fixed by `escribe: true`; retried on agy4 it ran the tests (4/4) and reported PASA with untested edge cases. The guard (no JEV) paused DEV once and a budget pause needed "continuar".
 
-**Known deferred:** a step that throws in the adapter takes no outside-folder snapshot for that attempt; changing a role does not update already-planned steps (`writes`/`read_only` are stored at planning time).
+**Known deferred:** a step that throws in the adapter takes no outside-folder snapshot for that attempt, and a requeue (409/quota) takes a new snapshot, so writes of the earlier attempt become baseline; the snapshot (hash of dirty files, 20 s git timeout) runs while the agy lease is held; INVESTIGADOR (`search_web`/`read_url_content` read-only) was not run live; changing a role does not update already-planned steps (`writes`/`read_only` are stored at planning time).
 
 ## Antigravity Accounts
 

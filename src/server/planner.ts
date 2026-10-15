@@ -224,6 +224,7 @@ export function normalizeSteps(raw: unknown[]): PlanStep[] {
     const cat = MODEL_CATALOG[adapter as AdapterType];
     const model = rawModel;
     const validModel = (cat.models as readonly { id: string }[]).some((m) => m.id === model);
+    if (role && !validModel) console.warn(`[planner] rol ${role.id}: modelo "${model}" no está en el catálogo de ${adapter}; uso el default`);
     return {
       stepIndex: i,
       key: String(s.id ?? "").trim() || `s${i + 1}`,

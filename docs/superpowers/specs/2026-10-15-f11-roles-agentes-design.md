@@ -20,7 +20,7 @@ organigrama de varios niveles, agentes que contratan agentes, despertares por re
 | Rol | Hace | Modelo agy (por defecto) | Escritura | Herramientas clave de agy |
 |---|---|---|---|---|
 | DEV | escribe/modifica código y corre pruebas | `claude-sonnet-4-6`; `claude-opus-4-6-thinking` si el Jefe marca "difícil" | sí | editar archivos, `run_command` |
-| QA | prueba lo hecho: corre pruebas, revisa la página en navegador, reporta fallas | `claude-sonnet-4-6` | no (solo reporta) | `run_command`, navegador, capturas |
+| QA | prueba lo hecho: corre pruebas, revisa la página en navegador, reporta fallas | `claude-sonnet-4-6` | sí: necesita correr comandos (agy en solo lectura niega todo `run_command`, 2026-10-15); su texto le prohíbe editar | `run_command`, navegador, capturas |
 | IMAGEN | genera imágenes (íconos, ilustraciones, sprites) y las guarda en la carpeta de salidas | `gemini-3.8-flash-high` | solo en la carpeta de salidas | `generate_image` |
 | INVESTIGADOR | busca en internet y resume con fuentes | `gemini-3.8-flash-medium` | no | `search_web`, `read_url_content` |
 | LECTOR | lee el repo y resume (estructura, dónde está algo) | `gemini-3.8-flash-low` | no | lectura |
