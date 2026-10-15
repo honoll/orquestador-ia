@@ -4,6 +4,8 @@
 
 **Rama:** `f9-app-pixel` (encima de `f12-oficina-jugable`). Orden de merge: F7 → F8 → F10 → F11 → F12 → F9, solo cuando Alejandro lo diga. Detalle técnico en `CLAUDE.md`, sección "Pixel UI (F9)".
 
+- Arreglo final: los runs viejos ya no muestran la línea `<<<ESTADO …>>>` (se quita al leerla en el chat, el plan y el historial que va al modelo; no hubo migración)
+
 - Fuentes locales (licencia OFL): VT323 para el texto (nunca menos de 16 px) y Silkscreen para títulos, etiquetas y botones; el código sigue en JetBrains Mono a 13 px
 - Marcos de 3 px con sombra dura, esquinas cuadradas en toda la app, botones que se hunden al presionar, rejilla en los paneles laterales, foco con contorno de 2 px
 - Barra, columnas, chat (avatares pixel por modelo), Platicar, Roles, vista de planes (iconos y colores de estado únicos) y Oficina, todo con las mismas clases `px-*`
