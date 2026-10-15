@@ -11,6 +11,8 @@ import { parseStreamingText } from "../lib/parse-stream";
 import { stepLevels } from "../lib/plan-levels";
 import { formatTokens } from "../lib/format";
 import { roleColor, roleTag } from "../lib/roles";
+import { statusStyle } from "../lib/pixel";
+import { PixelAvatar } from "./PixelAvatar";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { ResizableGroup, ResizableHandle, ResizablePanel } from "./ResizableDivider";
@@ -90,28 +92,28 @@ function SavePlanModal({ plan, onClose }: { plan: Plan; onClose: () => void }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       {/* Backdrop */}
-      <div className="absolute inset-0 bg-black/60" onClick={onClose} />
+      <div className="absolute inset-0 bg-black/70" onClick={onClose} />
 
       {/* Modal */}
-      <div className="relative z-10 bg-surface-1 border border-edge rounded-2xl shadow-2xl w-full max-w-sm mx-4 overflow-hidden animate-fade-in">
+      <div className="px-panel relative z-10 w-full max-w-sm mx-4 overflow-hidden animate-fade-in">
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-edge">
-          <span className="font-mono text-xs text-text-primary">guardar plan</span>
-          <button onClick={onClose} className="font-mono text-[10px] text-text-tertiary hover:text-text-secondary transition-colors">✕</button>
+        <div className="flex items-center justify-between px-4 py-3 border-b-[3px] border-edge">
+          <span className="font-pixel text-[12px] text-text-primary">GUARDAR PLAN</span>
+          <button onClick={onClose} aria-label="Cerrar" className="px-btn px-2">✕</button>
         </div>
 
-        <div className="p-5 space-y-5">
+        <div className="p-4 space-y-5">
           {/* Assign to project */}
           <div className="space-y-2">
-            <p className="font-mono text-[10px] uppercase tracking-widest text-text-tertiary">asignar a proyecto</p>
+            <p className="font-pixel text-[11px] uppercase text-text-tertiary">asignar a proyecto</p>
             {projects.length === 0 ? (
-              <p className="font-mono text-[10px] text-text-tertiary">no hay proyectos creados</p>
+              <p className="text-xs text-text-tertiary">no hay proyectos creados</p>
             ) : (
               <div className="flex gap-2">
                 <select
                   value={selectedProject}
                   onChange={e => setSelectedProject(e.target.value)}
-                  className="flex-1 bg-surface-0 border border-edge rounded-lg px-3 py-2 font-mono text-xs text-text-primary focus:outline-none focus:border-accent"
+                  className="px-input flex-1 text-sm"
                 >
                   <option value="">— seleccionar proyecto —</option>
                   {projects.map(p => (
@@ -121,35 +123,35 @@ function SavePlanModal({ plan, onClose }: { plan: Plan; onClose: () => void }) {
                 <button
                   onClick={handleSaveToProject}
                   disabled={!selectedProject || saving}
-                  className="font-mono text-[11px] text-accent hover:text-text-primary border border-accent/30 rounded-lg px-3 py-2 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                  className="px-btn px-btn-pri px-3"
                 >
-                  {saving ? "..." : saved ? "✓" : "guardar"}
+                  {saving ? "..." : saved ? "✓" : "GUARDAR"}
                 </button>
               </div>
             )}
             {plan.projectId && (
-              <p className="font-mono text-[10px] text-text-tertiary">
+              <p className="text-xs text-text-tertiary">
                 actualmente en: <span className="text-accent">{projects.find(p => p.id === plan.projectId)?.name ?? plan.projectId}</span>
               </p>
             )}
           </div>
 
           {/* Divider */}
-          <div className="border-t border-edge" />
+          <div className="border-t-[3px] border-edge" />
 
           {/* Download */}
           <div className="space-y-2">
-            <p className="font-mono text-[10px] uppercase tracking-widest text-text-tertiary">descargar</p>
+            <p className="font-pixel text-[11px] uppercase text-text-tertiary">descargar</p>
             <div className="flex gap-2">
               <button
                 onClick={() => downloadAs("md")}
-                className="flex-1 font-mono text-[11px] text-text-secondary hover:text-text-primary border border-edge hover:border-edge-strong rounded-lg px-3 py-2 transition-colors text-left"
+                className="px-btn flex-1 py-2"
               >
-                📄 markdown
+                📄 MARKDOWN
               </button>
               <button
                 onClick={() => downloadAs("json")}
-                className="flex-1 font-mono text-[11px] text-text-secondary hover:text-text-primary border border-edge hover:border-edge-strong rounded-lg px-3 py-2 transition-colors text-left"
+                className="px-btn flex-1 py-2"
               >
                 {"{ }"} JSON
               </button>
@@ -234,38 +236,21 @@ const A_COLOR: Record<string, string> = {
   agy: "text-sky-400",
 };
 
-const A_BORDER: Record<string, string> = {
-  claude: "border-violet-400/30",
-  codex:  "border-emerald-400/30",
-  agy: "border-sky-400/30",
-};
-
-const A_BG: Record<string, string> = {
-  claude: "bg-violet-400/10",
-  codex:  "bg-emerald-400/10",
-  agy: "bg-sky-400/10",
-};
-
-const A_RING: Record<string, string> = {
-  claude: "ring-violet-400/50",
-  codex:  "ring-emerald-400/50",
-  agy: "ring-sky-400/50",
-};
-
 const A_ICON: Record<string, string> = {
   claude: "◆",
   codex:  "◇",
   agy: "◎",
 };
 
-const STATUS_DOT: Record<string, string> = {
-  pending:   "bg-text-tertiary/40",
-  running:   "bg-accent animate-pulse-dot",
-  succeeded: "bg-ok",
-  failed:    "bg-err",
-  cancelled: "bg-text-tertiary/40",
-  skipped:   "bg-text-tertiary/40",
-};
+/** Etiqueta pixel de estado: icono y color de `statusStyle` + texto visible. */
+function StateTag({ status, paused, children }: { status: string; paused?: boolean; children: React.ReactNode }) {
+  const s = statusStyle(status, paused);
+  return <span className="px-tag" style={{ color: s.color }}><span aria-hidden="true">{s.icon} </span>{children}</span>;
+}
+
+/** Marco pixel de un banner de pausa (amarillo) y su botón. */
+const WARN_FRAME = "px-panel mx-4 my-2 border-warn! bg-[#2a2108]! px-3 py-2 text-sm text-text-primary";
+const WARN_BTN = "px-btn border-warn! text-warn!";
 
 // ─── Generating overlay ────────────────────────────────────────────────────────
 
@@ -289,34 +274,34 @@ function GeneratingView({
   return (
     <div className="flex flex-col h-full bg-surface-0">
       {/* Header */}
-      <div className="flex items-center gap-4 px-6 h-12 border-b border-edge shrink-0">
-        <span className="font-mono text-xs text-text-secondary">/plan</span>
+      <div className="flex items-center gap-4 px-6 h-12 border-b-[3px] border-edge shrink-0">
+        <span className="font-pixel text-[12px] text-text-secondary">/PLAN</span>
         {plan.tier && (
-          <span className="font-mono text-[10px] text-text-secondary">
+          <span className="text-xs text-text-secondary">
             tier: {TIER_TEXT[plan.tier]} ({tierShort(plan)})<span className="sr-only"> ({tierDetail(plan)})</span>
           </span>
         )}
         <div className="ml-auto flex items-center gap-3">
           <div className="flex items-center gap-1.5">
-            <span className="h-1 w-1 rounded-full bg-accent animate-pulse-dot" />
-            <span className="font-mono text-[10px] text-text-tertiary">generando plan...</span>
+            <span className="h-2 w-2 bg-accent motion-safe:animate-pulse-dot" />
+            <span className="text-xs text-text-tertiary">generando plan...</span>
           </div>
           <button
             onClick={onCancel}
-            className="font-mono text-[11px] text-err hover:text-text-primary border border-err/30 rounded px-2.5 py-1 transition-colors"
+            className="px-btn border-err! text-err!"
           >
-            detener
+            DETENER
           </button>
         </div>
       </div>
 
       {/* Description */}
       <div className="px-6 pt-6 pb-2 max-w-3xl mx-auto w-full">
-        <p className="font-mono text-[10px] uppercase tracking-widest text-text-tertiary mb-1">analizando tarea</p>
-        <p className="text-sm text-text-primary leading-relaxed">{plan.description}</p>
+        <p className="font-pixel text-[11px] uppercase text-text-tertiary mb-1">analizando tarea</p>
+        <p className="text-base text-text-primary">{plan.description}</p>
         {plan.memorySource === "loading" && (
-          <p role="status" className="mt-2 flex items-center gap-1.5 font-mono text-[11px] text-text-secondary">
-            <span aria-hidden="true" className="h-1 w-1 rounded-full bg-accent animate-pulse-dot" />
+          <p role="status" className="mt-2 flex items-center gap-1.5 text-xs text-text-secondary">
+            <span aria-hidden="true" className="h-2 w-2 bg-accent motion-safe:animate-pulse-dot" />
             cargando memoria…
           </p>
         )}
@@ -324,33 +309,33 @@ function GeneratingView({
 
       {/* Animated adapter icons */}
       <div className="flex items-center justify-center gap-8 py-8">
-        {["claude", "codex", "agy"].map((a, i) => (
+        {(["claude", "codex", "agy"] as const).map((a, i) => (
           <div
             key={a}
             className="flex flex-col items-center gap-2 animate-fade-in"
             style={{ animationDelay: `${i * 150}ms` }}
           >
-            <div className={`h-10 w-10 rounded-xl border flex items-center justify-center ${A_BG[a]} ${A_BORDER[a]} ${i === 0 ? "ring-2 ring-offset-2 ring-offset-surface-0 " + A_RING[a] : ""}`}>
-              <span className={`text-lg ${A_COLOR[a]}`}>{A_ICON[a]}</span>
+            <div className={`px-panel p-1 ${i === 0 ? "border-accent!" : ""}`}>
+              <PixelAvatar role={a} />
             </div>
-            <span className={`font-mono text-[9px] uppercase tracking-widest ${A_COLOR[a]}`}>{a}</span>
+            <span className={`font-pixel text-[11px] uppercase ${A_COLOR[a]}`}>{a}</span>
           </div>
         ))}
       </div>
 
       {/* Streaming Claude thinking */}
       <div className="flex-1 overflow-hidden px-6 pb-6 max-w-3xl mx-auto w-full">
-        <p className="font-mono text-[9px] uppercase tracking-widest text-text-tertiary mb-2">pensamiento</p>
-        <div className="bg-surface-1 rounded-xl border border-edge h-full overflow-hidden">
+        <p className="font-pixel text-[11px] uppercase text-text-tertiary mb-2">pensamiento</p>
+        <div className="border-[3px] border-edge bg-[#060608] h-full overflow-hidden">
           {genLog ? (
             <pre
               ref={logRef}
-              className="font-mono text-[10px] whitespace-pre-wrap leading-relaxed p-4 h-full overflow-y-auto"
+              className="font-mono text-[13px] whitespace-pre-wrap leading-relaxed p-4 h-full overflow-y-auto"
             >
               {genLog.split('\n').map((line, i, arr) => (
                 <span
                   key={i}
-                  className={/\[esperando/.test(line) ? 'text-amber-400 font-semibold' : 'text-text-secondary'}
+                  className={/\[esperando/.test(line) ? 'text-warn font-semibold' : 'text-text-secondary'}
                 >
                   {line}{i < arr.length - 1 ? '\n' : ''}
                 </span>
@@ -359,8 +344,8 @@ function GeneratingView({
             </pre>
           ) : (
             <div className="flex items-center gap-2 p-4">
-              <div className="h-1 w-1 rounded-full bg-accent animate-pulse-dot" />
-              <span className="font-mono text-[10px] text-text-tertiary">esperando respuesta de claude...</span>
+              <div className="h-2 w-2 bg-accent motion-safe:animate-pulse-dot" />
+              <span className="text-xs text-text-tertiary">esperando respuesta de claude...</span>
             </div>
           )}
         </div>
@@ -371,7 +356,7 @@ function GeneratingView({
 
 // ─── Flow diagram ──────────────────────────────────────────────────────────────
 
-function FlowDiagram({ steps }: { steps: PlanStep[] }) {
+function FlowDiagram({ steps, paused }: { steps: PlanStep[]; paused: boolean }) {
   const levels = stepLevels(steps);
   return (
     <div className="flex items-center gap-0 overflow-x-auto pb-2 scrollbar-hide">
@@ -382,49 +367,28 @@ function FlowDiagram({ steps }: { steps: PlanStep[] }) {
             <div className="flex flex-col gap-1">
               {level.map((step) => {
                 const isRunning = step.status === "running";
-                const isDone = step.status === "succeeded";
-                const isFailed = step.status === "failed";
-                const isCancelled = step.status === "cancelled";
-                const isSkipped = step.status === "skipped";
-                const mutedLabel = isCancelled ? "cancelado" : isSkipped ? "omitido" : null;
+                const mutedLabel = step.status === "cancelled" ? "cancelado" : step.status === "skipped" ? "omitido" : null;
+                const st = statusStyle(step.status, paused);
                 return (
                   <div
                     key={step.id}
                     title={mutedLabel ?? undefined}
-                    className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border transition-all ${mutedLabel ? "opacity-50 border-dashed " : ""}${
-                      isRunning
-                        ? `${A_BG[step.adapter]} ${A_BORDER[step.adapter]} ring-2 ring-offset-1 ring-offset-surface-0 ${A_RING[step.adapter]}`
-                        : isDone
-                          ? "bg-ok/10 border-ok/20"
-                          : isFailed
-                            ? "bg-err/10 border-err/20"
-                            : "bg-surface-1 border-edge"
-                    }`}
+                    className={`px-panel flex items-center gap-1.5 px-2 py-1 ${mutedLabel ? "opacity-60 border-dashed! " : ""}`}
+                    style={{ borderColor: st.color }}
                   >
-                    <span
-                      className={`text-[11px] ${
-                        isRunning ? A_COLOR[step.adapter] : isDone ? "text-ok" : isFailed ? "text-err" : "text-text-tertiary"
-                      }`}
-                    >
-                      <span aria-hidden="true">{isDone ? "✓" : isFailed ? "✗" : isCancelled ? "⊘" : isSkipped ? "↷" : A_ICON[step.adapter]}</span>
+                    <span className="px-tag" style={{ color: st.color }}>
+                      <span aria-hidden="true">{st.icon}</span>
                       {mutedLabel && <span className="sr-only">{mutedLabel}</span>}
                     </span>
-                    <div className="flex flex-col">
-                      <span className="font-mono text-[10px] text-text-tertiary leading-none">{step.stepKey ?? step.stepIndex + 1}</span>
-                      <span
-                        className={`font-mono text-[10px] leading-none mt-0.5 max-w-[80px] truncate ${
-                          isRunning ? A_COLOR[step.adapter] : isDone ? "text-ok" : "text-text-secondary"
-                        }`}
-                      >
+                    <div className="flex flex-col leading-none">
+                      <span className="text-xs text-text-tertiary">{step.stepKey ?? step.stepIndex + 1}</span>
+                      <span className={`text-xs max-w-[80px] truncate ${isRunning ? A_COLOR[step.adapter] : "text-text-secondary"}`}>
                         {step.adapter}
                       </span>
-                      <span className="font-mono text-[10px] leading-none mt-0.5 text-text-tertiary">
+                      <span className="text-xs text-text-tertiary">
                         {step.writes === 0 ? "lee" : "escribe"}
                       </span>
                     </div>
-                    {isRunning && (
-                      <span className="h-1 w-1 rounded-full bg-accent animate-pulse-dot shrink-0" />
-                    )}
                   </div>
                 );
               })}
@@ -432,8 +396,8 @@ function FlowDiagram({ steps }: { steps: PlanStep[] }) {
 
             {li < levels.length - 1 && (
               <div className="flex items-center px-1">
-                <div className={`h-px w-4 ${levelDone ? "bg-ok/40" : "bg-edge"}`} />
-                <span className={`text-[10px] -ml-0.5 ${levelDone ? "text-ok/40" : "text-text-tertiary/30"}`}>›</span>
+                <div className={`h-[3px] w-4 ${levelDone ? "bg-ok" : "bg-edge"}`} />
+                <span aria-hidden="true" className={`text-sm -ml-0.5 ${levelDone ? "text-ok" : "text-text-tertiary"}`}>›</span>
               </div>
             )}
           </div>
@@ -461,22 +425,22 @@ function PlanOutputs({ planId, refreshKey }: { planId: string; refreshKey: strin
   const images = files.filter((f) => f.isImage);
   const others = files.filter((f) => !f.isImage);
   return (
-    <section aria-label="Archivos del plan" className="mt-6 rounded-xl border border-edge bg-surface-1 p-4">
-      <p className="font-mono text-[10px] uppercase tracking-widest text-text-tertiary mb-3">archivos del plan</p>
+    <section aria-label="Archivos del plan" className="px-panel mt-6 p-4">
+      <p className="font-pixel text-[11px] uppercase text-text-tertiary mb-3">archivos del plan</p>
       {images.length > 0 && (
         <ul className="grid grid-cols-[repeat(auto-fill,minmax(120px,1fr))] gap-3 mb-3">
           {images.map((f) => (
             <li key={f.name}>
-              <a href={url(f)} target="_blank" rel="noreferrer" className="block rounded-lg border border-edge overflow-hidden hover:border-accent">
+              <a href={url(f)} target="_blank" rel="noreferrer" className="block border-[3px] border-edge shadow-[3px_3px_0_#000] overflow-hidden hover:border-accent">
                 <img src={url(f)} alt={f.name} loading="lazy" className="h-24 w-full object-cover bg-surface-0" />
-                <span className="block truncate px-2 py-1 font-mono text-[10px] text-text-secondary">{f.name}</span>
+                <span className="block truncate border-t-[3px] border-edge px-2 py-1 font-mono text-[13px] text-text-secondary">{f.name}</span>
               </a>
             </li>
           ))}
         </ul>
       )}
       {others.length > 0 && (
-        <ul className="space-y-1 font-mono text-[11px]">
+        <ul className="space-y-1 font-mono text-[13px]">
           {others.map((f) => (
             <li key={f.name} className="flex gap-2">
               <a href={url(f)} target="_blank" rel="noreferrer" className="text-accent hover:underline truncate">{f.name}</a>
@@ -498,9 +462,11 @@ function StepCard({
   onEdit,
   onRetry,
   onFileClick,
+  paused = false,
 }: {
   step: PlanStep;
   streamLog: string;
+  paused?: boolean;
   stepFiles?: ChangedFile[];
   onEdit: (step: PlanStep, newPrompt: string) => void;
   onRetry?: (step: PlanStep) => void;
@@ -526,23 +492,17 @@ function StepCard({
     }
   }, [streamLog, step.status]);
 
+  const st = statusStyle(step.status, paused);
   return (
-    <div
-      className={`rounded-xl border p-4 transition-all ${
-        step.status === "running"
-          ? `${A_BG[step.adapter]} ${A_BORDER[step.adapter]}`
-          : step.status === "succeeded"
-            ? "border-ok/15 bg-surface-1"
-            : step.status === "failed"
-              ? "border-err/20 bg-surface-1"
-              : "border-edge bg-surface-1"
-      }`}
-    >
+    <div className="px-panel p-4" style={{ borderColor: st.color }}>
       <div className="flex items-start gap-3">
         {/* Status + index */}
-        <div className="flex flex-col items-center gap-1 pt-0.5 shrink-0">
-          <div className={`h-2 w-2 rounded-full ${STATUS_DOT[step.status]}`} />
-          <span className="font-mono text-[10px] text-text-tertiary">{step.stepIndex + 1}</span>
+        <div className="flex flex-col items-center gap-1 shrink-0">
+          <span className="px-tag" style={{ color: st.color }} title={st.label}>
+            <span aria-hidden="true">{st.icon}</span>
+            <span className="sr-only">{st.label}</span>
+          </span>
+          <span className="text-xs text-text-tertiary">{step.stepIndex + 1}</span>
         </div>
 
         <div className="flex-1 min-w-0">
@@ -550,57 +510,51 @@ function StepCard({
           <div className="flex items-center gap-2 flex-wrap">
             {step.role && (
               <span
-                className="font-mono text-[10px] font-semibold px-1.5 py-0.5 rounded border shrink-0"
-                style={{ color: roleColor(step.role), borderColor: `${roleColor(step.role)}66` }}
+                className="px-tag shrink-0"
+                style={{ color: roleColor(step.role) }}
                 title={`rol ${step.role}`}
               >
                 {roleTag(step.role)}
               </span>
             )}
-            <span className="text-sm font-medium text-text-primary leading-snug">
+            <span className="text-base text-text-primary">
               {step.description}
             </span>
-            <span
-              className={`font-mono text-[10px] px-1.5 py-0.5 rounded border shrink-0 ${A_BG[step.adapter]} ${A_BORDER[step.adapter]}`}
-            >
+            <span className="px-tag shrink-0 border-edge-strong!">
               <span className={A_COLOR[step.adapter]}>{A_ICON[step.adapter]} {step.adapter}</span>
               {step.model && (
                 <span className="text-text-tertiary ml-1">{step.model.split("-").slice(-1)[0]}</span>
               )}
             </span>
-            <span
-              className={`font-mono text-[9px] border rounded px-1 shrink-0 ${
-                step.writes === 0 ? "text-ok border-ok/30" : "text-accent border-accent/30"
-              }`}
-            >
+            <span className={`px-tag shrink-0 ${step.writes === 0 ? "text-ok" : "text-accent"}`}>
               {step.writes === 0 ? "lee" : "escribe"}
             </span>
             {step.readOnly === 1 && (
-              <span className="font-mono text-[10px] border border-edge rounded px-1 text-text-secondary shrink-0">solo lectura</span>
+              <span className="px-tag text-text-secondary shrink-0">solo lectura</span>
             )}
             {step.guardApproved === 1 && (
-              <span className="font-mono text-[10px] border border-ok/40 rounded px-1 text-ok shrink-0">aprobado</span>
+              <span className="px-tag text-ok shrink-0">aprobado</span>
             )}
             {((step.inputTokens ?? 0) + (step.outputTokens ?? 0) > 0) && (
-              <span className="font-mono text-[10px] text-text-tertiary shrink-0">
+              <span className="text-xs text-text-tertiary shrink-0">
                 {formatTokens((step.inputTokens ?? 0) + (step.outputTokens ?? 0))}
               </span>
             )}
             {step.estimatedTokens ? (
-              <span className="font-mono text-[10px] text-text-tertiary shrink-0">~{formatTokens(step.estimatedTokens)} est.</span>
+              <span className="text-xs text-text-tertiary shrink-0">~{formatTokens(step.estimatedTokens)} est.</span>
             ) : null}
           </div>
           {stepDeps.length > 0 && (
-            <p className="font-mono text-[10px] text-text-tertiary mt-1">depende de: {stepDeps.join(", ")}</p>
+            <p className="text-xs text-text-tertiary mt-1">depende de: {stepDeps.join(", ")}</p>
           )}
 
           {step.reason && (
-            <p className="font-mono text-[10px] text-text-tertiary mt-1 leading-relaxed">
+            <p className="text-xs text-text-tertiary mt-1">
               {step.reason}
             </p>
           )}
           {step.statusDetail && (
-            <p className="font-mono text-[11px] text-accent mt-1 leading-relaxed">{step.statusDetail}</p>
+            <p className="text-sm text-accent mt-1">{step.statusDetail}</p>
           )}
 
           {/* Running: streaming */}
@@ -609,15 +563,15 @@ function StepCard({
               {streamLog ? (
                 <pre
                   ref={streamRef}
-                  className="font-mono text-xs text-text-secondary whitespace-pre-wrap leading-relaxed max-h-52 overflow-y-auto bg-surface-0/60 rounded-lg p-3"
+                  className="font-mono text-[13px] text-text-secondary whitespace-pre-wrap leading-relaxed max-h-52 overflow-y-auto bg-[#060608] border-[3px] border-edge p-3"
                 >
                   {streamLog}
                   <span className="streaming-cursor" />
                 </pre>
               ) : (
                 <div className="flex items-center gap-2">
-                  <div className={`h-1 w-1 rounded-full ${A_COLOR[step.adapter].replace("text-", "bg-")} animate-pulse-dot`} />
-                  <span className={`font-mono text-xs ${A_COLOR[step.adapter]}`}>ejecutando en {step.adapter}...</span>
+                  <div className={`h-2 w-2 ${A_COLOR[step.adapter].replace("text-", "bg-")} motion-safe:animate-pulse-dot`} />
+                  <span className={`text-sm ${A_COLOR[step.adapter]}`}>ejecutando en {step.adapter}...</span>
                 </div>
               )}
             </div>
@@ -628,16 +582,16 @@ function StepCard({
             <div className="mt-3">
               <button
                 onClick={() => setExpanded(!expanded)}
-                className="font-mono text-[10px] text-text-secondary hover:text-accent transition-colors"
+                className="px-btn"
               >
-                {expanded ? "▲ ocultar resultado" : "▼ ver resultado"}
+                {expanded ? "▲ OCULTAR RESULTADO" : "▼ VER RESULTADO"}
               </button>
               {expanded && (
-                <pre className="mt-2 font-mono text-xs text-text-secondary whitespace-pre-wrap leading-relaxed max-h-64 overflow-y-auto bg-surface-0 rounded-lg p-3 border border-edge">
+                <pre className="mt-2 font-mono text-[13px] text-text-secondary whitespace-pre-wrap leading-relaxed max-h-64 overflow-y-auto bg-[#060608] border-[3px] border-edge p-3">
                   {step.result}
                 </pre>
               )}
-              <div className="flex items-center gap-3 mt-2 font-mono text-[10px] text-text-tertiary">
+              <div className="flex items-center gap-3 mt-2 text-xs text-text-tertiary">
                 {(step.costUsd ?? 0) > 0 && <span>${step.costUsd!.toFixed(4)}</span>}
                 {(step.inputTokens ?? 0) > 0 && <span>{step.inputTokens!.toLocaleString()} in</span>}
                 {(step.outputTokens ?? 0) > 0 && <span>{step.outputTokens!.toLocaleString()} out</span>}
@@ -648,12 +602,12 @@ function StepCard({
                   >
                     <span>📄</span>
                     <span>{stepFiles.length} archivo{stepFiles.length !== 1 ? "s" : ""}</span>
-                    <span className="text-[8px]">{showFiles ? "▲" : "▼"}</span>
+                    <span aria-hidden="true">{showFiles ? "▲" : "▼"}</span>
                   </button>
                 )}
               </div>
               {showFiles && stepFiles.length > 0 && (
-                <div className="mt-2 rounded-lg border border-edge bg-surface-0 overflow-hidden">
+                <div className="mt-2 border-[3px] border-edge bg-surface-0 overflow-hidden">
                   {stepFiles.map((f) => {
                     const name = f.filePath.split("/").pop() ?? f.filePath;
                     const ext = name.split(".").pop()?.toLowerCase() ?? "";
@@ -662,13 +616,13 @@ function StepCard({
                       <button
                         key={f.filePath}
                         onClick={() => onFileClick?.(f)}
-                        className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-surface-1 transition-colors text-left border-b border-edge last:border-b-0"
+                        className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-surface-1 transition-colors text-left border-b-2 border-edge last:border-b-0"
                         title={f.filePath}
                       >
-                        <span className="text-[10px]">{isCode ? "📝" : "📄"}</span>
-                        <span className="font-mono text-[10px] text-text-secondary truncate flex-1">{name}</span>
-                        <span className="font-mono text-[9px] text-text-tertiary shrink-0 truncate max-w-[120px]">{f.filePath.split("/").slice(0, -1).join("/")}</span>
-                        <span className="font-mono text-[9px] text-text-tertiary shrink-0">→</span>
+                        <span className="text-xs">{isCode ? "📝" : "📄"}</span>
+                        <span className="font-mono text-[13px] text-text-secondary truncate flex-1">{name}</span>
+                        <span className="font-mono text-[13px] text-text-tertiary shrink-0 truncate max-w-[120px]">{f.filePath.split("/").slice(0, -1).join("/")}</span>
+                        <span className="text-xs text-text-tertiary shrink-0">→</span>
                       </button>
                     );
                   })}
@@ -681,14 +635,14 @@ function StepCard({
           {step.status === "failed" && (
             <div className="mt-2 space-y-2">
               {step.errorMessage && (
-                <p className="font-mono text-xs text-err leading-relaxed">{step.errorMessage}</p>
+                <p className="px-panel border-err! px-3 py-2 font-mono text-[13px] text-err">{step.errorMessage}</p>
               )}
               {onRetry && (
                 <button
                   onClick={() => onRetry(step)}
-                  className="font-mono text-[10px] text-ok hover:text-text-primary border border-ok/30 bg-ok/5 rounded px-2.5 py-1 transition-colors flex items-center gap-1.5"
+                  className="px-btn border-ok! text-ok!"
                 >
-                  ↺ reintentar este paso
+                  ↺ REINTENTAR ESTE PASO
                 </button>
               )}
             </div>
@@ -698,7 +652,7 @@ function StepCard({
           {editing ? (
             <div className="mt-3 space-y-2">
               <textarea
-                className="w-full bg-surface-0 border border-edge-strong rounded-lg px-3 py-2 font-mono text-xs text-text-primary focus:outline-none focus:border-accent resize-none"
+                className="px-input w-full font-mono text-[13px] resize-none"
                 rows={6}
                 value={editPrompt}
                 onChange={(e) => setEditPrompt(e.target.value)}
@@ -706,15 +660,15 @@ function StepCard({
               <div className="flex gap-2">
                 <button
                   onClick={() => { onEdit(step, editPrompt); setEditing(false); }}
-                  className="font-mono text-[10px] text-accent hover:text-text-primary border border-edge-strong rounded px-2 py-1 transition-colors"
+                  className="px-btn px-btn-pri"
                 >
-                  guardar
+                  GUARDAR
                 </button>
                 <button
                   onClick={() => setEditing(false)}
-                  className="font-mono text-[10px] text-text-tertiary hover:text-text-secondary transition-colors"
+                  className="px-btn"
                 >
-                  cancelar
+                  CANCELAR
                 </button>
               </div>
             </div>
@@ -722,9 +676,9 @@ function StepCard({
             step.status === "pending" && (
               <button
                 onClick={() => setEditing(true)}
-                className="mt-2 font-mono text-[10px] text-text-tertiary hover:text-accent transition-colors"
+                className="px-btn mt-2"
               >
-                editar prompt
+                EDITAR PROMPT
               </button>
             )
           )}
@@ -777,19 +731,20 @@ function FilePreviewPanel({
   if (files.length === 0) return null;
 
   return (
-    <div className="flex flex-col h-full border-l border-edge bg-surface-0 animate-fade-in" style={{ minWidth: 0 }}>
+    <div className="flex flex-col h-full border-l-[3px] border-edge bg-surface-0 animate-fade-in" style={{ minWidth: 0 }}>
       {/* Header */}
-      <div className="flex items-center justify-between px-4 h-10 border-b border-edge shrink-0">
-        <span className="font-mono text-[10px] uppercase tracking-widest text-text-tertiary">
+      <div className="flex items-center justify-between px-4 h-10 border-b-[3px] border-edge shrink-0">
+        <span className="font-pixel text-[11px] uppercase text-text-tertiary">
           archivos modificados
         </span>
         <div className="flex items-center gap-3">
-          <span className="font-mono text-[9px] text-text-tertiary">
+          <span className="text-xs text-text-tertiary">
             {files.length} {files.length === 1 ? "archivo" : "archivos"}
           </span>
           <button
             onClick={onClose}
-            className="font-mono text-[10px] text-text-tertiary hover:text-text-secondary transition-colors"
+            aria-label="Cerrar"
+            className="px-btn px-2"
           >
             ✕
           </button>
@@ -797,7 +752,7 @@ function FilePreviewPanel({
       </div>
 
       {/* File list */}
-      <div className="flex border-b border-edge overflow-x-auto shrink-0 scrollbar-hide">
+      <div className="flex border-b-[3px] border-edge overflow-x-auto shrink-0 scrollbar-hide">
         {files.map((f) => {
           const name = f.filePath.split("/").pop() ?? f.filePath;
           const isSelected = f.filePath === selectedPath;
@@ -805,15 +760,15 @@ function FilePreviewPanel({
             <button
               key={f.filePath}
               onClick={() => setSelectedPath(f.filePath)}
-              className={`shrink-0 px-3 py-2 font-mono text-[10px] border-r border-edge transition-colors whitespace-nowrap ${
+              className={`shrink-0 px-3 py-2 font-mono text-[13px] border-r-2 border-edge transition-colors whitespace-nowrap ${
                 isSelected
-                  ? "bg-surface-1 text-accent border-b-2 border-b-accent"
+                  ? "bg-surface-1 text-accent border-b-[3px] border-b-accent"
                   : "text-text-tertiary hover:text-text-secondary hover:bg-surface-1/50"
               }`}
               title={f.filePath}
             >
               <span className="flex items-center gap-1.5">
-                <span className="h-1 w-1 rounded-full bg-ok shrink-0" />
+                <span className="h-1.5 w-1.5 bg-ok shrink-0" />
                 {name}
               </span>
             </button>
@@ -823,9 +778,9 @@ function FilePreviewPanel({
 
       {/* Path breadcrumb */}
       {selected && (
-        <div className="px-3 py-1.5 border-b border-edge shrink-0">
+        <div className="px-3 py-1.5 border-b-2 border-edge shrink-0">
           <p
-            className="font-mono text-[9px] text-text-tertiary truncate"
+            className="font-mono text-[13px] text-text-tertiary truncate"
             title={selected.filePath}
           >
             {selected.filePath}
@@ -837,7 +792,7 @@ function FilePreviewPanel({
       <div className="flex-1 overflow-auto">
         {selected ? (
           selected.content === "[archivo demasiado grande para previsualizar]" ? (
-            <p className="font-mono text-[10px] text-text-tertiary p-4">{selected.content}</p>
+            <p className="text-xs text-text-tertiary p-4">{selected.content}</p>
           ) : (
             <SyntaxHighlighter
               language={detectLanguage(selected.filePath)}
@@ -848,11 +803,13 @@ function FilePreviewPanel({
                 margin: 0,
                 padding: "0.5rem",
                 background: "transparent",
-                fontSize: "10px",
-                fontFamily: "ui-monospace, monospace",
+                borderRadius: 0,
+                fontSize: "13px",
+                fontFamily: "var(--font-mono)",
                 flex: 1,
                 overflow: "auto",
               }}
+              codeTagProps={{ style: { fontFamily: "var(--font-mono)", fontSize: "13px" } }}
               lineNumberStyle={{ minWidth: "2.5em", color: "#4a5568", userSelect: "none" }}
             >
               {selected.content ?? ""}
@@ -882,12 +839,12 @@ function PlanSummary({ plan }: { plan: Plan }) {
   }
 
   return (
-    <div className="mb-5 rounded-lg border border-ok/20 bg-ok/5 p-4 space-y-3">
+    <div className="px-panel mb-5 border-ok! p-4 space-y-3">
       {/* Header */}
       <div className="flex items-center gap-2">
-        <span className="text-ok font-mono text-xs">✓ Plan completado</span>
+        <span className="font-pixel text-[12px] text-ok">✓ PLAN COMPLETADO</span>
         {totalCost > 0 && (
-          <span className="font-mono text-[10px] text-text-tertiary ml-auto">
+          <span className="text-xs text-text-tertiary ml-auto">
             ${totalCost.toFixed(4)} total
           </span>
         )}
@@ -905,11 +862,11 @@ function PlanSummary({ plan }: { plan: Plan }) {
             return (
               <div
                 key={step.id}
-                className="rounded border border-edge bg-surface-1 px-3 py-2 space-y-1"
+                className="border-[3px] border-edge bg-surface-0 px-3 py-2 space-y-1"
               >
-                <p className="font-mono text-[11px] text-text-primary">{step.description}</p>
+                <p className="text-sm text-text-primary">{step.description}</p>
                 {extract && (
-                  <p className="font-mono text-[10px] text-text-tertiary whitespace-pre-wrap line-clamp-3">
+                  <p className="font-mono text-[13px] text-text-tertiary whitespace-pre-wrap line-clamp-3">
                     {extract}
                   </p>
                 )}
@@ -921,8 +878,8 @@ function PlanSummary({ plan }: { plan: Plan }) {
 
       {/* Amendments note */}
       {amendmentCount > 0 && (
-        <div className="border-t border-edge/50 pt-2 flex items-center gap-2">
-          <span className="font-mono text-[10px] text-text-tertiary">
+        <div className="border-t-2 border-edge pt-2 flex items-center gap-2">
+          <span className="text-xs text-text-tertiary">
             Cambios solicitados: {amendmentCount} solicitud{amendmentCount !== 1 ? "es" : ""} —{" "}
             <span className="italic">Ver historial en el panel inferior</span>
           </span>
@@ -1168,8 +1125,8 @@ function PlanChat({ plan }: { plan: Plan }) {
   return (
     <div className="bg-surface-0 flex flex-col h-full">
       {/* Toggle header */}
-      <div className="flex items-center px-6 py-2 border-b border-edge/50 gap-3">
-        <span className="font-mono text-[10px] uppercase tracking-widest text-text-tertiary">
+      <div className="flex items-center px-6 py-2 border-b-[3px] border-edge gap-3">
+        <span className="font-pixel text-[11px] uppercase text-text-tertiary">
           solicitar cambios
         </span>
         {/* Hybrid mode toggle */}
@@ -1177,18 +1134,14 @@ function PlanChat({ plan }: { plan: Plan }) {
           onClick={() => setHybridMode((v) => !v)}
           disabled={isRunning}
           title={hybridMode ? "Modo híbrido activo: Claude razona → Codex implementa" : "Activar modo híbrido"}
-          className={`ml-1 flex items-center gap-1 px-2 py-0.5 rounded border font-mono text-[9px] transition-all ${
-            hybridMode
-              ? "bg-violet-400/10 border-violet-400/40 text-violet-400"
-              : "border-edge text-text-tertiary hover:text-text-secondary hover:border-edge-strong"
-          }`}
+          className={`px-btn ml-1 ${hybridMode ? "px-btn-pri" : ""}`}
         >
-          ◆→◇ híbrido
+          ◆→◇ HÍBRIDO
         </button>
         {isRunning && (
           <span className="flex items-center gap-1.5">
-            <span className="h-1 w-1 rounded-full bg-accent animate-pulse-dot" />
-            <span className="font-mono text-[9px] text-text-tertiary">
+            <span className="h-2 w-2 bg-accent motion-safe:animate-pulse-dot" />
+            <span className="text-xs text-text-tertiary">
               {hybridPhase === "claude" ? "◆ claude razonando..." : hybridPhase === "codex" ? "◇ codex implementando..." : "respondiendo..."}
             </span>
           </span>
@@ -1201,16 +1154,16 @@ function PlanChat({ plan }: { plan: Plan }) {
           {messages.map((msg, i) => (
             <div key={i} className={`flex gap-2 ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
               {msg.role === "assistant" && (
-                <span className="font-mono text-[10px] text-text-tertiary shrink-0 mt-1">
+                <span className="text-xs text-text-tertiary shrink-0 mt-1">
                   {msg.content?.startsWith("◇") ? "◇" : msg.content?.startsWith("◆") ? "◆" :
                     selectedAdapter === "claude" ? "◆" : selectedAdapter === "codex" ? "◇" : "◎"}
                 </span>
               )}
               <div
-                className={`max-w-[85%] rounded-xl px-3 py-2 font-mono text-xs leading-relaxed whitespace-pre-wrap ${
+                className={`px-panel max-w-[85%] px-3 py-2 font-mono text-[13px] leading-relaxed whitespace-pre-wrap ${
                   msg.role === "user"
-                    ? "bg-accent/10 border border-accent/20 text-text-primary"
-                    : "bg-surface-1 border border-edge text-text-secondary"
+                    ? "border-[#4c3d85]! bg-[#1d1733]! text-text-primary"
+                    : "text-text-secondary"
                 }`}
               >
                 {msg.content}
@@ -1226,7 +1179,7 @@ function PlanChat({ plan }: { plan: Plan }) {
       <div className="flex items-end gap-3 px-6 py-3">
         <textarea
           ref={textareaRef}
-          className="flex-1 bg-surface-1 border border-edge rounded-xl px-4 py-2.5 font-mono text-xs text-text-primary placeholder-text-tertiary focus:outline-none focus:border-accent resize-none transition-colors"
+          className="px-input flex-1 text-sm resize-none"
           placeholder="pide modificaciones al plan... (Enter para enviar)"
           rows={1}
           value={input}
@@ -1255,9 +1208,9 @@ function PlanChat({ plan }: { plan: Plan }) {
         <button
           onClick={handleSend}
           disabled={!input.trim() || isRunning}
-          className="shrink-0 font-mono text-[11px] text-accent hover:text-text-primary border border-accent/30 rounded-xl px-4 py-2.5 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+          className="px-btn px-btn-pri shrink-0"
         >
-          {isRunning ? "..." : "enviar"}
+          {isRunning ? "..." : "ENVIAR"}
         </button>
       </div>
     </div>
@@ -1271,11 +1224,11 @@ function BudgetBar({ plan, disabled, onSave }: { plan: Plan; disabled: boolean; 
   useEffect(() => setDraft(plan.budgetTokens?.toString() ?? ""), [plan.budgetTokens]);
   const pct = plan.budgetTokens ? Math.min(100, Math.round((plan.usedTokens * 100) / plan.budgetTokens)) : null;
   return (
-    <div className="mx-4 my-2 flex flex-wrap items-center gap-3 font-mono text-[10px] text-text-tertiary">
+    <div className="mx-4 my-2 flex flex-wrap items-center gap-3 text-xs text-text-tertiary">
       <span>tokens: {formatTokens(plan.usedTokens)}{plan.budgetTokens ? ` / ${formatTokens(plan.budgetTokens)}` : " (sin tope)"}</span>
       {pct !== null && (
-        <span className="relative h-1 w-32 overflow-hidden rounded-full bg-surface-2" aria-hidden="true">
-          <span className={`absolute inset-y-0 left-0 ${pct >= 100 ? "bg-err" : "bg-ok"}`} style={{ width: `${pct}%` }} />
+        <span className="relative h-[14px] w-32 border-2 border-edge-strong bg-black" aria-hidden="true">
+          <span className={`absolute inset-y-0 left-0 ${pct >= 100 ? "bg-err" : pct >= 85 ? "bg-warn" : "bg-ok"}`} style={{ width: `${pct}%` }} />
         </span>
       )}
       {plan.estimatedTokens ? <span>estimado por Opus: ~{formatTokens(plan.estimatedTokens)}</span> : null}
@@ -1285,7 +1238,7 @@ function BudgetBar({ plan, disabled, onSave }: { plan: Plan; disabled: boolean; 
           aria-label="Tope de tokens del plan"
           inputMode="numeric"
           disabled={disabled}
-          className="w-24 rounded border border-edge bg-surface-0 px-1 py-0.5 text-text-primary disabled:opacity-50"
+          className="px-input w-24 px-1! py-0! text-text-primary disabled:opacity-50"
           value={draft}
           placeholder="sin tope"
           onChange={(e) => setDraft(e.target.value.replace(/[^\d]/g, ""))}
@@ -1300,7 +1253,7 @@ function BudgetBar({ plan, disabled, onSave }: { plan: Plan; disabled: boolean; 
         <select
           aria-label="Pasos en paralelo"
           disabled={disabled}
-          className="rounded border border-edge bg-surface-0 px-1 py-0.5 text-text-primary disabled:opacity-50"
+          className="px-input px-1! py-0! text-text-primary disabled:opacity-50"
           value={plan.maxParallel}
           onChange={(e) => onSave({ maxParallel: Number(e.target.value) })}
         >
@@ -1325,10 +1278,10 @@ function tierDetail(plan: Plan): string {
 
 function TierBadge({ plan }: { plan: Plan }) {
   if (!plan.tier) return null;
-  const tone = plan.tier === "critical" ? "text-err border-err/40" : plan.tier === "trivial" ? "text-ok border-ok/40" : "text-text-secondary border-edge";
+  const tone = plan.tier === "critical" ? "text-err" : plan.tier === "trivial" ? "text-ok" : "text-text-secondary";
   const detail = tierDetail(plan);
   return (
-    <span className={`rounded border px-1.5 py-0.5 font-mono text-[10px] ${tone}`} title={detail}>
+    <span className={`px-tag ${tone}`} title={detail}>
       {TIER_TEXT[plan.tier]}<span className="sr-only"> ({detail})</span>
     </span>
   );
@@ -1338,9 +1291,9 @@ function CriticalBanner({ plan, busy, onApprove }: { plan: Plan; busy: boolean; 
   const untouched = plan.steps.every((s) => s.status === "pending");
   if (plan.tier !== "critical" || plan.status !== "pending" || plan.pauseReason || !untouched || busy) return null;
   return (
-    <div role="status" className="mx-4 my-2 flex flex-wrap items-center gap-3 rounded-lg border border-err/40 bg-err/10 px-3 py-2 font-mono text-[11px] text-text-primary">
+    <div role="status" className="px-panel mx-4 my-2 flex flex-wrap items-center gap-3 border-err! bg-[#2a1010]! px-3 py-2 text-sm text-text-primary">
       <span>Plan crítico: revisa los pasos (incluye una revisión de Opus al final) y apruébalo para ejecutarlo.</span>
-      <button onClick={onApprove} className="ml-auto rounded border border-err/50 min-h-6 px-2 py-0.5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent text-err hover:text-text-primary">aprobar y ejecutar</button>
+      <button onClick={onApprove} className="px-btn ml-auto min-h-6 border-err! text-err!">APROBAR Y EJECUTAR</button>
     </div>
   );
 }
@@ -1351,23 +1304,23 @@ function GuardBanner({ plan, onApprove, onCancel, onContinue }: { plan: Plan; on
   if (!step) {
     // Pausa de guardia sin paso marcado (p. ej. se editó su prompt): no dejar el plan sin salida.
     return (
-      <div role="status" className="mx-4 my-2 flex flex-wrap items-center gap-3 rounded-lg border border-accent/40 bg-accent-dim px-3 py-2 font-mono text-[11px] text-text-primary">
-        <span>Plan pausado por la guardia, pero ya no hay pasos marcados. Continúa para volver a evaluarlos.</span>
-        <button onClick={onContinue} className="ml-auto rounded border border-ok/40 min-h-6 px-2 py-0.5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent text-ok hover:text-text-primary">continuar</button>
+      <div role="status" className={`${WARN_FRAME} flex flex-wrap items-center gap-3`}>
+        <span><span aria-hidden="true" className="text-warn">⏸ </span>Plan pausado por la guardia, pero ya no hay pasos marcados. Continúa para volver a evaluarlos.</span>
+        <button onClick={onContinue} className={`${WARN_BTN} ml-auto min-h-6`}>CONTINUAR</button>
       </div>
     );
   }
   let flags: { label: string; probability: number; source: string }[] = [];
   try { flags = JSON.parse(step.guardFlags!); } catch { /* sin detalle */ }
   return (
-    <div role="alert" className="mx-4 my-2 space-y-2 rounded-lg border border-err/40 bg-err/10 px-3 py-2 font-mono text-[11px] text-text-primary">
-      <p>La guardia detuvo el paso <strong>{step.stepKey ?? step.stepIndex + 1} — {step.description}</strong> antes de lanzarlo:</p>
-      <ul className="list-disc pl-5">
+    <div role="alert" className={`${WARN_FRAME} space-y-2`}>
+      <p><span aria-hidden="true" className="text-warn">⏸ </span>La guardia detuvo el paso <strong>{step.stepKey ?? step.stepIndex + 1} — {step.description}</strong> antes de lanzarlo:</p>
+      <ul className="list-[square] pl-5">
         {flags.map((f, i) => <li key={i}>{f.label} · {f.source === "jev" ? `JEV ${Math.round(f.probability * 100)} %` : "regla local"}</li>)}
       </ul>
       <div className="flex gap-2">
-        <button onClick={() => onApprove(step.id)} className="rounded border border-ok/40 min-h-6 px-2 py-0.5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent text-ok hover:text-text-primary">aprobar este paso</button>
-        <button onClick={onCancel} className="rounded border border-edge min-h-6 px-2 py-0.5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent text-text-secondary hover:text-text-primary">cancelar</button>
+        <button onClick={() => onApprove(step.id)} className={`${WARN_BTN} min-h-6`}>APROBAR ESTE PASO</button>
+        <button onClick={onCancel} className="px-btn min-h-6">CANCELAR</button>
       </div>
     </div>
   );
@@ -1379,10 +1332,10 @@ function PauseBanner({ plan, onContinue }: { plan: Plan; onContinue: () => void 
     ? `Plan pausado por presupuesto: llevas ${formatTokens(plan.usedTokens)} de ${formatTokens(plan.budgetTokens ?? 0)} tokens.`
     : "Plan pausado por cuota de Antigravity. Cambia de cuenta en el panel de cuentas y continúa.";
   return (
-    <div role="status" className="mx-4 my-2 flex flex-wrap items-center gap-3 rounded-lg border border-accent/40 bg-accent-dim px-3 py-2 font-mono text-[11px] text-text-primary">
-      <span>{text}</span>
-      <button onClick={onContinue} className="ml-auto rounded border border-ok/40 px-2 py-0.5 text-ok hover:text-text-primary">
-        {plan.pauseReason === "budget" ? "continuar (+50 %)" : "continuar"}
+    <div role="status" className={`${WARN_FRAME} flex flex-wrap items-center gap-3`}>
+      <span><span aria-hidden="true" className="text-warn">⏸ </span>{text}</span>
+      <button onClick={onContinue} className={`${WARN_BTN} ml-auto`}>
+        {plan.pauseReason === "budget" ? "CONTINUAR (+50 %)" : "CONTINUAR"}
       </button>
     </div>
   );
@@ -1395,16 +1348,16 @@ function MemoryCard({ plan }: { plan: Plan }) {
   const notePath = plan.status === "completed" ? plan.memoryNotePath : null;
   if (notes.length === 0 && !limited && !notePath) return null;
   return (
-    <section aria-label="Memoria de Cerebro" className="mb-4 space-y-2 font-mono text-[11px] text-text-secondary">
+    <section aria-label="Memoria de Cerebro" className="mb-4 space-y-2 text-sm text-text-secondary">
       {limited && <p role="status" className="text-accent">memoria limitada (Ollama no disponible)</p>}
       {notes.length > 0 && (
-        <details className="rounded border border-edge bg-surface-1 px-3 py-2">
-          <summary className="min-h-6 cursor-pointer text-text-tertiary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">memoria usada ({notes.length})</summary>
+        <details className="px-panel px-3 py-2">
+          <summary className="font-pixel text-[11px] uppercase min-h-6 cursor-pointer text-text-tertiary">memoria usada ({notes.length})</summary>
           <ul className="mt-2 space-y-1">
             {notes.map((n) => (
               <li key={n.path} className="break-words">
-                <span className="text-text-primary">{n.title}</span> · <span className="text-text-tertiary">{n.path}</span> · {Math.round(n.score * 100)} %
-                {n.projectNote && <span className="ml-1 rounded border border-accent/40 px-1 text-accent">proyecto</span>}
+                <span className="text-text-primary">{n.title}</span> · <span className="font-mono text-[13px] text-text-tertiary">{n.path}</span> · {Math.round(n.score * 100)} %
+                {n.projectNote && <span className="px-tag ml-1 text-accent">proyecto</span>}
               </li>
             ))}
           </ul>
@@ -1413,9 +1366,9 @@ function MemoryCard({ plan }: { plan: Plan }) {
       {notePath && (
         <p className="break-words">
           {data ? (
-            <a href={obsidianUrl(data.vaultName, notePath)} className="underline decoration-dotted underline-offset-2 text-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">nota en Cerebro</a>
+            <a href={obsidianUrl(data.vaultName, notePath)} className="underline decoration-dotted underline-offset-2 text-accent">nota en Cerebro</a>
           ) : <span>nota en Cerebro</span>}
-          {" "}<span className="text-text-tertiary">{notePath}</span>
+          {" "}<span className="font-mono text-[13px] text-text-tertiary">{notePath}</span>
         </p>
       )}
     </section>
@@ -1425,22 +1378,25 @@ function MemoryCard({ plan }: { plan: Plan }) {
 function SynthesisCard({ plan, onRetry }: { plan: Plan; onRetry: () => void }) {
   if (!plan.synthesisStatus) return null;
   return (
-    <section aria-label="Respuesta final" className="mb-5 rounded-lg border border-accent/30 bg-surface-1 p-4">
+    <section aria-label="Respuesta final" className="mb-5 flex items-start gap-3">
+      <PixelAvatar role="jefe" />
+      <div className="px-panel min-w-0 flex-1 border-accent! p-4">
       <div className="mb-2 flex flex-wrap items-center gap-3">
-        <h3 className="font-mono text-xs text-accent">respuesta final · Opus 5.5</h3>
+        <h3 className="font-pixel text-[12px] text-accent">RESPUESTA FINAL · OPUS 5.5</h3>
         {plan.synthesisStatus === "succeeded" && plan.synthesis && <SpeakButton id={`synthesis:${plan.id}`} text={plan.synthesis} />}
         <AutoReadToggle />
       </div>
-      {plan.synthesisStatus === "running" && <p className="font-mono text-[11px] text-text-tertiary">Opus está juntando las respuestas…</p>}
+      {plan.synthesisStatus === "running" && <p className="text-sm text-text-tertiary">Opus está juntando las respuestas…</p>}
       {plan.synthesisStatus === "succeeded" && plan.synthesis && (
-        <div className="prose prose-invert prose-sm max-w-none text-text-primary/90 leading-relaxed [&_p]:my-2 [&_pre]:bg-surface-2 [&_pre]:border [&_pre]:border-edge [&_pre]:rounded-lg"><ReactMarkdown remarkPlugins={[remarkGfm]}>{plan.synthesis}</ReactMarkdown></div>
+        <div className="max-w-none text-text-primary/90 [&_p]:my-2 [&_ul]:list-[square] [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_pre]:my-2 [&_pre]:overflow-x-auto [&_pre]:border-[3px] [&_pre]:border-edge [&_pre]:bg-[#060608] [&_pre]:p-3 [&_pre]:text-[#d4d4d8] [&_code]:text-accent [&_pre_code]:text-inherit"><ReactMarkdown remarkPlugins={[remarkGfm]}>{plan.synthesis}</ReactMarkdown></div>
       )}
       {plan.synthesisStatus === "failed" && (
-        <div className="space-y-2 font-mono text-[11px]">
+        <div className="space-y-2 text-sm">
           <p className="text-err">La síntesis falló: {plan.synthesisError}</p>
-          <button onClick={onRetry} className="rounded border border-accent/40 px-2 py-0.5 text-accent hover:text-text-primary">reintentar síntesis</button>
+          <button onClick={onRetry} className="px-btn px-btn-pri">REINTENTAR SÍNTESIS</button>
         </div>
       )}
+      </div>
     </section>
   );
 }
@@ -1749,20 +1705,20 @@ export function PlanView({
     const wasCancelled = plan.status === "cancelled";
     return (
       <div className="flex flex-col h-full bg-surface-0">
-        <div className="flex items-center gap-4 px-6 h-12 border-b border-edge shrink-0">
-          <button onClick={onClose} className="font-mono text-[10px] text-text-tertiary hover:text-text-secondary transition-colors">
-            ← volver
+        <div className="flex items-center gap-4 px-6 h-12 border-b-[3px] border-edge shrink-0">
+          <button onClick={onClose} className="px-btn">
+            ← VOLVER
           </button>
-          <span className="font-mono text-xs text-text-secondary">/plan</span>
+          <span className="font-pixel text-[12px] text-text-secondary">/PLAN</span>
         </div>
         <div className="flex items-center justify-center flex-1 px-8">
           <div className="text-center space-y-3 max-w-lg">
-            <p className={`font-mono text-xs ${wasCancelled ? "text-text-tertiary" : "text-err"}`}>
-              {wasCancelled ? "generación cancelada" : "error generando plan"}
+            <p className="font-pixel text-[12px] uppercase" style={{ color: statusStyle(plan.status).color }}>
+              <span aria-hidden="true">{statusStyle(plan.status).icon} </span>{wasCancelled ? "generación cancelada" : "error generando plan"}
             </p>
-            <p className="font-mono text-[10px] text-text-tertiary">{plan.description}</p>
+            <p className="text-sm text-text-tertiary">{plan.description}</p>
             {!wasCancelled && plan.errorMessage && (
-              <pre className="mt-3 font-mono text-[10px] text-err/80 whitespace-pre-wrap text-left bg-err/5 border border-err/20 rounded-lg p-3">
+              <pre className="mt-3 font-mono text-[13px] text-err whitespace-pre-wrap text-left bg-[#060608] border-[3px] border-err p-3">
                 {plan.errorMessage}
               </pre>
             )}
@@ -1794,25 +1750,21 @@ export function PlanView({
     <div className="flex flex-col h-full bg-surface-0">
 
       {/* ── Header (fixed, outside resizable group) ── */}
-      <div className="flex items-center gap-2 px-4 min-h-12 py-2 border-b border-edge shrink-0 flex-wrap">
+      <div className="flex items-center gap-2 px-4 min-h-12 py-2 border-b-[3px] border-edge shrink-0 flex-wrap">
         <button
           onClick={onClose}
-          className="font-mono text-[10px] text-text-tertiary hover:text-text-secondary transition-colors shrink-0"
+          className="px-btn shrink-0"
         >
-          ← volver
+          ← VOLVER
         </button>
-        <span className="font-mono text-xs text-text-secondary">/plan</span>
+        <span className="font-pixel text-[12px] text-text-secondary">/PLAN</span>
         <TierBadge plan={plan} />
 
         <div className="ml-auto flex items-center gap-2 flex-wrap justify-end">
           {changedFiles.length > 0 && (
             <button
               onClick={() => setShowFilePreview((v) => !v)}
-              className={`font-mono text-[10px] border rounded px-2 py-0.5 transition-colors ${
-                showFilePreview
-                  ? "text-ok border-ok/30 bg-ok/10"
-                  : "text-text-tertiary border-edge hover:text-ok hover:border-ok/30"
-              }`}
+              className={`px-btn ${showFilePreview ? "border-ok! text-ok!" : ""}`}
               title="ver archivos modificados"
             >
               📄 {changedFiles.length}
@@ -1821,18 +1773,18 @@ export function PlanView({
           {plan.steps.length > 0 && (
             <button
               onClick={() => setShowSaveModal(true)}
-              className="font-mono text-[11px] text-text-tertiary hover:text-text-secondary border border-edge hover:border-edge-strong rounded px-2.5 py-1 transition-colors"
+              className="px-btn"
             >
-              guardar
+              GUARDAR
             </button>
           )}
           {canResume && failedCount > 0 && (
             <button
               onClick={handleResume}
-              className="font-mono text-[11px] text-ok hover:text-text-primary border border-ok/30 bg-ok/5 rounded px-2.5 py-1 transition-colors animate-fade-in flex items-center gap-1.5"
+              className="px-btn border-ok! text-ok! animate-fade-in"
             >
-              ↺ continuar
-              <span className="font-mono text-[9px] text-err/70">
+              ↺ CONTINUAR
+              <span className="text-err">
                 ({failedCount} fallido{failedCount > 1 ? "s" : ""} + {pendingCount} pendiente{pendingCount !== 1 ? "s" : ""})
               </span>
             </button>
@@ -1842,18 +1794,18 @@ export function PlanView({
               {!criticalUntouched && (
               <button
                 onClick={hasCancelled ? handleResume : handleRunAll}
-                className="font-mono text-[11px] text-ok hover:text-text-primary border border-ok/30 rounded px-2.5 py-1 transition-colors"
+                className="px-btn px-btn-pri"
               >
-                {plan.status === "cancelled" || plan.status === "failed" || hasCancelled ? "reanudar todo" : "ejecutar todo"}
+                {plan.status === "cancelled" || plan.status === "failed" || hasCancelled ? "REANUDAR TODO" : "EJECUTAR TODO"}
               </button>
               )}
               {/* paso a paso no reanuda pasos cancelados; para un plan cancelado solo se ofrece reanudar todo */}
               {plan.status !== "cancelled" && !hasCancelled && !criticalUntouched && (
                 <button
                   onClick={handleRunNext}
-                  className="font-mono text-[11px] text-accent hover:text-text-primary border border-accent/30 rounded px-2.5 py-1 transition-colors"
+                  className="px-btn"
                 >
-                  paso a paso
+                  PASO A PASO
                 </button>
               )}
             </>
@@ -1861,42 +1813,36 @@ export function PlanView({
           {waitingForNext && (
             <button
               onClick={handleRunNext}
-              className="font-mono text-[11px] text-accent hover:text-text-primary border border-accent/30 rounded px-2.5 py-1 transition-colors animate-fade-in"
+              className="px-btn px-btn-pri animate-fade-in"
             >
-              continuar →
+              CONTINUAR →
             </button>
           )}
           {isRunning && !waitingForNext && (
-            <span className="font-mono text-[10px] text-accent">{synthesisRunning ? "sintetizando…" : "ejecutando…"}</span>
+            <StateTag status="running">{synthesisRunning ? "sintetizando…" : "ejecutando…"}</StateTag>
           )}
           {isRunning && !waitingForNext && (
             <button
               onClick={handleStop}
-              className="font-mono text-[11px] text-err hover:text-text-primary border border-err/30 rounded px-2.5 py-1 transition-colors"
+              className="px-btn border-err! text-err!"
             >
-              detener
+              DETENER
             </button>
           )}
           {!isRunning && plan.status === "completed" && (
-            <span className="font-mono text-[10px] text-ok flex items-center gap-1.5">
-              ✓ completado
-              {totalCost > 0 && <span className="text-text-tertiary">${totalCost.toFixed(4)}</span>}
+            <span className="flex items-center gap-1.5">
+              <StateTag status="completed">completado</StateTag>
+              {totalCost > 0 && <span className="text-xs text-text-tertiary">${totalCost.toFixed(4)}</span>}
             </span>
           )}
-          {!isRunning && isPaused && (
-            <span className="font-mono text-[10px] text-accent">pausado</span>
-          )}
-          {!isRunning && plan.status === "cancelled" && (
-            <span className="font-mono text-[10px] text-text-tertiary">cancelado</span>
-          )}
-          {!isRunning && plan.status === "pending" && !plan.pauseReason && !allDone && (
-            <span className="font-mono text-[10px] text-text-tertiary">pendiente</span>
-          )}
+          {!isRunning && isPaused && <StateTag status="pending" paused>pausado</StateTag>}
+          {!isRunning && plan.status === "cancelled" && <StateTag status="cancelled">cancelado</StateTag>}
+          {!isRunning && plan.status === "pending" && !plan.pauseReason && !allDone && <StateTag status="pending">pendiente</StateTag>}
         </div>
       </div>
 
       <BudgetBar plan={plan} disabled={isRunning} onSave={handleSettings} />
-      {actionError && <p role="alert" className="mx-4 font-mono text-[10px] text-err">{actionError}</p>}
+      {actionError && <p role="alert" className="px-panel mx-4 border-err! px-3 py-1 text-sm text-err">{actionError}</p>}
       <PauseBanner plan={plan} onContinue={handleContinue} />
       <CriticalBanner plan={plan} busy={mode !== "idle"} onApprove={handleRunAll} />
       <GuardBanner plan={plan} onApprove={handleApproveStep} onCancel={handleStop} onContinue={handleContinue} />
@@ -1913,24 +1859,24 @@ export function PlanView({
               <div className="h-full overflow-y-auto px-6 py-5">
                 <div className="max-w-3xl mx-auto">
                 {/* Plan description + diagram + stats */}
-                <p className="font-mono text-[10px] uppercase tracking-widest text-text-tertiary mb-1">plan</p>
-                <p className="text-sm text-text-primary leading-relaxed mb-4">{plan.description}</p>
+                <p className="font-pixel text-[11px] uppercase text-text-tertiary mb-1">plan</p>
+                <p className="text-base text-text-primary mb-4">{plan.description}</p>
                 <MemoryCard plan={plan} />
                 <SynthesisCard plan={plan} onRetry={handleRetrySynthesis} />
                 <PlanSummary plan={plan} />
                 {plan.steps.length > 0 && (
                   <div className="mb-2">
-                    <FlowDiagram steps={plan.steps} />
+                    <FlowDiagram steps={plan.steps} paused={isPaused} />
                   </div>
                 )}
-                <div className="flex items-center gap-3 mt-3 mb-5 font-mono text-[10px] text-text-tertiary">
+                <div className="flex items-center gap-3 mt-3 mb-5 text-xs text-text-tertiary">
                   <span>{plan.steps.length} pasos</span>
                   {succeededCount > 0 && <span className="text-ok">{succeededCount} completados</span>}
                   {failedCount > 0 && <span className="text-err">{failedCount} fallido{failedCount > 1 ? "s" : ""}</span>}
                   {pendingCount > 0 && <span>{pendingCount} pendientes</span>}
                   {isRunning && (
-                    <span className="flex items-center gap-1 text-accent">
-                      <span className="h-1 w-1 rounded-full bg-accent animate-pulse-dot" />
+                    <span className="flex items-center gap-1 text-blue">
+                      <span className="h-2 w-2 bg-blue motion-safe:animate-pulse-dot" />
                       ejecutando
                     </span>
                   )}
@@ -1952,6 +1898,7 @@ export function PlanView({
                         key={step.id}
                         step={step}
                         streamLog={logs.get(step.id) ?? ""}
+                        paused={isPaused}
                         stepFiles={stepFiles}
                         onEdit={handleEditStep}
                         onRetry={isRunning ? undefined : (s) => handleRetryStep(s.id)}
