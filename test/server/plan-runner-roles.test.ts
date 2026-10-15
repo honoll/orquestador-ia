@@ -51,6 +51,9 @@ describe("runPlanStep: estado final de pasos con rol (F11)", () => {
     expect(step).toMatchObject({ status: "succeeded", statusDetail: "2 archivos" });
     // El resultado que reciben los pasos dependientes y la síntesis no lleva la línea de estado.
     expect(step.result).toBe("Listo.");
+    // El chat muestra runs.summary: tampoco ahí debe verse la línea de estado.
+    const runRow = await db.select().from(schema.runs).where(eq(schema.runs.id, step.runId!)).then((r) => r[0]);
+    expect(runRow.summary).toBe("Listo.");
   });
 
   it("un estado citado a media respuesta (de una dependencia) no cuenta → sin estado final", async () => {
