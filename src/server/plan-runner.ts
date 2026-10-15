@@ -165,9 +165,7 @@ export async function runPlanStep(options: StepRunOptions): Promise<StepOutcome>
         await db.update(schema.tasks).set({ status: "failed", updatedAt: new Date().toISOString() }).where(eq(schema.tasks.id, taskId));
         quotaPools.add(lease.pool);
         lastQuotaLabel = lease.label;
-        broadcast({ type: "plan:log", planId, stepId, stream: "stdout", data: `
-[orquestador] sin cuota en la bolsa "${lease.pool}" (${lease.label}); probando otra cuenta...
-`, timestamp: new Date().toISOString() } as any);
+        broadcast({ type: "plan:log", planId, stepId, stream: "stdout", data: `\n[orquestador] sin cuota en la bolsa "${lease.pool}" (${lease.label}); probando otra cuenta...\n`, timestamp: new Date().toISOString() } as any);
         attempt--;
         continue;
       }
@@ -261,9 +259,7 @@ export async function runPlanStep(options: StepRunOptions): Promise<StepOutcome>
         downAccounts.add(lease.accountId);
         await db.update(schema.runs).set({ status: "failed", errorMessage: err.message, errorFamily: "worker_unavailable", finishedAt: new Date().toISOString() }).where(eq(schema.runs.id, runId));
         await db.update(schema.tasks).set({ status: "failed", updatedAt: new Date().toISOString() }).where(eq(schema.tasks.id, taskId));
-        broadcast({ type: "plan:log", planId, stepId, stream: "stderr", data: `
-[orquestador] ${err.message}; probando otra cuenta...
-`, timestamp: new Date().toISOString() } as any);
+        broadcast({ type: "plan:log", planId, stepId, stream: "stderr", data: `\n[orquestador] ${err.message}; probando otra cuenta...\n`, timestamp: new Date().toISOString() } as any);
         attempt--;
         continue;
       }
