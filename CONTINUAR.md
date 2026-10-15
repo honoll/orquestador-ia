@@ -1,5 +1,18 @@
 # Orquestador-IA — Continuación y Estado
 
+## F8 — Vista "Oficina" · completada 2026-10-15
+
+**Rama:** `f8-oficina` (encima de `f7-app-escritorio`). Orden de merge: F7 → F8 → F9, solo cuando Alejandro lo diga. Detalle técnico en `CLAUDE.md`, sección "Office view (F8)".
+
+- Selector `Chat | Oficina`: 7 agentes en escritorios pixel-art, cola de pasos, planes recientes, log de eventos y cuentas; "Platicar" dentro de la Oficina (gris → azul)
+- Verificado en vivo (2026-10-15): JEFE/GUARDIA/BIBLIO trabajando al generar un plan, AGY al chatear, estado correcto tras recargar a mitad. 771 tests
+
+Pendientes (tuyos):
+- Probar **Platicar con micrófono real** dentro de la Oficina
+- Probar la instalación de F7 (app de escritorio)
+- **Claude CLI con OAuth expirado:** un plan falló por eso; volver a entrar con `claude` y luego `/login`
+- **F9 (toda la app en estilo pixel)** ya está diseñada: spec `docs/superpowers/specs/2026-10-15-f9-app-pixel-design.md`; falta su plan e implementación
+
 ## F6 — Asistente de voz sin manos ("Platicar") · completado 2026-10-07
 
 **Rama:** `f6-asistente-voz` (pendiente: correcciones de la revisión final y merge a `main`, solo cuando Alejandro lo diga)

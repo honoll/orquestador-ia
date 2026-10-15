@@ -92,7 +92,7 @@ POST /api/tasks → POST /api/tasks/:id/run
 - Cancel: `POST /:id/cancel` kills in-flight processes (Windows: `taskkill /T /F` on the tree, synthesis included), marks the plan `cancelled`, clears a `running` synthesis status (keeps the previous `synthesis` text), marks `pending`/`running` steps `cancelled`, and emits `plan:done {status: "cancelled"}`. `DELETE /:id` also cancels (A7).
 
 **WebSocket events (actual payloads, all with `planId` and `timestamp`):**
-- `plan:step` — `{ stepId, status, error? }`
+- `plan:step` — `{ stepId, status, adapter, error? }` (`adapter` added in F8; absent only on the scheduler's `cancelled` emit)
 - `plan:budget` — `{ usedTokens, budgetTokens }`
 - `plan:synthesis` — `{ status: running|succeeded|failed, synthesis?, error? }`
 - `plan:synthesis:log` — `{ stream, data }` chunks from the synthesis
@@ -320,6 +320,46 @@ Introduced in F6 (2026-10-07, branch `f6-asistente-voz`). Hands-free conversatio
 **Voice plans need JEV to auto-run (I6, user decision A):** `prepareAndStart` calls `startPlanIfAllowed(id, { requireJev: true })`. When the tier did not come from JEV (`tier_source` `fallback` or null) it returns `"needs-jev-approval"`: the plan is created but not run, and the announce says "Lo preparé; apruébalo en la pantalla para arrancarlo.". With a JEV tier the old behavior holds (trivial/normal run, critical → "needs-approval" with its own text). Other callers without the option are unchanged. Both approval cases send `announce` with `{ planId, needsApproval: true }`; `ConversationView` keeps the last one and returns it as `approvalPlanId`, and `Chat.handleTalkClosed` opens it in `PlanView` (`setActivePlanId`) when the plática closes, where the user runs it ("ejecutar") or, if critical, "aprobar y ejecutar". It also stays in the project's plan list in `ProjectPanel`. If the session ended before `plan:ready` there is no announce; the plan is only in that list.
 
 **Known deferred (skipped minors):** the "El plan falló" announce was not seen live (plan 736ad9ac; the UI idle of 3 min usually ends the session first); repeated deltas on retry; `WsEvent` types for the new events; `projectNotePath` not passed to the talk note; `ended` accepted from any UI phase; `speak` without error callback; interrupting does not cancel the server turn (agy keeps generating, output ignored — only its action is dropped); dev middleware reads wasm synchronously without error handling; the `**Asistente:**` label in the note can be forged; `plan-note.ts` (F3b) still writes `PENDIENTE` in empty sections. `npm audit`: 12 pre-existing UI vulnerabilities (vite/babel/react-router/nanoid), separate task.
+
+## Office view (F8)
+
+Introduced in F8 (2026-10-15, branch `f8-oficina`, on top of `f7-app-escritorio`). A pixel-art "Oficina" view (selector `Chat | Oficina`) that shows what the orchestrator is doing right now: 7 agents at desks, the step queue, recent plans, an event log and the Antigravity account rack. Plan: `docs/superpowers/plans/2026-10-15-f8-oficina.md`. No new dependencies; all UI text in Spanish.
+
+**Server:** `src/server/office-state.ts` (pure `buildOfficeState(input)` with injected `now`; `collectOfficeInput` runs the SQL; `startOfficeEventTracker` listens through `onBroadcast` and remembers the last `plan:tier`/`plan:guard` and `plan:memory` `source:"loading"` timestamps; not idempotent) and `src/server/routes/office.ts` (`GET /api/office/state`, 200 `OfficeState`, 500 `{ error }`). `SERVER_STARTED_AT` is exported from `routes/usage.ts` and reused for tokens.
+
+**Cast and working rule** (`ROLES` in `ui/src/lib/office.ts`; zone = DIRECCIÓN / TRABAJADORES / SERVICIOS):
+
+| id | color | accessory | working when |
+|---|---|---|---|
+| `jefe` | `#a78bfa` | sombrero | a plan is `generating` ("planeando: …") or synthesis `running` ("sintetizando: …"); model Opus 5.5 |
+| `guardia` | `#fbbf24` | gorra | last `plan:tier`/`plan:guard` ≤ **8 s** ago ("revisando"); `paused` = steps held by the guard ("pausó N paso(s)", card shows EN ESPERA) |
+| `agy` | `#60a5fa` | antena | N = running steps of that adapter + loose chat runs (`runs.status='running'` not owned by a running step) |
+| `codex` | `#34d399` | lentes | same as agy |
+| `claude` | `#e879f9` | moño | same as agy |
+| `biblio` | `#f472b6` | libros | memory indexing ("indexando") or last `plan:memory` loading ≤ **20 s** ago ("buscando notas"); else "N notas · listo"; model bge-m3 |
+| `recepcion` | `#fb923c` | diadema | a voice assistant session is active or Whisper is `starting`/`warming` ("escuchando") |
+
+For agy/codex/claude `desks = clamp(N, 1, 4)` (label "AGY ×3"), activity = first running step description or "chat", model = the step/run model or the adapter default from `MODEL_CATALOG`.
+
+**`GET /api/office/state` shape:** `{ agents: [{ id, working, desks, activity, model, tokens, paused? }] (always the 7, in the order above), queue: [{ planId, stepId, stepKey, description, adapter, status: "running"|"pending"|"paused", project }] (running first, then pending, max 20; only steps of plans that are `running` or have a `pause_reason`), plans: [{ id, description, status, pauseReason, updatedAt }] (last 8 by `updated_at`), generatedAt }`. `tokens` = runs since server start (+ `agy_usage` source `analysis` for agy); **jefe, guardia, biblio and recepcion are 0 and the UI shows "—"** (`// shortcut:` in code: planner/synthesis tokens are not stored separately; sum `plans.used_tokens` if wanted).
+
+**Refresh:** `OfficeView` uses `useQuery(["office"])` with `staleTime: 0` and `retry: 1`; `refetchInterval` 10 s only while the last fetch failed (banner `role="alert"` "sin conexión con el servidor — mostrando la última foto (hora)" keeps the last snapshot). Events that refresh (`refreshesOffice` in `ui/src/lib/office-view.ts`): `plan:*`, `voice:assistant:*`, `run:status`, `memory:indexed`, `accounts:changed`. Invalidation is a **300 ms throttle, not a debounce**: a timer that is not reset by new events, because a debounce would never fire during a burst of `voice:assistant:delta` and the view would freeze while talking. Clicking a plan/step calls `setActivePlanId` and switches to Chat.
+
+**Event log:** lives at app level in `WebSocketProvider` (`officeLog`, `appendLog`, `LOG_MAX = 100`, newest first; since page load, survives switching to Chat). Events map through `eventToLog` (`plan:ready|synthesis|tier|guard|step|memory|done`, `memory:indexed`, `voice:assistant:turn-done`); `plan:step` is attributed by its `adapter` field.
+
+**Sprites:** `ui/src/lib/office.ts` `spriteFrame(role, working, t)` returns rects (port of the mockup `draw()`), drawn by `components/office/AgentSprite.tsx` on a **28×22 canvas ×4**. Animates at **4 fps only while working AND visible** (hidden tab → paused); `prefers-reduced-motion` draws one still frame (read once, no change listener). Idle = gray body with floating "z".
+
+**Selector and view state:** `Chat | Oficina` group in `HudBar` (`aria-pressed`). `view` in `AppStateContext`, saved in `localStorage["orquestador.vista"]` (try/catch); `?vista=oficina` wins over storage and invalid values fall back to `"chat"` (`readView`); with the query in the URL, picking Chat is saved but a reload goes back to Oficina. In Oficina the center panel shows `OfficeView`, the right Projects panel and its floating button are hidden, Chat stays **mounted but hidden** (so a running stream is not lost). Components: `OfficeView`, `AgentCards` (7 cards, TRABAJANDO ×N / EN ESPERA / EN REPOSO), `OfficeScene` (wall, clock, sign, zones, desks, plants), `AccountRack` (`["accounts"]` query; blue LED active, red + ⛔ if `quotaBlockedUntil` is future), `QueuePanel`, `PlansPanel`, `LogPanel`, `OfficeTalkPanel`.
+
+**Platicar inside the Oficina:** the conversation logic lives in the hook `useConversationSession` (`ui/src/lib/use-conversation.ts`, moved verbatim out of `ConversationView`, which now only renders and calls `start()`; the hook owns `talkActive` with an effect cleanup). `OfficeTalkPanel` sits under the account rack: **gray** at rest ("clic para platicar"), **blue** `#60a5fa` with glow while active; phase in `aria-live`, last 2 Tú/Asistente lines, "interrumpir con la voz" checkbox, "terminar"; mic errors show red then back to gray. On close: "Nota guardada en Cerebro" for 5 s; `approvalPlanId` opens the plan in Chat; `conversationId` is set. **Symmetric view lock** (`viewLocked`): while a conversation is active the selector is disabled both ways ("Termina la plática para cambiar de vista"/"…para ver la Oficina") and Office `openPlan` is a no-op.
+
+**Layout:** by **container width** (container query + ResizeObserver, since the left column is resizable): ≥1060 px side panels (300 px) to the right of the scene; 700–1060 panels in 3 columns below; <700 stacked. Scene design width 820 px, scaled with `transform: scale` (`sceneScale`) when narrower; cards 7 columns ≥900, 4 ≥560, 2 below. The central panel uses a 84 % flex base in Oficina so the left column does not grow. Idle labels `#8b8b94` on `#0e0e12` (~5.7:1).
+
+**`plan:step` now carries `adapter`:** added to the `plan-runner.ts` emits (5) and the `plan-scheduler.ts` failed-catch emit; the scheduler's `cancelled` emit lacks it (the log ignores that status anyway).
+
+**Live results (2026-10-15):** JEFE, GUARDIA and BIBLIO showed as working while a plan was generated; AGY ×1 working on an agy chat; state correct after reloading mid-run. A plan failed because the **Claude Code CLI OAuth session expired** (user must run `claude` then `/login`). Platicar with a real microphone inside the Oficina is **pending the user** (tested only with a silent stub stream and the no-permission error path). Tests 771 pass, lint 0 errors, typecheck and `build:ui` OK.
+
+**Known deferred (skipped minors):** `ev.adapter in ROLES` should be `Object.hasOwn`; reduced-motion has no change listener; `startOfficeEventTracker` not idempotent; collect-SQL (steps/guardPaused/tokens) untested with real rows; steps of plans `pending`/`failed` without `pause_reason` are excluded; pending steps of budget/quota-paused plans read "EN COLA"; the "one session at a time" guard in `useConversationSession` is per instance (exclusion relies on the view lock); no hook-level test; `OfficeTalkPanel` puts `div`/`ul` and the live region inside its `<button>` and `aria-pressed` suggests a toggle (click while active interrupts); focus stays on the checkbox after toggling (Space toggles it instead of interrupting); on `fail` `talkActive` drops while the error overlay is still shown; with > 4 accounts the rack can push the talk panel past the 600 px scene.
 
 ## Antigravity Accounts
 
