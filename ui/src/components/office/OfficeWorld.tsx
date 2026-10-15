@@ -242,7 +242,7 @@ export function OfficeWorld({ state, onNear, onAdvance, children }: Props) {
   const map = floorOf(piso);
   return (
     <div ref={wrapRef} className="w-full overflow-hidden" onKeyDown={onKeyDown}>
-      <p className="mb-1 text-[10px] text-text-secondary">{map.nombre}</p>
+      <p className="mb-1 font-pixel text-[11px] text-text-secondary">{map.nombre}</p>
       <div className="relative" style={{ width: COLS * 16 * scale }}>
         <canvas
           ref={canvasRef}
@@ -258,20 +258,20 @@ export function OfficeWorld({ state, onNear, onAdvance, children }: Props) {
         {map.zonas.map((z) => (
           <span
             key={z.id} aria-hidden="true"
-            className="pointer-events-none absolute whitespace-nowrap font-mono font-bold leading-none"
+            className="pointer-events-none absolute whitespace-nowrap font-pixel leading-none"
             style={{ left: (z.x * 16 + 2) * scale, top: (z.y * 16 + 2) * scale, fontSize: Math.max(8, 5 * scale), color: z.color }}
           >{z.etiqueta}</span>
         ))}
         {!menu && children}
         {menu && (
-          <div role="group" aria-label="Elevador" className="absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 flex-col gap-1 rounded border border-white/20 bg-zinc-950/95 p-3 text-xs">
-            <p className="mb-1 font-bold tracking-widest text-amber-300">ELEVADOR</p>
+          <div role="group" aria-label="Elevador" className="px-panel absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 flex-col gap-1 border-zinc-200! bg-[#0b0b10]! p-3 font-pixel text-[12px]">
+            <p className="mb-1 text-warn">ELEVADOR</p>
             {FLOOR_LABELS.map((l, i) => (
-              <button key={l} autoFocus={i === 0} className="rounded px-2 py-1 text-left hover:bg-white/10 focus-visible:bg-white/10" onClick={() => choose(i + 1)}>
+              <button key={l} autoFocus={i === 0} className="px-2 py-1 text-left hover:bg-white/10 focus-visible:bg-white/10" onClick={() => choose(i + 1)}>
                 {i + 1} · {l}
               </button>
             ))}
-            <button className="rounded px-2 py-1 text-left text-text-secondary hover:bg-white/10 focus-visible:bg-white/10" onClick={() => choose(0)}>salir</button>
+            <button className="px-2 py-1 text-left text-text-secondary hover:bg-white/10 focus-visible:bg-white/10" onClick={() => choose(0)}>salir</button>
           </div>
         )}
       </div>

@@ -46,8 +46,8 @@ export function OfficeTalkPanel() {
 
   return (
     <div
-      className="rounded border-2 bg-[#0b0b0f] p-2.5 transition-shadow"
-      style={{ borderColor: active ? ON : "#22222a", color, boxShadow: active ? `0 0 14px ${ON}55` : undefined }}
+      className="border-3 bg-[#0b0b0f] p-2.5 font-sans"
+      style={{ borderColor: active ? ON : "var(--color-edge)", color, boxShadow: active ? `3px 3px 0 #000, 0 0 0 2px ${ON}55` : "3px 3px 0 #000" }}
     >
       <button
         type="button"
@@ -55,15 +55,15 @@ export function OfficeTalkPanel() {
         aria-pressed={active}
         title={active ? "Clic para interrumpir (también Esc o espacio)" : undefined}
         onClick={() => (active ? talk.interrupt() : (setSaved(false), talk.start()))}
-        className="block w-full text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#60a5fa]"
+        className="block w-full text-left focus-visible:outline-[#60a5fa]"
       >
-        <div className="mb-2.5 text-xs font-bold tracking-[.22em]">RECEPCIÓN · PLATICAR</div>
+        <div className="mb-2.5 font-pixel text-[11px]">RECEPCIÓN · PLATICAR</div>
         <div className="flex items-center gap-3">
           <span className={active && phase === "listening" ? "motion-safe:animate-pulse" : undefined}><Mic /></span>
-          <span role="status" aria-live="polite" className="font-bold tracking-[.14em]">{talkLabel(phase, active)}</span>
+          <span role="status" aria-live="polite" className="font-pixel text-[12px]">{talkLabel(phase, active)}</span>
         </div>
         {active && lines.length > 0 && (
-          <ul className="mt-2 space-y-0.5 text-[11px] text-text-primary">
+          <ul className="mt-2 space-y-0.5 text-xs text-text-primary">
             {lines.map((l) => (
               <li key={l.id} className="truncate">
                 <span style={{ color: IDLE }}>{l.who === "tu" ? "Tú: " : "Asistente: "}</span>{l.text}
@@ -77,32 +77,32 @@ export function OfficeTalkPanel() {
           type="button"
           onClick={talk.approve}
           disabled={phase === "ending"}
-          className="mt-2 w-full border-2 border-[#fbbf24] bg-[#fbbf24]/10 px-2 py-1 text-[11px] font-bold tracking-[.14em] text-[#fbbf24] hover:bg-[#fbbf24]/20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#60a5fa] disabled:opacity-40"
+          className="px-btn mt-2 w-full border-warn! bg-[#2a2108]! text-warn! focus-visible:outline-[#60a5fa]"
         >
           ABRIR PLAN PARA APROBAR
         </button>
       )}
-      {error && <p role="alert" className="mt-2 break-words text-[11px] text-err">{error}</p>}
-      {saved && !active && <p role="status" className="mt-2 text-[11px] text-ok">Nota guardada en Cerebro</p>}
+      {error && <p role="alert" className="px-panel mt-2 break-words border-err! px-2 py-1 text-xs text-err">{error}</p>}
+      {saved && !active && <p role="status" className="mt-2 text-xs text-ok">Nota guardada en Cerebro</p>}
       {!active && (
-        <label className="mt-2 flex cursor-pointer items-center gap-1.5 text-[11px]" title="Usa notas de Cerebro (Ollama, solo CPU) en la plática">
-          <input type="checkbox" checked={useMemory} onChange={(e) => setUseMemory(e.target.checked)} className="accent-[#60a5fa]" />
+        <label className="mt-2 flex cursor-pointer items-center gap-1.5 text-xs" title="Usa notas de Cerebro (Ollama, solo CPU) en la plática">
+          <input type="checkbox" checked={useMemory} onChange={(e) => setUseMemory(e.target.checked)} className="h-4 w-4 accent-[#60a5fa]" />
           usar memoria
         </label>
       )}
       {active && (
-        <div className="mt-2 flex items-center justify-between gap-2 text-[11px]">
+        <div className="mt-2 flex items-center justify-between gap-2 text-xs">
           <label className="flex cursor-pointer items-center gap-1.5" title="Permite cortar al asistente hablándole; usa audífonos para evitar el eco">
-            <input type="checkbox" checked={talk.bargeIn} onChange={(e) => talk.setBargeIn(e.target.checked)} className="accent-[#60a5fa]" />
+            <input type="checkbox" checked={talk.bargeIn} onChange={(e) => talk.setBargeIn(e.target.checked)} className="h-4 w-4 accent-[#60a5fa]" />
             interrumpir con la voz
           </label>
           <button
             type="button"
             onClick={talk.end}
             disabled={phase === "ending" || phase === "starting"}
-            className="border-2 border-current px-2 py-0.5 hover:text-err focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#60a5fa] disabled:opacity-40"
+            className="px-btn hover:text-err focus-visible:outline-[#60a5fa]"
           >
-            terminar
+            TERMINAR
           </button>
         </div>
       )}

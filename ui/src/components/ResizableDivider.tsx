@@ -179,14 +179,14 @@ export function ResizableHandle({
       {...props}
     >
       <div className={cx("flex items-center justify-center gap-0.5", groupDirection === "vertical" && "hidden")}>
-        <div className="h-3 w-0.5 rounded-full bg-text-tertiary/40" />
-        <div className="h-3 w-0.5 rounded-full bg-text-tertiary/40" />
-        <div className="h-3 w-0.5 rounded-full bg-text-tertiary/40" />
+        <div className="h-3 w-0.5 bg-text-tertiary/40" />
+        <div className="h-3 w-0.5 bg-text-tertiary/40" />
+        <div className="h-3 w-0.5 bg-text-tertiary/40" />
       </div>
       <div className={cx("hidden items-center justify-center gap-0.5", groupDirection === "vertical" && "flex")}>
-        <div className="h-0.5 w-3 rounded-full bg-text-tertiary/40" />
-        <div className="h-0.5 w-3 rounded-full bg-text-tertiary/40" />
-        <div className="h-0.5 w-3 rounded-full bg-text-tertiary/40" />
+        <div className="h-0.5 w-3 bg-text-tertiary/40" />
+        <div className="h-0.5 w-3 bg-text-tertiary/40" />
+        <div className="h-0.5 w-3 bg-text-tertiary/40" />
       </div>
     </div>
   );
