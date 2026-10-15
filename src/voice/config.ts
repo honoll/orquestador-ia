@@ -5,6 +5,8 @@ export interface VoiceConfig {
   whisperExe: string;
   whisperModel: string;
   whisperPort: number;
+  /** Minutos sin uso antes de apagar whisper-server y soltar la GPU; 0 = nunca. */
+  whisperIdleMinutes: number;
   piperExe: string;
   voiceModel: string;
   voiceName: string;
@@ -15,11 +17,13 @@ export function voiceConfig(env: NodeJS.ProcessEnv = process.env): VoiceConfig {
   const dir = env.VOICE_DIR || "C:\\tools\\voz";
   const port = Number.parseInt(env.WHISPER_PORT ?? "", 10);
   const voiceName = env.PIPER_VOICE || "es_MX-claude-high";
+  const idle = Number(env.WHISPER_IDLE_MINUTES || "5");
   return {
     dir,
     whisperExe: path.join(dir, "whisper", "Release", "whisper-server.exe"),
     whisperModel: path.join(dir, "whisper", "ggml-large-v3-turbo-q5_0.bin"),
     whisperPort: Number.isInteger(port) && port > 0 && port < 65536 ? port : 8091,
+    whisperIdleMinutes: Number.isFinite(idle) && idle >= 0 ? idle : 5,
     piperExe: path.join(dir, "piper", "piper", "piper.exe"),
     voiceModel: path.join(dir, "voces", `${voiceName}.onnx`),
     voiceName,

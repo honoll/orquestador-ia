@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import { buildWhisperServerArgs, createWhisper, silentWav, type WhisperDeps } from "../../src/voice/whisper.js";
 import { voiceConfig } from "../../src/voice/config.js";
 
@@ -179,5 +179,107 @@ describe("createWhisper", () => {
     expect(await first).toBe(false);
     expect(await w.ensureStarted()).toBe(true);
     expect(m.spawnServer).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("descarga por inactividad (WHISPER_IDLE_MINUTES)", () => {
+  const MIN = 60_000;
+  afterEach(() => { vi.useRealTimers(); });
+  const fake = () => vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+
+  it("sin uso 5 min tras transcribir: mata el hijo y queda stopped; luego arranca perezoso de nuevo", async () => {
+    fake();
+    const m = makeDeps();
+    const w = createWhisper(cfg, { ...m.deps, assistantActive: () => false });
+    expect(await w.transcribe(silentWav(1))).toBe("hola mundo");
+    await vi.advanceTimersByTimeAsync(5 * MIN - 1);
+    expect(m.kill).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(m.kill).toHaveBeenCalledTimes(1);
+    expect(w.status()).toBe("stopped");
+    m.setDown(true);
+    expect(await w.transcribe(silentWav(1))).toBe("hola mundo");
+    expect(m.spawnServer).toHaveBeenCalledTimes(2);
+  });
+
+  it("el calentamiento también arma el temporizador", async () => {
+    fake();
+    const m = makeDeps();
+    const w = createWhisper(cfg, { ...m.deps, assistantActive: () => false });
+    await w.ensureStarted();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(w.status()).toBe("ready");
+    await vi.advanceTimersByTimeAsync(5 * MIN);
+    expect(w.status()).toBe("stopped");
+  });
+
+  it("cada transcripción reinicia la cuenta", async () => {
+    fake();
+    const m = makeDeps();
+    const w = createWhisper(cfg, { ...m.deps, assistantActive: () => false });
+    await w.transcribe(silentWav(1));
+    await vi.advanceTimersByTimeAsync(4 * MIN);
+    await w.transcribe(silentWav(1));
+    await vi.advanceTimersByTimeAsync(4 * MIN);
+    expect(m.kill).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1 * MIN);
+    expect(m.kill).toHaveBeenCalledTimes(1);
+  });
+
+  it("con una plática activa no se descarga (se vuelve a armar)", async () => {
+    fake();
+    const m = makeDeps();
+    let talking = true;
+    const w = createWhisper(cfg, { ...m.deps, assistantActive: () => talking });
+    await w.transcribe(silentWav(1));
+    await vi.advanceTimersByTimeAsync(11 * MIN);
+    expect(m.kill).not.toHaveBeenCalled();
+    expect(w.status()).toBe("ready");
+    talking = false;
+    await vi.advanceTimersByTimeAsync(5 * MIN);
+    expect(m.kill).toHaveBeenCalledTimes(1);
+  });
+
+  it("con una transcripción en curso no se descarga", async () => {
+    fake();
+    let release!: () => void;
+    let slow = false;
+    const m = makeDeps({
+      inference: async () => {
+        if (slow) await new Promise<void>((r) => { release = r; });
+        return new Response(JSON.stringify({ text: "x" }), { status: 200 });
+      },
+    });
+    const w = createWhisper(cfg, { ...m.deps, assistantActive: () => false });
+    await w.transcribe(silentWav(1));
+    await vi.advanceTimersByTimeAsync(4 * MIN);
+    slow = true;
+    const t = w.transcribe(silentWav(1));
+    await vi.advanceTimersByTimeAsync(10 * MIN);
+    expect(m.kill).not.toHaveBeenCalled();
+    release();
+    await t;
+    await vi.advanceTimersByTimeAsync(5 * MIN);
+    expect(m.kill).toHaveBeenCalledTimes(1);
+  });
+
+  it("un servidor adoptado nunca se mata", async () => {
+    fake();
+    const m = makeDeps({ up: true });
+    const w = createWhisper(cfg, { ...m.deps, assistantActive: () => false });
+    await w.transcribe(silentWav(1));
+    await vi.advanceTimersByTimeAsync(30 * MIN);
+    expect(m.spawnServer).not.toHaveBeenCalled();
+    expect(m.kill).not.toHaveBeenCalled();
+    expect(w.status()).toBe("ready");
+  });
+
+  it("WHISPER_IDLE_MINUTES=0: nunca se descarga", async () => {
+    fake();
+    const m = makeDeps();
+    const w = createWhisper(voiceConfig({ WHISPER_IDLE_MINUTES: "0" }), { ...m.deps, assistantActive: () => false });
+    await w.transcribe(silentWav(1));
+    await vi.advanceTimersByTimeAsync(60 * MIN);
+    expect(m.kill).not.toHaveBeenCalled();
   });
 });
