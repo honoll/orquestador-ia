@@ -456,6 +456,26 @@ Introduced in F12 (2026-10-15, branch `f12-oficina-jugable`, on top of `f11-role
 
 **Known deferred:** agents on a route walk through each other and the player; at ×1 the dialog covers the lower half; the live region is mounted with its text (some screen readers skip the first announce); zone labels (DOM) can cover an agent in a zone's top-left corner; two agents can share the arrival tile when a zone is full; no symlink-escape test for `/sprites`; reduced motion and "abrir plan" were not exercised live.
 
+## Pixel UI (F9)
+
+Introduced in F9 (2026-10-15, branch `f9-app-pixel`, on top of `f12-oficina-jugable`). The whole UI moves to a pixel style (mockup `docs/superpowers/specs/assets/f9-app-pixel-maqueta.html`, plan `docs/superpowers/plans/2026-10-15-f9-app-pixel.md`). UI only (`ui/`, `test/ui/`); no server changes. No new dependencies.
+
+**Fonts (local, no CDN):** `ui/public/fonts/` served as `/fonts/...`: `vt323-400.woff2` (body text), `silkscreen-400.woff2` / `silkscreen-700.woff2` (titles, labels, buttons). Both are SIL Open Font License 1.1; the licenses ship next to them (`OFL-VT323.txt`, `OFL-Silkscreen.txt`). Originals in `C:\tools\fonts\f9\`.
+
+**Tokens (`ui/src/index.css`, `@theme`):** surfaces `surface-0..3`, `edge` `#2a2a33`, `edge-strong` `#3a3a45`, `text-primary` / `text-secondary` `#a1a1aa` / `text-tertiary` `#8b8b94` (all ≥ 4.5:1 on the dark surfaces), `accent` `#a78bfa` (user/primary), `blue` `#60a5fa` (Platicar/running), `ok`, `err`, `warn` (warning/pause). `--font-sans` = VT323 (so the Tailwind preflight uses it), `--font-pixel` = Silkscreen, `--font-mono` = JetBrains Mono. `--text-xs/sm/base/lg` = 16/18/20/22 px (the `html` stays at 16 px so `rem` spacing does not change). Every `--radius*` is 0: corners are square app-wide (`rounded-full` was removed by hand; no uses left).
+
+**Classes:** `.font-pixel` (Silkscreen + letter spacing); `.px-panel` (3 px border + hard `3px 3px 0 #000` shadow); `.px-grid` (24 px background grid, side panels); `.px-btn` (+ `.px-btn-pri` purple, `.px-btn-blue`; sinks 2 px on `:active`, gray when `:disabled`); `.px-tag` (Silkscreen 11 px with a `currentColor` border); `.px-input` (dark inset field). They are unlayered CSS, so a Tailwind utility of the same property loses: override with the `!` suffix (`border-err!`, `bg-[#2a2108]!`). `:focus-visible` = 2 px accent outline; `prefers-reduced-motion` drops the button transition and pulses use `motion-safe:`.
+
+**Rules:** VT323 text is never under 16 px (small labels go in Silkscreen, which is legible at 10–12 px). Code stays JetBrains Mono at **13 px** (`code, pre, kbd, samp, .font-code`): code blocks, inline code, commands, paths, step logs, agent outputs, editors. Button texts are uppercase.
+
+**Helpers:** `ui/src/lib/pixel.ts`: `avatarRoleFor(adapter, model)` (claude + Opus → `jefe`, claude → `claude`, codex, agy, unknown → `claude`) and `statusStyle(status, paused?)` → `{ icon, color, label }` (✓ succeeded/completed, ▶ running, ⏸ paused, ✗ failed, ⊘ cancelled, ↷ skipped, • pending "en cola"; Spanish labels; tested in `test/ui/pixel.test.ts`). `ui/src/components/PixelAvatar.tsx`: static 28×22 canvas of the F8 sprite (`spriteFrame(role, true, 0)`) scaled ×2, `aria-hidden`; used in Chat, the plan's final answer and GeneratingView.
+
+**Not touched:** the F12 world (`ui/src/office/world/*`, `ui/src/office/sprites/*`, the `OfficeWorld` canvas drawing), the F8 escritorios scene (`OfficeScene`, wrapped in `font-mono text-xs` to keep its original font) and `roleColor` (F11). Only the DOM around them changed: floor HUD, elevator menu, zone labels (Silkscreen), `WorldDialog` (same GBA box; VT323 text, Silkscreen title, `px-btn` actions), the `mundo · escritorios` selector.
+
+**Results (2026-10-15):** visual tour on :3111 with headless Edge at 1300 and 1000 px (chat, a plan, Platicar idle, Oficina mundo and escritorios, Roles, the file picker modal): no VT323 text under 16 px and no element with a border radius in any view; keyboard focus shows the 2 px outline; the contrast audit only flagged false positives (`oklab()` colors not parsed). Screenshots in `.superpowers/sdd/2026-10-15-f9-app-pixel/tour-*.png` (not in git). Tests 999, lint 0 errors, typecheck and `build:ui` OK.
+
+**Known deferred:** uppercase button labels are written in the text instead of CSS `text-transform`; at 1000 px the HudBar truncates the usage text and model names are truncated (agent cards) or wrap to 2–3 lines (left column); Tailwind `px-*` padding on a `.px-btn` is inert (the unlayered class wins); with the file preview open the plan view is cramped at 1000 px; headless captures of the world need focus emulation (`Page.bringToFront` + `Emulation.setFocusEmulationEnabled`), otherwise the canvas loop pauses as a hidden tab.
+
 ## Antigravity Accounts
 
 Introduced in F1 (2026-10-06). Support for multiple agy accounts with usage tracking and quota management.

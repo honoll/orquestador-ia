@@ -1,5 +1,21 @@
 # Orquestador-IA — Continuación y Estado
 
+## F9 — Toda la app en estilo pixel · completada 2026-10-15
+
+**Rama:** `f9-app-pixel` (encima de `f12-oficina-jugable`). Orden de merge: F7 → F8 → F10 → F11 → F12 → F9, solo cuando Alejandro lo diga. Detalle técnico en `CLAUDE.md`, sección "Pixel UI (F9)".
+
+- Fuentes locales (licencia OFL): VT323 para el texto (nunca menos de 16 px) y Silkscreen para títulos, etiquetas y botones; el código sigue en JetBrains Mono a 13 px
+- Marcos de 3 px con sombra dura, esquinas cuadradas en toda la app, botones que se hunden al presionar, rejilla en los paneles laterales, foco con contorno de 2 px
+- Barra, columnas, chat (avatares pixel por modelo), Platicar, Roles, vista de planes (iconos y colores de estado únicos) y Oficina, todo con las mismas clases `px-*`
+- El mundo de F12 y la escena de escritorios no se redibujaron; solo cambió lo que los rodea (HUD de piso, elevador, etiquetas de zona, cuadro de texto, selector mundo · escritorios)
+- Verificado: recorrido a 1300 y 1000 px (chat, plan, Platicar, Oficina mundo y escritorios, Roles, modal) sin texto VT323 menor de 16 px ni esquinas redondas. 999 tests
+
+Siguiente: integrar a `main` en el orden de arriba cuando lo apruebes.
+
+Pendientes (tuyos), además de los de F10–F12:
+- Revisar las capturas `.superpowers/sdd/2026-10-15-f9-app-pixel/tour-*.png` (fuera de git) y decir si el estilo queda o se ajusta
+- A 1000 px la barra de arriba recorta el texto de uso y algunos nombres de modelo; los botones van en mayúsculas escritas en el texto (no por CSS)
+
 ## F12 — Oficina jugable · completada 2026-10-15
 
 **Rama:** `f12-oficina-jugable` (encima de `f11-roles`). Orden de merge: F7 → F8 → F10 → F11 → F12 → F9, solo cuando Alejandro lo diga. Detalle técnico en `CLAUDE.md`, sección "Playable office (F12)".
