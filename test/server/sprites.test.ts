@@ -23,6 +23,12 @@ describe("sprites.json", () => {
     expect(validateSprites([]).warnings).toEqual(["sprites.json debe ser un objeto"]);
   });
 
+  it("una clave __proto__ se rechaza con aviso (no cambia el prototipo)", () => {
+    const cfg = validateSprites(JSON.parse(`{"roles":{"__proto__":${JSON.stringify(good)}}}`));
+    expect(Object.getPrototypeOf(cfg.roles)).toBe(Object.prototype);
+    expect(cfg.warnings).toEqual(["roles.__proto__: nombre inválido"]);
+  });
+
   it("formato gen3: basta file + formato; se expande a 16×32 × 9", () => {
     const cfg = validateSprites({ roles: { dev: { file: "dev.png", formato: "gen3" }, qa: { formato: "gen3" } } });
     expect(cfg.roles.dev).toEqual({ file: "dev.png", frameW: 16, frameH: 32, frames: 9, rows: { down: 0, left: 0, right: 0, up: 0 }, formato: "gen3" });

@@ -32,7 +32,7 @@ function group(v: unknown, name: string, warnings: string[]): Record<string, Spe
   if (v === undefined) return out;
   if (!v || typeof v !== "object" || Array.isArray(v)) { warnings.push(`${name}: debe ser un objeto`); return out; }
   for (const [k, s] of Object.entries(v)) {
-    if (!/^[A-Za-z0-9_-]{1,64}$/.test(k)) { warnings.push(`${name}.${k}: nombre inválido`); continue; }
+    if (!/^[A-Za-z0-9_-]{1,64}$/.test(k) || k === "__proto__") { warnings.push(`${name}.${k}: nombre inválido`); continue; }
     const p = spec(s, `${name}.${k}`, warnings);
     if (p) out[k] = p;
   }

@@ -92,7 +92,7 @@ app.get(
 // Skins del usuario fuera del repo (OFFICE_SPRITES_DIR); antes del serveStatic de ui/dist.
 app.route("/sprites", createSpritesRoute());
 
-const uiDistPath =path.resolve(import.meta.dirname, "../../ui/dist");
+const uiDistPath = path.resolve(import.meta.dirname, "../../ui/dist");
 if (fs.existsSync(uiDistPath)) {
   app.use("/*", serveStatic({ root: "./ui/dist" }));
   app.get("*", serveStatic({ root: "./ui/dist", path: "index.html" }));

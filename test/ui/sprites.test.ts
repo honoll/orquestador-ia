@@ -10,7 +10,7 @@ describe("criaturas originales", () => {
     for (const k of CREATURES) for (const d of ["down", "up", "left", "right"] as const) for (const f of [0, 1, 2] as const) {
       const rects = creatureFrame(k, d, f, true);
       expect(rects.length).toBeGreaterThan(5);
-      for (const [x, , w] of rects) { expect(x).toBeGreaterThanOrEqual(0); expect(x + w).toBeLessThanOrEqual(16); }
+      for (const [x, y, w, h] of rects) { expect(x).toBeGreaterThanOrEqual(0); expect(x + w).toBeLessThanOrEqual(16); expect(y).toBeGreaterThanOrEqual(-4); expect(y + h).toBeLessThanOrEqual(16); } // hasta 4 px arriba: se dibujan 4 px más alto
     }
   });
   it("en reposo el cuerpo es gris; el jugador conserva su color", () => {
