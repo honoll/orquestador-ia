@@ -10,8 +10,8 @@ function UsageLine({ w, name }: { w: WindowUsage; name: string }) {
         <span className="min-w-0 truncate text-text-tertiary">{name}</span>
         <span className="min-w-0 truncate text-right">{w.pct !== null ? `~${w.pct} %` : `${formatTokens(w.usedTokens)} tok`}</span>
       </div>
-      <span className="relative block h-1 w-full overflow-hidden rounded-full bg-surface-2" aria-hidden="true">
-        {w.pct !== null && <span className={`absolute inset-y-0 left-0 ${w.pct >= 85 ? "bg-err" : "bg-ok"}`} style={{ width: `${w.pct}%` }} />}
+      <span className="relative block h-2.5 w-full border-2 border-edge-strong bg-black" aria-hidden="true">
+        {w.pct !== null && <span className={`absolute inset-y-0 left-0 ${w.pct >= 85 ? "bg-err" : "bg-warn"}`} style={{ width: `${w.pct}%` }} />}
       </span>
       {w.resetsAt && <p className="break-words text-text-tertiary">reinicia en {formatIn(w.resetsAt - Date.now())}</p>}
     </div>
@@ -26,7 +26,7 @@ function LimitInput({ label, ariaLabel, value, onSave }: { label: string; ariaLa
       <input
         aria-label={ariaLabel}
         inputMode="numeric"
-        className="w-full min-w-0 rounded border border-edge bg-surface-0 px-1.5 py-0.5 text-text-primary"
+        className="px-input w-full min-w-0"
         value={draft}
         placeholder="auto"
         onChange={(e) => setDraft(e.target.value.replace(/[^\d]/g, ""))}
@@ -44,14 +44,14 @@ function AccountCard({ a }: { a: AccountView }) {
   const update = useMutation({ mutationFn: (p: Parameters<typeof accountsApi.update>[1]) => accountsApi.update(a.id, p), onSuccess: refresh });
 
   return (
-    <li className={`min-w-0 space-y-1.5 rounded-lg border px-3 py-2 ${a.active ? "border-ok/50" : "border-edge"}`}>
+    <li className={`px-panel min-w-0 space-y-1.5 px-2 py-1.5 ${a.active ? "border-ok!" : ""}`}>
       <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
         <span className="min-w-0 truncate text-text-primary">{a.label}</span>
         {a.active && <span className="text-ok">activa</span>}
-        <span className="ml-auto flex flex-wrap gap-x-2">
+        <span className="ml-auto flex flex-wrap gap-1.5">
           {!a.active && (
             <button
-              className="hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:text-inherit"
+              className="px-btn"
               disabled={a.hasWorker}
               title={a.hasWorker ? "Tiene trabajador (otro usuario de Windows): ya corre pasos de plan y no puede ser la cuenta local" : undefined}
               onClick={() => activate.mutate()}
@@ -60,7 +60,7 @@ function AccountCard({ a }: { a: AccountView }) {
             </button>
           )}
           <button
-            className="hover:text-err"
+            className="px-btn hover:text-err"
             onClick={() => { if (confirm(`¿Eliminar la cuenta "${a.label}" y su historial de uso?`)) remove.mutate(); }}
           >
             eliminar
@@ -69,7 +69,7 @@ function AccountCard({ a }: { a: AccountView }) {
       </div>
       <UsageLine w={a.usage.short} name="5 h" />
       <UsageLine w={a.usage.long} name="7 d" />
-      {a.warn.warn && <p className="break-words text-err">{a.warn.reason}</p>}
+      {a.warn.warn && <p className="break-words border-2 border-err px-1.5 text-err">{a.warn.reason}</p>}
       <details>
         <summary className="cursor-pointer text-text-tertiary">topes (tokens)</summary>
         <div className="mt-1 min-w-0 space-y-1">
@@ -100,10 +100,10 @@ export function AccountsPanel() {
   });
 
   return (
-    <section aria-labelledby="cuentas-titulo" className="space-y-2 border-t border-edge px-4 py-3 font-mono text-[11px] text-text-secondary">
+    <section aria-labelledby="cuentas-titulo" className="space-y-2 border-t-[3px] border-edge px-4 py-3 text-xs text-text-secondary">
       <div className="flex min-w-0 flex-wrap items-center gap-x-2">
-        <h2 id="cuentas-titulo" className="min-w-0 break-words text-text-tertiary">cuentas antigravity</h2>
-        <button className="ml-auto break-words hover:text-text-primary" onClick={() => openTerminal.mutate()}>cambiar cuenta</button>
+        <h2 id="cuentas-titulo" className="min-w-0 break-words font-pixel text-[11px] uppercase text-text-tertiary">cuentas antigravity</h2>
+        <button className="px-btn ml-auto" onClick={() => openTerminal.mutate()}>cambiar cuenta</button>
       </div>
       {hint && <p role="status" className="break-words text-text-primary">{hint}</p>}
       <ul className="min-w-0 space-y-2">{accounts.map((a) => <AccountCard key={a.id} a={a} />)}</ul>
@@ -113,12 +113,12 @@ export function AccountsPanel() {
       >
         <input
           aria-label="Etiqueta de la cuenta nueva"
-          className="w-full min-w-0 rounded border border-edge bg-surface-0 px-1.5 py-0.5 text-text-primary"
+          className="px-input w-full min-w-0"
           placeholder="p. ej. Familia A · usuario 2"
           value={label}
           onChange={(e) => setLabel(e.target.value)}
         />
-        <button type="submit" className="self-start hover:text-text-primary">agregar</button>
+        <button type="submit" className="px-btn self-start">agregar</button>
       </form>
       {create.error && <p className="text-err">{(create.error as Error).message}</p>}
       <p className="break-words text-text-tertiary">El uso es una estimación local. El orquestador nunca cambia de cuenta solo.</p>
