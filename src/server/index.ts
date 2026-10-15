@@ -25,6 +25,7 @@ import jevRoute from "./routes/jev.js";
 import memoryRoute from "./routes/memory.js";
 import officeRoute from "./routes/office.js";
 import rolesRoute from "./routes/roles.js";
+import { createSpritesRoute, createOfficeSpritesRoute } from "./routes/sprites.js";
 import { startOfficeEventTracker } from "./office-state.js";
 import voiceRoute from "./routes/voice.js";
 import voiceAssistantRoute from "./routes/voice-assistant.js";
@@ -67,6 +68,7 @@ app.route("/api/agy-workers", agyWorkersRoute);
 app.route("/api/workers", workersRoute);
 app.route("/api/jev", jevRoute);
 app.route("/api/memory", memoryRoute);
+app.route("/api/office/sprites", createOfficeSpritesRoute());
 app.route("/api/office", officeRoute);
 app.route("/api/roles", rolesRoute);
 app.route("/api/voice/assistant", voiceAssistantRoute);
@@ -87,7 +89,10 @@ app.get(
   })),
 );
 
-const uiDistPath = path.resolve(import.meta.dirname, "../../ui/dist");
+// Skins del usuario fuera del repo (OFFICE_SPRITES_DIR); antes del serveStatic de ui/dist.
+app.route("/sprites", createSpritesRoute());
+
+const uiDistPath =path.resolve(import.meta.dirname, "../../ui/dist");
 if (fs.existsSync(uiDistPath)) {
   app.use("/*", serveStatic({ root: "./ui/dist" }));
   app.get("*", serveStatic({ root: "./ui/dist", path: "index.html" }));
