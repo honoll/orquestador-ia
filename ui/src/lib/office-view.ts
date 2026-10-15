@@ -22,6 +22,10 @@ export function readView(search: string, stored: string | null): View {
   return isView(stored) ? stored : "chat";
 }
 
+export type OfficeMode = "mundo" | "escritorios";
+export const MODE_KEY = "orquestador.oficina.modo";
+export const readOfficeMode = (stored: string | null): OfficeMode => (stored === "escritorios" ? "escritorios" : "mundo");
+
 /** Eventos de WebSocket que cambian la foto de la oficina. */
 export function refreshesOffice(type: string): boolean {
   return type.startsWith("plan:") || type.startsWith("voice:assistant:") ||

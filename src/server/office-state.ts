@@ -1,5 +1,5 @@
-import { sql } from "drizzle-orm";
-import { db } from "../db/index.js";
+import { inArray, sql } from "drizzle-orm";
+import { db, schema } from "../db/index.js";
 import { MODEL_CATALOG, type AdapterType } from "../config/models.js";
 import { isIndexing } from "../memory/vault-index.js";
 import { activeAssistant } from "../voice/assistant/session.js";
@@ -25,6 +25,7 @@ export interface OfficeInput {
   voiceActive: boolean; whisperState: string;
   recentPlans: PlanSummary[]; // últimos 8 por updated_at
   agySeats: AgySeat[]; // una por cuenta de agy habilitada (local + trabajadores)
+  planProgress: Record<string, { done: number; total: number }>; // por planId de asientos que trabajan
 }
 
 const GUARD_WINDOW_MS = 8000;
@@ -50,7 +51,8 @@ export function buildOfficeState(i: OfficeInput): OfficeState {
     // chat/análisis/voz de agy no toman lease: corren en la cuenta local, así que su asiento trabaja.
     const loose = id === "agy" ? (chats.length ? "chat" : i.voiceActive ? "voz" : null) : null;
     const seats = id === "agy" && i.agySeats.length
-      ? i.agySeats.map((x) => (x.local && !x.working && loose ? { ...x, working: true, activity: loose } : x))
+      ? i.agySeats.map((x) => ({ ...x, progress: x.planId ? (i.planProgress[x.planId] ?? null) : null }))
+        .map((x) => (x.local && !x.working && loose ? { ...x, working: true, activity: loose } : x))
       : undefined;
     // Con asientos, un escritorio por cuenta; el resto de adaptadores, uno por paso/chat en curso.
     const n = seats ? Math.max(seats.length, 1) : running.length + chats.length;
@@ -121,10 +123,21 @@ export async function collectOfficeInput(now: number = Date.now()): Promise<Offi
   const notes = await db.all<{ n: number }>(sql`SELECT count(*) AS n FROM vault_notes`);
   const recentPlans = await db.all<PlanSummary>(sql`
     SELECT id, description, status, pause_reason AS pauseReason, updated_at AS updatedAt FROM plans ORDER BY updated_at DESC LIMIT 8`);
+  const seats = await agySeats(now);
+  const planProgress: Record<string, { done: number; total: number }> = {};
+  const ids = [...new Set(seats.filter((s) => s.working && s.planId).map((s) => s.planId!))];
+  const rows = ids.length
+    ? await db.select({ planId: schema.planSteps.planId, status: schema.planSteps.status }).from(schema.planSteps).where(inArray(schema.planSteps.planId, ids))
+    : [];
+  for (const r of rows) {
+    const p = (planProgress[r.planId] ??= { done: 0, total: 0 });
+    p.total++;
+    if (r.status === "succeeded" || r.status === "skipped") p.done++;
+  }
   return {
     now, generatingPlans, synthesisRunning, steps, chatRuns, tokensByAdapter,
     lastTierOrGuardAt, guardPausedCount,
     memoryIndexing: isIndexing(), lastMemoryLoadingAt, memoryNotes: num(notes),
-    voiceActive: activeAssistant() !== null, whisperState: whisper.status(), recentPlans, agySeats: await agySeats(now),
+    voiceActive: activeAssistant() !== null, whisperState: whisper.status(), recentPlans, agySeats: seats, planProgress,
   };
 }

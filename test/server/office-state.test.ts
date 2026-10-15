@@ -5,7 +5,7 @@ const NOW = 1_000_000;
 const base = (o: Partial<OfficeInput> = {}): OfficeInput => ({
   now: NOW, generatingPlans: [], synthesisRunning: [], steps: [], chatRuns: [], tokensByAdapter: {},
   lastTierOrGuardAt: null, guardPausedCount: 0, memoryIndexing: false, lastMemoryLoadingAt: null, memoryNotes: 410,
-  voiceActive: false, whisperState: "stopped", recentPlans: [], agySeats: [], ...o,
+  voiceActive: false, whisperState: "stopped", recentPlans: [], agySeats: [], planProgress: {}, ...o,
 });
 const step = (o: Partial<OfficeInput["steps"][number]> = {}): OfficeInput["steps"][number] => ({
   planId: "p", stepId: "s1", stepKey: "s1", description: "hacer", adapter: "codex", model: null, status: "running",
@@ -83,7 +83,7 @@ describe("collectOfficeInput (BD temporal)", () => {
   });
 
   describe("asientos de agy por cuenta", () => {
-    const seat = (account: string, working = false, o = {}) => ({ local: account === "local", account, pool: account, working, activity: working ? `tarea ${account}` : "libre", model: null, role: null as string | null, ...o });
+    const seat = (account: string, working = false, o = {}) => ({ local: account === "local", account, pool: account, working, activity: working ? `tarea ${account}` : "libre", model: null, role: null as string | null, planId: null as string | null, stepKey: null as string | null, progress: null, ...o });
     const stepAgy = (o = {}) => step({ adapter: "agy", ...o });
     it("el asiento conserva el rol del paso reservado", () => {
       const a = agent(buildOfficeState(base({ agySeats: [seat("local"), seat("agy2", true, { role: "qa" })], steps: [stepAgy()] })), "agy");
@@ -111,6 +111,11 @@ describe("collectOfficeInput (BD temporal)", () => {
       const six = buildOfficeState(base({ agySeats: ["a", "b", "c", "d", "e", "f"].map((n) => seat(n)) }));
       expect(agent(six, "agy")).toMatchObject({ desks: 4 });
       expect(agent(six, "agy").seats).toHaveLength(6);
+    });
+    it("el asiento lleva planId/stepKey del paso y el avance del plan", () => {
+      const seat = { local: false, account: "agy2", pool: "agy2", working: true, activity: "Crear slug", model: "claude-sonnet-4-6", role: "dev", planId: "p1", stepKey: "s2", progress: null };
+      const st = buildOfficeState(base({ agySeats: [seat], planProgress: { p1: { done: 1, total: 4 } } }));
+      expect(st.agents.find((a) => a.id === "agy")!.seats![0]).toMatchObject({ planId: "p1", stepKey: "s2", progress: { done: 1, total: 4 } });
     });
   });
 });

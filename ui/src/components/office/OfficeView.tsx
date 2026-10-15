@@ -1,21 +1,28 @@
-import { useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useWs } from "../../context/WebSocketProvider";
 import { useAppState } from "../../context/AppStateContext";
-import { refreshesOffice } from "../../lib/office-view";
+import { MODE_KEY, readOfficeMode, refreshesOffice, type OfficeMode } from "../../lib/office-view";
 import { AgentCards } from "./AgentCards";
 import { OfficeScene } from "./OfficeScene";
 import { QueuePanel } from "./QueuePanel";
 import { PlansPanel } from "./PlansPanel";
 import { LogPanel } from "./LogPanel";
 import { WorkersPanel } from "./WorkersPanel";
+import { OfficeWorld } from "./OfficeWorld";
+import { WorldDialog, type DialogHandle } from "./WorldDialog";
+import { AccountRack } from "./AccountRack";
+import { OfficeTalkPanel } from "./OfficeTalkPanel";
+import type { WorldAgent } from "../../office/world/placement";
 
-// Espejo de src/server/office-state.ts (la UI no importa código del servidor).
-export interface AgentState { id: import("../../lib/office").AgentId; working: boolean; desks: number; activity: string; model: string; tokens: number; paused?: boolean; seats?: AgySeat[] }
-export interface AgySeat { local: boolean; account: string; pool: string | null; working: boolean; activity: string; model: string | null; role: string | null }
-export interface QueueItem { planId: string; stepId: string; stepKey: string | null; description: string; adapter: string; status: "running" | "pending" | "paused"; project: string | null }
-export interface PlanSummary { id: string; description: string; status: string; pauseReason: string | null; updatedAt: string }
-export interface OfficeState { agents: AgentState[]; queue: QueueItem[]; plans: PlanSummary[]; generatedAt: string }
+import type { OfficeState } from "../../lib/office-state";
+
+// Espejo de los tipos del servidor: viven en lib/office-state.ts; se reexportan aquí.
+export type { AgentState, AgySeat, QueueItem, PlanSummary, OfficeState } from "../../lib/office-state";
+
+function storedMode(): OfficeMode {
+  try { return readOfficeMode(localStorage.getItem(MODE_KEY)); } catch { return "mundo"; }
+}
 
 async function fetchOffice(): Promise<OfficeState> {
   const res = await fetch("/api/office/state");
@@ -27,6 +34,13 @@ export function OfficeView() {
   const qc = useQueryClient();
   const { subscribe, officeLog } = useWs();
   const { setActivePlanId, setView, talkActive } = useAppState();
+  const [mode, setModeState] = useState<OfficeMode>(storedMode);
+  const [near, setNear] = useState<WorldAgent | null>(null);
+  const dialog = useRef<DialogHandle>(null);
+  const setMode = (m: OfficeMode) => {
+    setModeState(m);
+    try { localStorage.setItem(MODE_KEY, m); } catch { /* sin almacenamiento: solo esta sesión */ }
+  };
   const { data, isError } = useQuery({
     queryKey: ["office"],
     queryFn: fetchOffice,
@@ -62,9 +76,31 @@ export function OfficeView() {
         </p>
       )}
       <AgentCards agents={agents} />
+      {/* Cambiar de modo desmontaría el panel de Platicar con la plática abierta: se bloquea como el selector de vista. */}
+      <div role="group" aria-label="Modo de la Oficina" className="flex items-center gap-1 px-3 pb-2 text-[11px]">
+        {(["mundo", "escritorios"] as const).map((m, i) => (
+          <span key={m} className="flex items-center gap-1">
+            {i > 0 && <span aria-hidden="true" className="text-text-tertiary">·</span>}
+            <button
+              aria-pressed={mode === m}
+              disabled={talkActive && mode !== m}
+              title={talkActive && mode !== m ? "Termina la plática para cambiar de modo" : undefined}
+              className={`rounded px-1.5 py-0.5 disabled:opacity-50 ${mode === m ? "bg-white/10 text-text-primary" : "text-text-secondary hover:text-text-primary"}`}
+              onClick={() => setMode(m)}
+            >{m}</button>
+          </span>
+        ))}
+      </div>
       <div className="grid gap-2.5 px-3 pb-3 @min-[1060px]:grid-cols-[minmax(0,1fr)_300px]">
-        <OfficeScene agents={agents} queue={queue} />
+        {mode === "mundo" ? (
+          <OfficeWorld state={data} onNear={setNear} onAdvance={() => dialog.current?.advance()}>
+            {near && <WorldDialog key={near.key} ref={dialog} agent={near} log={officeLog} onOpenPlan={openPlan} />}
+          </OfficeWorld>
+        ) : (
+          <OfficeScene agents={agents} queue={queue} />
+        )}
         <div className="grid content-start gap-2.5 @min-[700px]:grid-cols-3 @min-[1060px]:grid-cols-1">
+          {mode === "mundo" && <><AccountRack /><OfficeTalkPanel /></>}
           <QueuePanel queue={queue} onOpen={openPlan} />
           <WorkersPanel />
           <PlansPanel plans={data?.plans ?? []} onOpen={openPlan} />

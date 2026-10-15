@@ -240,10 +240,10 @@ describe("agySeats (Oficina)", () => {
     const { agySeats, tagLease } = await import("../../src/server/agy-workers.js");
     expect((await agySeats(NOW)).map((s) => [s.account, s.working])).toEqual([["local", false], ["agy2", false]]);
     const lease = (await pickWorker(NOW))!;
-    tagLease(lease.accountId, "hacer algo", "gemini-x", "dev");
+    tagLease(lease.accountId, "hacer algo", "gemini-x", "dev", { planId: "p1", stepKey: "s2" });
     const busy = (await agySeats(NOW)).find((s) => s.working)!;
-    expect(busy).toMatchObject({ account: lease.label, activity: "hacer algo", model: "gemini-x", role: "dev" });
+    expect(busy).toMatchObject({ account: lease.label, activity: "hacer algo", model: "gemini-x", role: "dev", planId: "p1", stepKey: "s2", progress: null });
     lease.release();
-    expect((await agySeats(NOW)).every((s) => !s.working && s.activity === "libre" && s.role === null)).toBe(true);
+    expect((await agySeats(NOW)).every((s) => !s.working && s.activity === "libre" && s.role === null && s.planId === null)).toBe(true);
   });
 });

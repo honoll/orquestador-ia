@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { readView, refreshesOffice, sceneScale, planTag, queueTag, signLine, clock, appendLog, LOG_MAX, viewLocked, talkLabel } from "../../ui/src/lib/office-view.js";
+import { readView, refreshesOffice, sceneScale, planTag, queueTag, signLine, clock, appendLog, LOG_MAX, viewLocked, talkLabel, readOfficeMode } from "../../ui/src/lib/office-view.js";
 
 describe("readView", () => {
   it("?vista=oficina gana sobre lo guardado", () => {
@@ -16,6 +16,14 @@ describe("readView", () => {
     expect(readView("", "basura")).toBe("chat");
     expect(readView("", null)).toBe("chat");
     expect(readView("?vista=otra", "nada")).toBe("chat");
+  });
+});
+
+describe("readOfficeMode", () => {
+  it("readOfficeMode: mundo por defecto; escritorios si está guardado; inválido → mundo", () => {
+    expect(readOfficeMode(null)).toBe("mundo");
+    expect(readOfficeMode("escritorios")).toBe("escritorios");
+    expect(readOfficeMode("otro")).toBe("mundo");
   });
 });
 

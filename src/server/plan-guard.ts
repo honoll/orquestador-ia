@@ -1,3 +1,4 @@
+import path from "node:path";
 import { jev as defaultJev, JEV_STATE_MAX_CHARS, type JevClient, type JevQuestion } from "../lib/jev.js";
 import { CLIP_MARK, DEP_RESULT_MAX_CHARS, clip } from "./plan-dag.js";
 
@@ -27,7 +28,19 @@ const DESTRUCTIVE_RE = /\brm\s+(?:-[a-z]+\s+)*-[a-z]*r[a-z]*\b|\bgit\s+clean\s+-
 const SENSITIVE_RE = /(%USERPROFILE%|%APPDATA%|%LOCALAPPDATA%|\\AppData\\|[\\/]\.ssh\b|[\\/]\.claude[\\/]|[\\/]\.codex[\\/]|[\\/]\.gemini[\\/]|[\\/]\.orquestador-ia[\\/]|(^|\s)~[\\/]|(^|[\s"'(`=:])\/etc\/)/i;
 const WIN_ABS_RE = /\b[A-Za-z]:[\\/][^\s"'`<>|]*/g;
 
-const norm = (p: string) => p.replace(/\//g, "\\").replace(/\\+$/, "").toLowerCase();
+// Quita la puntuación que el texto pega al final de una ruta ("(…\demo)." , "…\x.png;") y resuelve ".." para
+// que "…\demo\..\..\Windows" no pase como dentro del proyecto.
+// Los puntos finales se quitan solo si no son un segmento "." o ".." completo (esos sí cuentan como ruta).
+function stripTrailingPunct(p: string): string {
+  for (let prev = ""; prev !== p;) {
+    prev = p;
+    p = p.replace(/[),;:!?\]}»"'’]+$/, "");
+    const last = p.split(/[\\/]/).pop() ?? "";
+    if (last !== "." && last !== "..") p = p.replace(/\.+$/, "");
+  }
+  return p;
+}
+const norm = (p: string) => path.win32.normalize(stripTrailingPunct(p).replace(/\//g, "\\")).replace(/\\+$/, "").toLowerCase();
 
 /**
  * Reglas conservadoras (no entienden negaciones). Sin JEV revisan prompt + dependencias; con JEV solo
