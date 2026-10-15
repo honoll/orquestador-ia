@@ -17,6 +17,8 @@ export interface AccountView {
   quotaBlockedUntil: string | null;
   quotaBlockedAt: string | null;
   notes: string | null;
+  pool: string | null;
+  poolUsage: { short: WindowUsage; long: WindowUsage };
   usage: { short: WindowUsage; long: WindowUsage };
   warn: { warn: boolean; reason: string | null };
 }

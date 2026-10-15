@@ -157,7 +157,8 @@ describe("runPlanStep", () => {
 
 describe("Oficina: escritorios con filas reales (regresión: contaban doble)", () => {
 
-  const agyDesks = async () => buildOfficeState(await collectOfficeInput()).agents.find((a) => a.id === "agy")!.desks;
+  // Con asientos por cuenta, desks = cuentas; lo que no debe contarse doble son los asientos ocupados.
+  const agyDesks = async () => buildOfficeState(await collectOfficeInput()).agents.find((a) => a.id === "agy")!.seats!.filter((s) => s.working).length;
 
   it("1 paso corriendo → 1 escritorio; 2 pasos → 2", async () => {
     await addWorker("agy2", 3121); // un paso por cuenta: el segundo va al trabajador

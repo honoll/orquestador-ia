@@ -5,7 +5,7 @@ import { getAdapter } from "../adapters/registry.js";
 import { broadcast } from "./ws.js";
 import { claudeProfileManager } from "../adapters/claude/profile-manager.js";
 import { recordAgyCall, NoActiveAccountError } from "./agy-accounts.js";
-import { pickWorker, agyAvailability, markWorkerHealth, markWorkerBusy, type AgyLease } from "./agy-workers.js";
+import { pickWorker, agyAvailability, markWorkerHealth, markWorkerBusy, tagLease, type AgyLease } from "./agy-workers.js";
 import { WorkerUnavailableError } from "../adapters/agy/worker-client.js";
 import pino from "pino";
 
@@ -122,6 +122,7 @@ async function runPlanStepInner(options: StepRunOptions): Promise<StepOutcome> {
       const ex = { pools: quotaPools, accounts: downAccounts };
       lease = preLease ?? await pickWorker(Date.now(), ex);
       preLease = null;
+      if (lease) tagLease(lease.accountId, step.description, step.model ?? null);
       if (!lease) {
         if ((await agyAvailability(Date.now(), ex)).usable > 0) return requeue(planId, stepId, tokensUsed, attempt);
         return agyNoAccount({ planId, stepId, lastQuotaLabel, lastError, tokensUsed });

@@ -8,9 +8,11 @@ import { OfficeScene } from "./OfficeScene";
 import { QueuePanel } from "./QueuePanel";
 import { PlansPanel } from "./PlansPanel";
 import { LogPanel } from "./LogPanel";
+import { WorkersPanel } from "./WorkersPanel";
 
 // Espejo de src/server/office-state.ts (la UI no importa código del servidor).
-export interface AgentState { id: import("../../lib/office").AgentId; working: boolean; desks: number; activity: string; model: string; tokens: number; paused?: boolean }
+export interface AgentState { id: import("../../lib/office").AgentId; working: boolean; desks: number; activity: string; model: string; tokens: number; paused?: boolean; seats?: AgySeat[] }
+export interface AgySeat { account: string; pool: string | null; working: boolean; activity: string; model: string | null }
 export interface QueueItem { planId: string; stepId: string; stepKey: string | null; description: string; adapter: string; status: "running" | "pending" | "paused"; project: string | null }
 export interface PlanSummary { id: string; description: string; status: string; pauseReason: string | null; updatedAt: string }
 export interface OfficeState { agents: AgentState[]; queue: QueueItem[]; plans: PlanSummary[]; generatedAt: string }
@@ -64,6 +66,7 @@ export function OfficeView() {
         <OfficeScene agents={agents} queue={queue} />
         <div className="grid content-start gap-2.5 @min-[700px]:grid-cols-3 @min-[1060px]:grid-cols-1">
           <QueuePanel queue={queue} onOpen={openPlan} />
+          <WorkersPanel />
           <PlansPanel plans={data?.plans ?? []} onOpen={openPlan} />
           <LogPanel entries={officeLog} />
         </div>

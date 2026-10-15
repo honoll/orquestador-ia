@@ -195,3 +195,17 @@ describe("parallelLimit", () => {
     expect(MAX_PARALLEL_CEILING).toBe(16);
   });
 });
+
+describe("agySeats (Oficina)", () => {
+  it("un asiento por cuenta; la reservada trabaja con el paso anotado y se libera", async () => {
+    await setup([{ label: "local" }, { label: "agy2", port: 3121 }]);
+    const { agySeats, tagLease } = await import("../../src/server/agy-workers.js");
+    expect((await agySeats(NOW)).map((s) => [s.account, s.working])).toEqual([["local", false], ["agy2", false]]);
+    const lease = (await pickWorker(NOW))!;
+    tagLease(lease.accountId, "hacer algo", "gemini-x");
+    const busy = (await agySeats(NOW)).find((s) => s.working)!;
+    expect(busy).toMatchObject({ account: lease.label, activity: "hacer algo", model: "gemini-x" });
+    lease.release();
+    expect((await agySeats(NOW)).every((s) => !s.working && s.activity === "libre")).toBe(true);
+  });
+});

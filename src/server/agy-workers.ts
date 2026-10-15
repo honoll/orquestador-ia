@@ -56,6 +56,8 @@ export class WorkerValidationError extends Error {}
 // Estado en memoria del proceso (el orquestador es el único cliente de los trabajadores).
 const reserved = new Set<string>();
 const lastUsed = new Map<string, number>();
+/** Qué paso corre cada cuenta reservada (solo para la Oficina; se borra al soltar). */
+const leaseInfo = new Map<string, { activity: string; model: string | null }>();
 const health = new Map<string, { ok: boolean; at: number }>();
 const busyUntil = new Map<string, number>();
 const waiters = new Set<() => void>();
@@ -253,6 +255,7 @@ export async function pickWorker(now: number = Date.now(), ex: AgyExclude = {}):
       if (released) return;
       released = true;
       reserved.delete(accountId);
+      leaseInfo.delete(accountId);
       for (const wake of [...waiters]) wake();
     },
   };
@@ -278,4 +281,20 @@ export async function parallelLimit(): Promise<number> {
   const withWorker = new Set(workers.map((w) => w.accountId));
   const count = workers.filter((w) => w.enabled === 1).length + (active && !withWorker.has(active.id) ? 1 : 0);
   return Math.min(MAX_PARALLEL_CEILING, Math.max(1, count));
+}
+
+/** El ejecutor anota qué paso corre una cuenta reservada. */
+export function tagLease(accountId: string, activity: string, model: string | null): void {
+  if (reserved.has(accountId)) leaseInfo.set(accountId, { activity, model });
+}
+
+export interface AgySeat { account: string; pool: string | null; working: boolean; activity: string; model: string | null }
+
+/** Un asiento por cuenta que puede correr pasos (trabajadores habilitados + la local): ocupado si tiene reserva. */
+export async function agySeats(now: number = Date.now()): Promise<AgySeat[]> {
+  return (await candidates(now)).map((c) => {
+    const working = reserved.has(c.view.id);
+    const info = leaseInfo.get(c.view.id);
+    return { account: c.view.label, pool: c.view.pool, working, activity: working ? (info?.activity ?? "trabajando") : "libre", model: working ? (info?.model ?? null) : null };
+  });
 }
