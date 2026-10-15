@@ -1,12 +1,15 @@
 import { useQuery } from "@tanstack/react-query";
 import { accountsApi } from "../lib/accounts-api";
 import { formatIn, formatTokens } from "../lib/format";
+import { useAppState } from "../context/AppStateContext";
+import type { View } from "../lib/office-view";
 
 export function HudBar() {
   const { data: activeData } = useQuery({ queryKey: ["accounts", "active"], queryFn: accountsApi.active, refetchInterval: 60_000 });
   const { data: session } = useQuery({ queryKey: ["usage", "session"], queryFn: accountsApi.session, refetchInterval: 60_000 });
   const account = activeData?.account ?? null;
   const short = account?.usage.short;
+  const { view, setView } = useAppState();
 
   return (
     <header className="flex items-center gap-4 border-b border-edge bg-surface-1 px-4 py-1.5 font-mono text-[11px] text-text-secondary" aria-label="Estado del orquestador">
@@ -37,6 +40,19 @@ export function HudBar() {
       <span className="ml-auto" title="Tokens de todos los adapters desde que arrancó el servidor">
         sesión: {formatTokens(session?.tokens ?? 0)} tok
       </span>
+      <div role="group" aria-label="Vista" className="flex overflow-hidden rounded-md border border-edge-strong">
+        {(["chat", "oficina"] as View[]).map((v) => (
+          <button
+            key={v}
+            type="button"
+            aria-pressed={view === v}
+            onClick={() => setView(v)}
+            className={`px-3 py-0.5 focus-visible:outline focus-visible:outline-1 focus-visible:-outline-offset-1 focus-visible:outline-accent ${view === v ? "bg-surface-3 text-text-primary" : "text-text-secondary hover:text-text-primary"}`}
+          >
+            {v === "chat" ? "Chat" : "Oficina"}
+          </button>
+        ))}
+      </div>
     </header>
   );
 }
