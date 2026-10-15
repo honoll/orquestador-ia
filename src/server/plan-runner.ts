@@ -87,14 +87,20 @@ async function runPlanStepInner(options: StepRunOptions): Promise<StepOutcome> {
     broadcast({ type: "plan:log", planId, stepId, stream, data, timestamp: new Date().toISOString() } as any);
 
   // F11: los roles que escriben "salidas" (imagen) guardan todo en una carpeta propia del plan, dentro del proyecto.
-  let gitBefore: Set<string> | null = null;
+  let gitBefore: Map<string, string> | null = null;
+  let outsideWarn: string | null = null; // aviso de escritura fuera de la carpeta de salidas (cualquier desenlace del paso)
   if (step.role && getRole(step.role)?.escribe === "salidas") {
     try {
       if (ensureGitignore(cwd)) planLog("stdout", "\n[orquestador] se agregó .orquestador/ al .gitignore del proyecto\n");
       const outDir = ensureOutputsDir(cwd, planId);
       prompt += `\n\nCARPETA DE SALIDAS de este plan: ${outDir}\nGuarda TODO lo que generes únicamente aquí; no escribas ni modifiques nada fuera de esa carpeta.`;
       gitBefore = await gitSnapshot(cwd);
-    } catch (err) { log.error({ err, stepId }, "No se pudo preparar la carpeta de salidas"); }
+    } catch (err) {
+      log.error({ err, stepId }, "No se pudo preparar la carpeta de salidas");
+      planLog("stderr", `
+[orquestador] AVISO: no se pudo preparar la carpeta de salidas (${(err as Error).message}); el paso corre sin restricción de carpeta
+`);
+    }
   }
 
   const adapter = getAdapter(step.adapter);
@@ -221,6 +227,16 @@ async function runPlanStepInner(options: StepRunOptions): Promise<StepOutcome> {
         continue;
       }
 
+      if (gitBefore) {
+        const after = await gitSnapshot(cwd);
+        const outside = after ? changedOutside(gitBefore, after) : [];
+        if (outside.length) {
+          outsideWarn = `AVISO: el paso de salidas tocó archivos fuera de su carpeta: ${outside.slice(0, 10).join(", ")}${outside.length > 10 ? ` y ${outside.length - 10} más` : ""}`;
+          planLog("stderr", `\n[orquestador] ${outsideWarn}\n`);
+        }
+      }
+      const withWarn = (d: string | null) => (outsideWarn ? (d ? `${d} — ${outsideWarn}` : outsideWarn) : d);
+
       const succeeded = result.exitCode === 0 && !result.timedOut;
       const isSilentRateLimit = step.adapter === "claude" && result.exitCode === 1 && !(result.stderr ?? "").trim();
       const isTransient = TRANSIENT_RE.test((result.errorMessage ?? "") + result.stderr) || isSilentRateLimit;
@@ -255,7 +271,7 @@ async function runPlanStepInner(options: StepRunOptions): Promise<StepOutcome> {
 
       // Bloqueado, necesita o sin estado → failed sin reintento.
       if (roleFailed) {
-        const statusDetail = finalStatus ? (finalStatus.detalle ?? "(sin detalle)") : "sin estado final";
+        const statusDetail = withWarn(finalStatus ? (finalStatus.detalle ?? "(sin detalle)") : "sin estado final")!;
         const msg = finalStatus ? `${finalStatus.kind}: ${statusDetail}` : statusDetail;
         await db.update(schema.planSteps)
           .set({
@@ -267,16 +283,7 @@ async function runPlanStepInner(options: StepRunOptions): Promise<StepOutcome> {
         return { status: "failed", tokensUsed };
       }
 
-      let statusDetail = finalStatus?.detalle ?? null;
-      if (succeeded && gitBefore) {
-        const after = await gitSnapshot(cwd);
-        const outside = after ? changedOutside(gitBefore, after) : [];
-        if (outside.length) {
-          const warn = `AVISO: el paso de salidas tocó archivos fuera de su carpeta: ${outside.slice(0, 10).join(", ")}${outside.length > 10 ? ` y ${outside.length - 10} más` : ""}`;
-          planLog("stderr", `\n[orquestador] ${warn}\n`);
-          statusDetail = statusDetail ? `${statusDetail} — ${warn}` : warn;
-        }
-      }
+      const statusDetail = withWarn(finalStatus?.detalle ?? null);
 
       if (succeeded) {
         await db.update(schema.planSteps)
@@ -366,6 +373,7 @@ async function runPlanStepInner(options: StepRunOptions): Promise<StepOutcome> {
     .set({
       status: "failed",
       errorMessage: lastError,
+      ...(outsideWarn ? { statusDetail: outsideWarn } : {}),
       finishedAt: new Date().toISOString(),
     })
     .where(eq(schema.planSteps.id, stepId));

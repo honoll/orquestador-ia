@@ -3,6 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
+import { execFileSync } from "node:child_process";
 
 const h = vi.hoisted(() => {
   const base = {
@@ -108,27 +109,47 @@ describe("runPlanStep: estado final de pasos con rol (F11)", () => {
 });
 
 describe("runPlanStep: carpeta de salidas del rol imagen (F11)", () => {
-  it("prompt con la carpeta, .gitignore y aviso si toca archivos fuera (git)", async () => {
+  async function imagenStep(summary: string, extra: Record<string, unknown> = {}) {
     const { execFileSync } = await import("node:child_process");
-    try { execFileSync("git", ["--version"], { stdio: "ignore" }); } catch { return; }
     const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "plan-"));
     execFileSync("git", ["init", "-q"], { cwd });
     const planId = randomUUID();
     const stepId = randomUUID();
     await db.insert(schema.plans).values({ id: planId, description: "p", status: "running" });
     await db.insert(schema.planSteps).values({ id: stepId, planId, stepIndex: 0, description: "d", adapter: "agy", prompt: "haz logo", status: "pending", role: "imagen" });
-    h.execute.mockImplementation(async (ctx: any) => {
+    h.execute.mockImplementation(async () => {
       fs.writeFileSync(path.join(cwd, "colado.js"), "x");
-      return { ...h.base, summary: 'Listo.\n<<<ESTADO terminado {"detalle":"1 imagen"}>>>', prompt: ctx.prompt };
+      return { ...h.base, summary, ...extra };
     });
     const out = await runPlanStep({ planId, stepId, cwd });
+    const step = await db.select().from(schema.planSteps).where(eq(schema.planSteps.id, stepId)).then((r) => r[0]);
+    return { cwd, planId, out, step };
+  }
+  const gitOk = (() => { try { execFileSync("git", ["--version"], { stdio: "ignore" }); return true; } catch { return false; } })();
+
+  it.skipIf(!gitOk)("prompt con la carpeta, .gitignore y aviso si toca archivos fuera (git)", async () => {
+    const { cwd, planId, out, step } = await imagenStep('Listo.\n<<<ESTADO terminado {"detalle":"1 imagen"}>>>');
     const sent = h.execute.mock.calls[0][0].prompt as string;
     expect(sent).toContain(path.join(cwd, ".orquestador", "salidas", planId));
     expect(sent).toContain("únicamente aquí");
     expect(fs.readFileSync(path.join(cwd, ".gitignore"), "utf8")).toContain(".orquestador/");
-    const step = await db.select().from(schema.planSteps).where(eq(schema.planSteps.id, stepId)).then((r) => r[0]);
     expect(out.status).toBe("succeeded");
     expect(step.statusDetail).toContain("colado.js");
+  });
+
+  it.skipIf(!gitOk)("el aviso también sale si el paso queda bloqueado, sin estado final o falla", async () => {
+    const b = await imagenStep('<<<ESTADO bloqueado {"detalle":"sin motor"}>>>');
+    expect(b.step.status).toBe("failed");
+    expect(b.step.statusDetail).toContain("sin motor");
+    expect(b.step.statusDetail).toContain("colado.js");
+
+    const n = await imagenStep("terminé sin estado");
+    expect(n.step.statusDetail).toContain("sin estado final");
+    expect(n.step.statusDetail).toContain("colado.js");
+
+    const f = await imagenStep("", { exitCode: 2, errorMessage: "boom" });
+    expect(f.out.status).toBe("failed");
+    expect(f.step.statusDetail).toContain("colado.js");
   });
 
   it("roles que no escriben salidas no crean carpeta", async () => {

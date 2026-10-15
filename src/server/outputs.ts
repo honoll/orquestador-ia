@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
 
 const IMAGE_EXT = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp"]);
 const MIME: Record<string, string> = {
@@ -34,19 +35,39 @@ export function ensureGitignore(projectPath: string): boolean {
   return true;
 }
 
-/** Entradas de `git status --porcelain -z` (null si no es repo git o git no está). */
-export function gitSnapshot(cwd: string): Promise<Set<string> | null> {
+/** Foto de `git status --porcelain -z`: ruta -> huella del contenido (así se nota un archivo ya sucio que vuelve a cambiar). null si no es repo git. */
+export function gitSnapshot(cwd: string): Promise<Map<string, string> | null> {
   return new Promise((resolve) => {
     execFile("git", ["status", "--porcelain", "-z", "--untracked-files=all"], { cwd, windowsHide: true, maxBuffer: 16 * 1024 * 1024, timeout: 20_000 }, (err, stdout) => {
       if (err) return resolve(null);
-      resolve(new Set(stdout.split("\0").filter(Boolean)));
+      execFile("git", ["rev-parse", "--show-toplevel"], { cwd, windowsHide: true }, (e2, top) => {
+        const root = e2 ? cwd : top.trim();
+        const toks = stdout.split("\0").filter(Boolean);
+        const snap = new Map<string, string>();
+        for (let i = 0; i < toks.length; i++) {
+          const code = toks[i].slice(0, 2);
+          const rel = toks[i].slice(3);
+          if (code[0] === "R" || code[0] === "C") i++; // el siguiente token es la ruta original
+          snap.set(rel, code + fingerprint(path.join(root, rel)));
+        }
+        resolve(snap);
+      });
     });
   });
 }
 
-/** Rutas cambiadas entre dos fotos, sin contar la carpeta .orquestador/. */
-export function changedOutside(before: Set<string>, after: Set<string>): string[] {
-  return [...after].filter((e) => !before.has(e)).map((e) => e.slice(3)).filter((p) => !p.replace(/[\\]/g, "/").startsWith(ENTRY));
+function fingerprint(file: string): string {
+  try {
+    const st = fs.statSync(file);
+    if (!st.isFile()) return "";
+    if (st.size > 10 * 1024 * 1024) return `${st.size}:${st.mtimeMs}`; // shortcut: archivos grandes por tamaño+mtime, no por contenido
+    return createHash("sha1").update(fs.readFileSync(file)).digest("hex");
+  } catch { return ""; }
+}
+
+/** Rutas nuevas o con contenido distinto entre dos fotos, sin contar la carpeta .orquestador/. */
+export function changedOutside(before: Map<string, string>, after: Map<string, string>): string[] {
+  return [...after].filter(([p, h]) => before.get(p) !== h).map(([p]) => p).filter((p) => !p.replace(/[\\]/g, "/").startsWith(ENTRY));
 }
 
 export interface OutputFile { name: string; size: number; mtime: string; isImage: boolean }
@@ -72,7 +93,10 @@ export function resolveOutput(projectPath: string, planId: string, name: string)
     const file = path.join(dir, name);
     if (!fs.lstatSync(file).isFile()) return null; // un enlace simbólico no es isFile()
     const real = fs.realpathSync(file);
-    if (path.dirname(real).toLowerCase() !== fs.realpathSync(dir).toLowerCase()) return null;
+    const realDir = fs.realpathSync(dir);
+    const inside = path.relative(fs.realpathSync(projectPath), realDir);
+    if (inside.startsWith("..") || path.isAbsolute(inside)) return null; // la carpeta (p. ej. una junction) escapa del proyecto
+    if (path.dirname(real).toLowerCase() !== realDir.toLowerCase()) return null;
     return { file: real, type: MIME[path.extname(name).toLowerCase()] ?? "application/octet-stream" };
   } catch { return null; }
 }

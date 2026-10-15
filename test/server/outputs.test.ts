@@ -6,6 +6,15 @@ import { execFileSync } from "node:child_process";
 import { outputsDir, ensureOutputsDir, ensureGitignore, listOutputs, resolveOutput, gitSnapshot, changedOutside } from "../../src/server/outputs.js";
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), "salidas-"));
+/** ¿Se pueden crear enlaces aquí? (symlink de archivo sin privilegios suele fallar en Windows; la junction no pide admin) */
+const canLink = (type: "file" | "junction") => {
+  const d = tmp();
+  try {
+    if (type === "junction") { fs.mkdirSync(path.join(d, "t")); fs.symlinkSync(path.join(d, "t"), path.join(d, "l"), "junction"); }
+    else { fs.writeFileSync(path.join(d, "t"), "x"); fs.symlinkSync(path.join(d, "t"), path.join(d, "l"), "file"); }
+    return true;
+  } catch { return false; }
+};
 const hasGit = (() => { try { execFileSync("git", ["--version"], { stdio: "ignore" }); return true; } catch { return false; } })();
 
 describe("outputs", () => {
@@ -50,12 +59,39 @@ describe("outputs", () => {
     for (const bad of ["..", "../secreto.txt", "..\\secreto.txt", "sub/x", "C:\\Windows\\win.ini", "/etc/passwd", "sub", "nada.txt", ""]) {
       expect(resolveOutput(p, "plan1", bad), bad).toBeNull();
     }
-    // enlace que escapa: junction de directorio y symlink de archivo (si el SO lo permite)
-    try {
-      fs.symlinkSync(path.join(p, "secreto.txt"), path.join(dir, "enlace.txt"), "file");
-      expect(resolveOutput(p, "plan1", "enlace.txt")).toBeNull();
-      expect(listOutputs(p, "plan1").some((f) => f.name === "enlace.txt")).toBe(false);
-    } catch { /* sin permiso de symlink */ }
+  });
+
+  it.skipIf(!canLink("file"))("un symlink de archivo que escapa no se lista ni se sirve", () => {
+    const p = tmp();
+    const dir = ensureOutputsDir(p, "plan1");
+    fs.writeFileSync(path.join(p, "secreto.txt"), "no");
+    fs.symlinkSync(path.join(p, "secreto.txt"), path.join(dir, "enlace.txt"), "file");
+    expect(resolveOutput(p, "plan1", "enlace.txt")).toBeNull();
+    expect(listOutputs(p, "plan1").some((f) => f.name === "enlace.txt")).toBe(false);
+  });
+
+  it.skipIf(!canLink("junction"))("una junction dentro de la carpeta, o la carpeta misma como junction hacia fuera, no se sirven", () => {
+    const p = tmp();
+    const fuera = tmp();
+    fs.writeFileSync(path.join(fuera, "x.txt"), "ajeno");
+    const dir = ensureOutputsDir(p, "plan1");
+    fs.symlinkSync(fuera, path.join(dir, "lnk"), "junction");
+    expect(resolveOutput(p, "plan1", "lnk")).toBeNull();
+    expect(resolveOutput(p, "plan1", "lnk/x.txt")).toBeNull();
+    // la carpeta del plan es una junction hacia fuera del proyecto
+    fs.mkdirSync(path.join(p, ".orquestador", "salidas"), { recursive: true });
+    fs.symlinkSync(fuera, path.join(p, ".orquestador", "salidas", "plan2"), "junction");
+    expect(resolveOutput(p, "plan2", "x.txt")).toBeNull();
+  });
+
+  it.skipIf(!hasGit)("un archivo ya sucio antes del paso que vuelve a cambiar se detecta", async () => {
+    const p = tmp();
+    execFileSync("git", ["init", "-q"], { cwd: p });
+    fs.writeFileSync(path.join(p, "sucio.txt"), "1");
+    const before = (await gitSnapshot(p))!;
+    expect(changedOutside(before, (await gitSnapshot(p))!)).toEqual([]);
+    fs.writeFileSync(path.join(p, "sucio.txt"), "2");
+    expect(changedOutside(before, (await gitSnapshot(p))!)).toEqual(["sucio.txt"]);
   });
 
   it.skipIf(!hasGit)("detecta cambios fuera de la carpeta con git status antes/después", async () => {
