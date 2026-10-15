@@ -91,6 +91,8 @@ export async function runPlanStep(options: StepRunOptions): Promise<StepOutcome>
       prompt,
       cwd,
     });
+    // Liga el paso a su run desde el arranque: la Oficina excluye estos runs del "chat suelto".
+    await db.update(schema.planSteps).set({ runId }).where(eq(schema.planSteps.id, stepId));
 
     try {
       const callStartedAt = Date.now();
