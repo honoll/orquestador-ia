@@ -6,6 +6,7 @@
 
 - Selector `Chat | Oficina`: 7 agentes en escritorios pixel-art, cola de pasos, planes recientes, log de eventos y cuentas; "Platicar" dentro de la Oficina (gris → azul)
 - Verificado en vivo (2026-10-15): JEFE/GUARDIA/BIBLIO trabajando al generar un plan, AGY al chatear, estado correcto tras recargar a mitad. 771 tests
+- GPU (2026-10-15): escritorios ya no cuentan doble; bge-m3 solo CPU y solo con «usar memoria» (sin índice automático); Whisper se apaga tras `WHISPER_IDLE_MINUTES` (5) sin uso. 783 tests
 
 Pendientes (tuyos):
 - Probar **Platicar con micrófono real** dentro de la Oficina
