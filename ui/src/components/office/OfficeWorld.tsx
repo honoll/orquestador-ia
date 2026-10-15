@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
 import type { OfficeState } from "../../lib/office-state";
 import { floorOf } from "../../office/world/maps";
 import { findPath, isNear, isSolid, key, zoneAt } from "../../office/world/path";
@@ -10,7 +10,13 @@ import { EMPTY_SKINS, fetchSkins, resolveSkin, type SkinsConfig } from "../../of
 import { loadSkinImages } from "../../office/sprites/skin-images";
 import type { Tile } from "../../office/world/types";
 
-interface Props { state: OfficeState | undefined; onOpenPlan: (id: string) => void; onNear: (a: WorldAgent | null) => void }
+interface Props {
+  state: OfficeState | undefined; onOpenPlan: (id: string) => void; onNear: (a: WorldAgent | null) => void;
+  /** Enter/Espacio/Z con el foco en el canvas y un agente cerca: avanza el cuadro de diálogo. */
+  onAdvance?: () => void;
+  /** Cuadro de diálogo: se pinta sobre el canvas y se oculta con el menú del elevador. */
+  children?: ReactNode;
+}
 interface Ent { agent: WorldAgent; place: Place; legs: Leg[]; piso: number; m: Mover; wanderAt: number }
 
 const COLS = 30, STEP_MS = 1000 / 60, MAX_STEPS = 4;
@@ -19,7 +25,7 @@ const DIRS: Dir[] = ["up", "down", "left", "right"];
 const lenOf = (legs: Leg[]) => legs.reduce((n, l) => n + l.path.length, 0);
 const wanderDelay = () => 120 + Math.floor(Math.random() * 180); // 2–5 s a 60 Hz
 
-export function OfficeWorld({ state, onNear }: Props) {
+export function OfficeWorld({ state, onNear, onAdvance, children }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const onNearRef = useRef(onNear);
@@ -117,7 +123,7 @@ export function OfficeWorld({ state, onNear }: Props) {
           }
           continue;
         }
-        const held = target ? dirBetween(e.m.tile, target) : null;
+        const held = target && !e.m.from ? dirBetween(e.m.tile, target) : null; // a media casilla `tile` ya es el destino
         if (held) e.m = { ...e.m, dir: held };
         e.m = tickMover(e.m, held, false, () => false);
       }
@@ -193,6 +199,11 @@ export function OfficeWorld({ state, onNear }: Props) {
       return;
     }
     w.shift = e.shiftKey;
+    if (e.target === canvasRef.current && w.near && ["Enter", " ", "z", "Z"].includes(e.key)) {
+      e.preventDefault();
+      if (!e.repeat) onAdvance?.();
+      return;
+    }
     const d = keyToDir(e.key);
     if (!d) return;
     if (e.key.startsWith("Arrow")) e.preventDefault();
@@ -212,6 +223,11 @@ export function OfficeWorld({ state, onNear }: Props) {
     if (!t) return;
     w.held = [];
     const route = findPath(map, p.m.tile, t, agentTiles(p.piso));
+    // Clic en un agente de la casilla de al lado: solo voltear a verlo.
+    if (!route.length && !p.m.from && Math.abs(t[0] - p.m.tile[0]) + Math.abs(t[1] - p.m.tile[1]) === 1 && agentTiles(p.piso).has(key(t))) {
+      p.m = { ...p.m, dir: dirBetween(p.m.tile, t) };
+      return;
+    }
     if (reduced && route.length) {
       const end = route[route.length - 1];
       p.m = newMover(end, dirBetween(route[route.length - 2] ?? p.m.tile, end));
@@ -223,6 +239,7 @@ export function OfficeWorld({ state, onNear }: Props) {
   const map = floorOf(piso);
   return (
     <div ref={wrapRef} className="w-full overflow-hidden" onKeyDown={onKeyDown}>
+      <p className="mb-1 text-[10px] text-text-secondary">{map.nombre}</p>
       <div className="relative" style={{ width: COLS * 16 * scale }}>
         <canvas
           ref={canvasRef}
@@ -234,16 +251,24 @@ export function OfficeWorld({ state, onNear }: Props) {
           onBlur={() => { w.held = []; w.shift = false; }}
           onClick={onClick}
         />
-        <p className="pointer-events-none absolute left-1 top-1 rounded bg-black/70 px-1.5 py-0.5 text-[10px] text-text-primary">{map.nombre}</p>
+        {/* Etiquetas de zona en DOM (fuente de la app): en el canvas salían borrosas al escalar. */}
+        {map.zonas.map((z) => (
+          <span
+            key={z.id} aria-hidden="true"
+            className="pointer-events-none absolute whitespace-nowrap font-mono font-bold leading-none"
+            style={{ left: (z.x * 16 + 2) * scale, top: (z.y * 16 + 2) * scale, fontSize: Math.max(8, 5 * scale), color: z.color }}
+          >{z.etiqueta}</span>
+        ))}
+        {!menu && children}
         {menu && (
-          <div role="menu" aria-label="Elevador" className="absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 flex-col gap-1 rounded border border-white/20 bg-zinc-950/95 p-3 text-xs">
+          <div role="group" aria-label="Elevador" className="absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 flex-col gap-1 rounded border border-white/20 bg-zinc-950/95 p-3 text-xs">
             <p className="mb-1 font-bold tracking-widest text-amber-300">ELEVADOR</p>
             {FLOOR_LABELS.map((l, i) => (
-              <button key={l} role="menuitem" autoFocus={i === 0} className="rounded px-2 py-1 text-left hover:bg-white/10 focus-visible:bg-white/10" onClick={() => choose(i + 1)}>
+              <button key={l} autoFocus={i === 0} className="rounded px-2 py-1 text-left hover:bg-white/10 focus-visible:bg-white/10" onClick={() => choose(i + 1)}>
                 {i + 1} · {l}
               </button>
             ))}
-            <button role="menuitem" className="rounded px-2 py-1 text-left text-text-secondary hover:bg-white/10 focus-visible:bg-white/10" onClick={() => choose(0)}>salir</button>
+            <button className="rounded px-2 py-1 text-left text-text-secondary hover:bg-white/10 focus-visible:bg-white/10" onClick={() => choose(0)}>salir</button>
           </div>
         )}
       </div>

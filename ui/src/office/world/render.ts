@@ -36,30 +36,28 @@ function tile(c: Ctx, map: FloorMap, ch: string, X: number, Y: number, t: number
   }
 }
 
-/** Piso, muebles bajos, etiquetas y bordes de zona. `t` en ticks de 60 Hz (fijo con reduced motion: el foco no parpadea). */
+/** Piso, muebles bajos y bordes de zona (las etiquetas van en DOM). `t` en ticks de 60 Hz (fijo con reduced motion: el foco no parpadea). */
 export function drawFloor(c: Ctx, map: FloorMap, t: number) {
   map.filas.forEach((fila, Y) => { for (let X = 0; X < fila.length; X++) tile(c, map, fila[X], X, Y, t); });
-  const silk = typeof document !== "undefined" && document.fonts?.check("6px Silkscreen");
-  c.font = `6px ${silk ? "Silkscreen" : "monospace"}`;
-  c.textBaseline = "top";
   for (const z of map.zonas) {
     c.strokeStyle = `${z.color}40`;
     c.strokeRect(z.x * T + 0.5, z.y * T + 0.5, z.w * T - 1, z.h * T - 1);
-    c.fillStyle = z.color;
-    c.fillText(z.etiqueta, z.x * T + 2, z.y * T + 2);
   }
 }
 
-/** Capa de arriba: la parte alta de paredes, libreros y plantas sobresale 4 px hacia la casilla de atrás y tapa a quien esté ahí. */
+/**
+ * Capa de arriba: la parte alta de paredes, libreros y plantas sobresale 8 px hacia la casilla de atrás y tapa a quien esté ahí.
+ * 8 y no 4: las criaturas se dibujan 4 px arriba de su casilla, así que con 4 su borde de abajo quedaba justo donde empezaba.
+ */
 export function drawUpper(c: Ctx, map: FloorMap) {
   map.filas.forEach((fila, Y) => {
     for (let X = 0; X < fila.length; X++) {
       const ch = fila[X];
       if (!"#B*".includes(ch) || Y === 0 || isSolid(map, X, Y - 1)) continue;
-      const a = X * T, b = Y * T - 4;
-      if (ch === "#") r(c, a, b, T, 4, "#3a3a45");
-      else if (ch === "B") { r(c, a, b, T, 4, "#3b2a1a"); r(c, a + 1, b + 3, T - 2, 1, "#2a1d12"); }
-      else { r(c, a + 6, b + 1, 4, 3, "#22c55e"); }
+      const a = X * T, b = Y * T - 8;
+      if (ch === "#") { r(c, a, b, T, 8, "#3a3a45"); r(c, a, b, T, 1, "#4a4a57"); }
+      else if (ch === "B") { r(c, a, b, T, 8, "#3b2a1a"); r(c, a + 1, b + 3, T - 2, 1, "#2a1d12"); r(c, a + 1, b + 7, T - 2, 1, "#2a1d12"); }
+      else { r(c, a + 5, b + 2, 6, 6, "#22c55e"); r(c, a + 7, b + 1, 2, 1, "#22c55e"); }
     }
   });
 }
