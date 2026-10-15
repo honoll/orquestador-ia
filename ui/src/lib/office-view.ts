@@ -62,3 +62,18 @@ export function signLine(queue: { planId: string }[]): string {
 export function clock(d: Date): string {
   return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
+
+/** Con una plática abierta no se cambia de vista: se perderían sus controles con el micrófono abierto. */
+export function viewLocked(target: View, current: View, talkActive: boolean): boolean {
+  return talkActive && target !== current;
+}
+
+const TALK_PHASE: Record<string, string> = {
+  starting: "PREPARANDO…", listening: "ESCUCHANDO", transcribing: "TRANSCRIBIENDO",
+  thinking: "PENSANDO", speaking: "HABLANDO", ending: "TERMINANDO…",
+};
+
+/** Texto del panel RECEPCIÓN · PLATICAR: la fase si hay plática, si no la invitación. */
+export function talkLabel(phase: string, active: boolean): string {
+  return active ? TALK_PHASE[phase] ?? "" : "clic para platicar";
+}

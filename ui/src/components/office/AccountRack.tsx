@@ -6,7 +6,7 @@ const IDLE = "#8b8b94";
 export function AccountRack() {
   const { data: accounts = [] } = useQuery({ queryKey: ["accounts"], queryFn: accountsApi.list, refetchInterval: 60_000 });
   return (
-    <div className="absolute right-[18px] top-[150px] flex w-[282px] flex-wrap gap-1.5 rounded border-2 border-[#22222a] bg-[#0b0b0f] p-2.5">
+    <div aria-hidden="true" className="flex flex-wrap gap-1.5 rounded border-2 border-[#22222a] bg-[#0b0b0f] p-2.5">
       <div className="mb-2.5 w-full text-xs font-bold tracking-[.22em]" style={{ color: IDLE }}>CUENTAS ANTIGRAVITY</div>
       {accounts.length === 0 && <div style={{ color: IDLE }}>sin cuentas</div>}
       {accounts.map((a) => {

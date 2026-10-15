@@ -24,7 +24,7 @@ async function fetchOffice(): Promise<OfficeState> {
 export function OfficeView() {
   const qc = useQueryClient();
   const { subscribe, officeLog } = useWs();
-  const { setActivePlanId, setView } = useAppState();
+  const { setActivePlanId, setView, talkActive } = useAppState();
   const { data, isError } = useQuery({
     queryKey: ["office"],
     queryFn: fetchOffice,
@@ -47,7 +47,8 @@ export function OfficeView() {
     return () => { unsub(); if (timer) clearTimeout(timer); };
   }, [subscribe, qc]);
 
-  const openPlan = (id: string) => { setActivePlanId(id); setView("chat"); };
+  // Con la plática abierta no se sale de la Oficina (igual que el selector de vista).
+  const openPlan = (id: string) => { if (talkActive) return; setActivePlanId(id); setView("chat"); };
   const agents = data?.agents ?? [];
   const queue = data?.queue ?? [];
 

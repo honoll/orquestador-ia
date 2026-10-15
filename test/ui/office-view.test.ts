@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { readView, refreshesOffice, sceneScale, planTag, queueTag, signLine, clock, appendLog, LOG_MAX } from "../../ui/src/lib/office-view.js";
+import { readView, refreshesOffice, sceneScale, planTag, queueTag, signLine, clock, appendLog, LOG_MAX, viewLocked, talkLabel } from "../../ui/src/lib/office-view.js";
 
 describe("readView", () => {
   it("?vista=oficina gana sobre lo guardado", () => {
@@ -67,5 +67,25 @@ describe("appendLog", () => {
     expect(log).toHaveLength(100);
     expect(log[0]).toBe(149);
     expect(log[99]).toBe(50);
+  });
+});
+
+describe("viewLocked", () => {
+  it("con plática solo bloquea cambiar a la otra vista", () => {
+    expect(viewLocked("oficina", "chat", true)).toBe(true);
+    expect(viewLocked("chat", "oficina", true)).toBe(true);
+    expect(viewLocked("chat", "chat", true)).toBe(false);
+    expect(viewLocked("oficina", "chat", false)).toBe(false);
+  });
+});
+
+describe("talkLabel", () => {
+  it("inactivo invita; activo muestra la fase", () => {
+    expect(talkLabel("starting", false)).toBe("clic para platicar");
+    expect(talkLabel("error", false)).toBe("clic para platicar");
+    expect(talkLabel("listening", true)).toBe("ESCUCHANDO");
+    expect(talkLabel("transcribing", true)).toBe("TRANSCRIBIENDO");
+    expect(talkLabel("thinking", true)).toBe("PENSANDO");
+    expect(talkLabel("speaking", true)).toBe("HABLANDO");
   });
 });

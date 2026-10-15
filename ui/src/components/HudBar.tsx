@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { accountsApi } from "../lib/accounts-api";
 import { formatIn, formatTokens } from "../lib/format";
 import { useAppState } from "../context/AppStateContext";
-import type { View } from "../lib/office-view";
+import { viewLocked, type View } from "../lib/office-view";
 
 export function HudBar() {
   const { data: activeData } = useQuery({ queryKey: ["accounts", "active"], queryFn: accountsApi.active, refetchInterval: 60_000 });
@@ -47,8 +47,8 @@ export function HudBar() {
             type="button"
             aria-pressed={view === v}
             onClick={() => setView(v)}
-            disabled={v === "oficina" && talkActive && view === "chat"}
-            title={v === "oficina" && talkActive && view === "chat" ? "Termina la plática para ver la Oficina" : undefined}
+            disabled={viewLocked(v, view, talkActive)}
+            title={viewLocked(v, view, talkActive) ? "Termina la plática para cambiar de vista" : undefined}
             className={`px-3 py-0.5 focus-visible:outline focus-visible:outline-1 focus-visible:-outline-offset-1 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-50 ${view === v ? "bg-surface-3 text-text-primary" : "text-text-secondary hover:text-text-primary"}`}
           >
             {v === "chat" ? "Chat" : "Oficina"}
