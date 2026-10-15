@@ -1,6 +1,14 @@
 // Lógica pura de la vista Oficina (F8): selector de vista, qué eventos refrescan y etiquetas de estado.
 import { ROLES, type AgentId } from "./office";
 
+export interface OfficeLogEntry { key: string; time: string; agent: AgentId; text: string; color: string }
+export const LOG_MAX = 100;
+
+/** Agrega al inicio (el más nuevo primero) y recorta a `max`. */
+export function appendLog<T>(log: T[], entry: T, max: number = LOG_MAX): T[] {
+  return [entry, ...log].slice(0, max);
+}
+
 export type View = "chat" | "oficina";
 export const VIEW_KEY = "orquestador.vista";
 

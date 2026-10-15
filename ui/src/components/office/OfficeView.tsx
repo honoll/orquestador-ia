@@ -1,22 +1,19 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useWs } from "../../context/WebSocketProvider";
 import { useAppState } from "../../context/AppStateContext";
-import { eventToLog } from "../../lib/office";
 import { refreshesOffice } from "../../lib/office-view";
 import { AgentCards } from "./AgentCards";
 import { OfficeScene } from "./OfficeScene";
 import { QueuePanel } from "./QueuePanel";
 import { PlansPanel } from "./PlansPanel";
-import { LogPanel, type LogEntry } from "./LogPanel";
+import { LogPanel } from "./LogPanel";
 
 // Espejo de src/server/office-state.ts (la UI no importa código del servidor).
 export interface AgentState { id: import("../../lib/office").AgentId; working: boolean; desks: number; activity: string; model: string; tokens: number; paused?: boolean }
 export interface QueueItem { planId: string; stepId: string; stepKey: string | null; description: string; adapter: string; status: "running" | "pending" | "paused"; project: string | null }
 export interface PlanSummary { id: string; description: string; status: string; pauseReason: string | null; updatedAt: string }
 export interface OfficeState { agents: AgentState[]; queue: QueueItem[]; plans: PlanSummary[]; generatedAt: string }
-
-const LOG_MAX = 30;
 
 async function fetchOffice(): Promise<OfficeState> {
   const res = await fetch("/api/office/state");
@@ -26,23 +23,19 @@ async function fetchOffice(): Promise<OfficeState> {
 
 export function OfficeView() {
   const qc = useQueryClient();
-  const { subscribe } = useWs();
+  const { subscribe, officeLog } = useWs();
   const { setActivePlanId, setView } = useAppState();
-  // shortcut: el log vive mientras la vista está montada; se vacía al volver al chat.
-  const [log, setLog] = useState<LogEntry[]>([]);
   const { data, isError } = useQuery({
     queryKey: ["office"],
     queryFn: fetchOffice,
+    retry: 1, // que el aviso "sin conexión" no tarde ~7 s
     staleTime: 0, // al volver a la vista no hubo quien escuchara eventos: foto nueva
     refetchInterval: (q) => (q.state.status === "error" ? 10_000 : false),
   });
 
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout> | null = null;
-    let seq = 0;
     const unsub = subscribe((ev) => {
-      const entry = eventToLog(ev as Parameters<typeof eventToLog>[0]);
-      if (entry) setLog((l) => [{ ...entry, key: `${Date.now()}-${seq++}` }, ...l].slice(0, LOG_MAX));
       // Temporizador que no se reinicia: las ráfagas (deltas de voz) refrescan cada 300 ms como mucho.
       if (refreshesOffice(ev.type) && !timer) {
         timer = setTimeout(() => {
@@ -71,7 +64,7 @@ export function OfficeView() {
         <div className="grid content-start gap-2.5 @min-[700px]:grid-cols-3 @min-[1060px]:grid-cols-1">
           <QueuePanel queue={queue} onOpen={openPlan} />
           <PlansPanel plans={data?.plans ?? []} onOpen={openPlan} />
-          <LogPanel entries={log} />
+          <LogPanel entries={officeLog} />
         </div>
       </div>
     </div>

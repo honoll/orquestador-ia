@@ -9,7 +9,7 @@ export function HudBar() {
   const { data: session } = useQuery({ queryKey: ["usage", "session"], queryFn: accountsApi.session, refetchInterval: 60_000 });
   const account = activeData?.account ?? null;
   const short = account?.usage.short;
-  const { view, setView } = useAppState();
+  const { view, setView, talkActive } = useAppState();
 
   return (
     <header className="flex items-center gap-4 border-b border-edge bg-surface-1 px-4 py-1.5 font-mono text-[11px] text-text-secondary" aria-label="Estado del orquestador">
@@ -47,7 +47,9 @@ export function HudBar() {
             type="button"
             aria-pressed={view === v}
             onClick={() => setView(v)}
-            className={`px-3 py-0.5 focus-visible:outline focus-visible:outline-1 focus-visible:-outline-offset-1 focus-visible:outline-accent ${view === v ? "bg-surface-3 text-text-primary" : "text-text-secondary hover:text-text-primary"}`}
+            disabled={v === "oficina" && talkActive && view === "chat"}
+            title={v === "oficina" && talkActive && view === "chat" ? "Termina la plática para ver la Oficina" : undefined}
+            className={`px-3 py-0.5 focus-visible:outline focus-visible:outline-1 focus-visible:-outline-offset-1 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-50 ${view === v ? "bg-surface-3 text-text-primary" : "text-text-secondary hover:text-text-primary"}`}
           >
             {v === "chat" ? "Chat" : "Oficina"}
           </button>

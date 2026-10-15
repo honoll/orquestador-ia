@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { readView, refreshesOffice, sceneScale, planTag, queueTag, signLine, clock } from "../../ui/src/lib/office-view.js";
+import { readView, refreshesOffice, sceneScale, planTag, queueTag, signLine, clock, appendLog, LOG_MAX } from "../../ui/src/lib/office-view.js";
 
 describe("readView", () => {
   it("?vista=oficina gana sobre lo guardado", () => {
@@ -53,5 +53,19 @@ describe("etiquetas", () => {
   });
   it("clock HH:MM", () => {
     expect(clock(new Date(2026, 0, 1, 7, 5))).toBe("07:05");
+  });
+});
+
+describe("appendLog", () => {
+  it("el más nuevo va primero", () => {
+    expect(appendLog([1, 2], 3)).toEqual([3, 1, 2]);
+  });
+  it("recorta a los últimos 100", () => {
+    expect(LOG_MAX).toBe(100);
+    let log: number[] = [];
+    for (let i = 0; i < 150; i++) log = appendLog(log, i);
+    expect(log).toHaveLength(100);
+    expect(log[0]).toBe(149);
+    expect(log[99]).toBe(50);
   });
 });

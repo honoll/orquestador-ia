@@ -67,16 +67,18 @@ export default function App() {
       </ResizableGroup>
 
       {/* Fixed toggle button — bottom-right, never overlaps content */}
-      {!office && <button
-        onClick={() => setRightOpen((o) => !o)}
-        title={rightOpen ? "Ocultar proyectos" : "Mostrar proyectos"}
-        className="fixed bottom-4 right-4 z-30 flex items-center gap-1.5 px-2.5 py-1.5 bg-surface-1 border border-edge rounded-lg font-mono text-[10px] text-text-tertiary hover:text-text-primary hover:bg-surface-2 transition-all shadow-sm"
-      >
-        <svg width="10" height="10" viewBox="0 0 12 12" fill="none" className={`transition-transform ${rightOpen ? "" : "rotate-180"}`}>
-          <path d="M8 2L4 6L8 10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-        </svg>
-        proyectos
-      </button>}
+      {!office && (
+        <button
+          onClick={() => setRightOpen((o) => !o)}
+          title={rightOpen ? "Ocultar proyectos" : "Mostrar proyectos"}
+          className="fixed bottom-4 right-4 z-30 flex items-center gap-1.5 px-2.5 py-1.5 bg-surface-1 border border-edge rounded-lg font-mono text-[10px] text-text-tertiary hover:text-text-primary hover:bg-surface-2 transition-all shadow-sm"
+        >
+          <svg width="10" height="10" viewBox="0 0 12 12" fill="none" className={`transition-transform ${rightOpen ? "" : "rotate-180"}`}>
+            <path d="M8 2L4 6L8 10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+          proyectos
+        </button>
+      )}
     </div>
   );
 }

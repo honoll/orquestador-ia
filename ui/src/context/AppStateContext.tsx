@@ -9,6 +9,9 @@ interface AppState {
   activePlanId: string | null;
   view: View;
   setView: (view: View) => void;
+  /** «Platicar» abierto: la Oficina ocultaría sus controles con el micrófono abierto. */
+  talkActive: boolean;
+  setTalkActive: (on: boolean) => void;
   setAdapter: (adapter: string, model?: string) => void;
   setModel: (model: string) => void;
   setProject: (projectId: string | null) => void;
@@ -25,6 +28,8 @@ const AppStateContext = createContext<AppState>({
   activePlanId: null,
   view: "chat",
   setView: () => {},
+  talkActive: false,
+  setTalkActive: () => {},
   setAdapter: () => {},
   setModel: () => {},
   setProject: () => {},
@@ -49,6 +54,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     return readView(window.location.search, stored);
   });
 
+  const [talkActive, setTalkActive] = useState(false);
   const setView = useCallback((v: View) => {
     setViewState(v);
     try { localStorage.setItem(VIEW_KEY, v); } catch { /* almacenamiento bloqueado */ }
@@ -93,6 +99,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         activePlanId,
         view,
         setView,
+        talkActive,
+        setTalkActive,
         setAdapter,
         setModel,
         setProject,

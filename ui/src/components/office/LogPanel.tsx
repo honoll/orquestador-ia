@@ -1,9 +1,8 @@
-import { ROLES, type AgentId } from "../../lib/office";
+import { ROLES } from "../../lib/office";
+import type { OfficeLogEntry } from "../../lib/office-view";
 import { Panel } from "./QueuePanel";
 
-export interface LogEntry { key: string; time: string; agent: AgentId; text: string; color: string }
-
-export function LogPanel({ entries }: { entries: LogEntry[] }) {
+export function LogPanel({ entries }: { entries: OfficeLogEntry[] }) {
   return (
     <Panel title="LOG">
       {entries.length === 0 ? <p className="text-text-secondary">sin eventos todavía</p> : (
