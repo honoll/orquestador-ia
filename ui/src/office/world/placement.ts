@@ -2,7 +2,7 @@ import { ROLES, type AgentId } from "../../lib/office";
 import { roleColor } from "../../lib/roles";
 import type { AgySeat, OfficeState } from "../../lib/office-state";
 import { FLOORS, floorOf } from "./maps";
-import { findPath, freeTileIn, key, zoneSeats } from "./path";
+import { findPath, freeTileIn, isSolid, key, zoneAt, zoneSeats } from "./path";
 import type { Tile } from "./types";
 
 export type CreatureKind = "jugador" | "jefe" | "guardia" | "recepcion" | "biblio" | "claude" | "codex" | "agy" | "dev" | "qa" | "imagen" | "investigador" | "lector" | "redactor";
@@ -46,17 +46,18 @@ export function placeAgents(state: OfficeState, prev: ReadonlyMap<string, Place>
   }
   const seats = state.agents.find((x) => x.id === "agy")?.seats ?? [];
   const taken = new Map<number, Set<string>>(FLOORS.map((f) => [f.piso, new Set(out.filter((o) => o.piso === f.piso).map((o) => key(o.tile)))]));
-  const wants = seats.map((s) => ({ s, k: `agy:${s.account}`, zone: zoneForSeat(s) }));
-  const keep = (w: (typeof wants)[number]) => {
-    const p = prev.get(w.k);
-    return p && p.piso === pisoOfZone(w.zone) && zoneSeats(floorOf(p.piso), w.zone).some((t) => key(t) === key(p.tile)) ? p : null;
+  // Conserva la casilla previa si sigue dentro de la misma zona (asiento o casilla libre de desborde).
+  const keepOf = (k: string, zone: string): Place | null => {
+    const p = prev.get(k);
+    return p && p.piso === pisoOfZone(zone) && zoneAt(floorOf(p.piso), p.tile)?.id === zone && !isSolid(floorOf(p.piso), ...p.tile) ? p : null;
   };
-  const ordered = [...wants.filter((w) => keep(w)), ...wants.filter((w) => !keep(w)).sort((a, b) => a.k.localeCompare(b.k))];
+  const wants = seats.map((s) => { const k = `agy:${s.account}`, zone = zoneForSeat(s); return { s, k, zone, kept: keepOf(k, zone) }; });
+  const ordered = [...wants.filter((w) => w.kept), ...wants.filter((w) => !w.kept).sort((a, b) => a.k.localeCompare(b.k))];
   for (const w of ordered) {
     const piso = pisoOfZone(w.zone);
     const map = floorOf(piso);
     const used = taken.get(piso)!;
-    const kept = keep(w);
+    const kept = w.kept;
     const tile = (kept && !used.has(key(kept.tile)) ? kept.tile : null)
       ?? zoneSeats(map, w.zone).find((t) => !used.has(key(t)))
       ?? freeTileIn(map, map.zonas.find((z) => z.id === w.zone)!, used)

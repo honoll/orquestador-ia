@@ -1,4 +1,4 @@
-import { eq, sql } from "drizzle-orm";
+import { inArray, sql } from "drizzle-orm";
 import { db, schema } from "../db/index.js";
 import { MODEL_CATALOG, type AdapterType } from "../config/models.js";
 import { isIndexing } from "../memory/vault-index.js";
@@ -125,9 +125,14 @@ export async function collectOfficeInput(now: number = Date.now()): Promise<Offi
     SELECT id, description, status, pause_reason AS pauseReason, updated_at AS updatedAt FROM plans ORDER BY updated_at DESC LIMIT 8`);
   const seats = await agySeats(now);
   const planProgress: Record<string, { done: number; total: number }> = {};
-  for (const id of new Set(seats.filter((s) => s.working && s.planId).map((s) => s.planId!))) {
-    const rows = await db.select({ status: schema.planSteps.status }).from(schema.planSteps).where(eq(schema.planSteps.planId, id));
-    planProgress[id] = { done: rows.filter((r) => r.status === "succeeded" || r.status === "skipped").length, total: rows.length };
+  const ids = [...new Set(seats.filter((s) => s.working && s.planId).map((s) => s.planId!))];
+  const rows = ids.length
+    ? await db.select({ planId: schema.planSteps.planId, status: schema.planSteps.status }).from(schema.planSteps).where(inArray(schema.planSteps.planId, ids))
+    : [];
+  for (const r of rows) {
+    const p = (planProgress[r.planId] ??= { done: 0, total: 0 });
+    p.total++;
+    if (r.status === "succeeded" || r.status === "skipped") p.done++;
   }
   return {
     now, generatingPlans, synthesisRunning, steps, chatRuns, tokensByAdapter,
