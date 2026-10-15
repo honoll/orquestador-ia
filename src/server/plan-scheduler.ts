@@ -171,7 +171,7 @@ export async function runPlanDag(planId: string, cwd: string, opts: { mode?: "al
           .catch(async (err: Error) => {
             log.error({ err, stepId: step.id }, "runPlanStep lanzó una excepción");
             await db.update(schema.planSteps).set({ status: "failed", errorMessage: err.message, finishedAt: now() }).where(eq(schema.planSteps.id, step.id));
-            emit({ type: "plan:step", planId, stepId: step.id, status: "failed", error: err.message });
+            emit({ type: "plan:step", planId, stepId: step.id, status: "failed", adapter: row.adapter, error: err.message });
             return { status: "failed", tokensUsed: 0 } as StepOutcome;
           })
           .then((outcome) => ({ stepId: step.id, outcome }));
