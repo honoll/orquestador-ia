@@ -7,7 +7,7 @@ afterEach(() => vi.unstubAllEnvs());
 describe("routingSystem: catálogo de roles (F11)", () => {
   it("lista los 6 roles con qué hacen y si escriben, y pide role/dificil", () => {
     const sys = routingSystem();
-    for (const [id, esc] of [["dev", "yes"], ["qa", "no"], ["imagen", "outputs folder only"], ["investigador", "no"], ["lector", "no"], ["redactor", "yes"]]) {
+    for (const [id, esc] of [["dev", "yes"], ["qa", "yes"], ["imagen", "outputs folder only"], ["investigador", "no"], ["lector", "no"], ["redactor", "yes"]]) {
       expect(sys).toMatch(new RegExp(`- ${id} \\([A-Z]+\\): .+ Writes: ${esc}\\.`));
     }
     expect(sys).toContain("Escribes y modificas código");
@@ -22,13 +22,13 @@ describe("normalizeSteps con roles (F11)", () => {
       { adapter: "claude", model: "claude-opus-5-5", writes: true, role: "lector" },
       { adapter: "agy", model: "gemini-3.8-flash-low", writes: false, role: "dev" },
       { adapter: "agy", role: "dev", dificil: true },
-      { adapter: "agy", role: "qa", writes: true },
+      { adapter: "agy", role: "qa", writes: false },
       { adapter: "agy", role: "imagen", writes: false },
     ]);
     expect(l).toMatchObject({ adapter: "agy", model: "gemini-3.8-flash-low", writes: false, role: "lector" });
     expect(d).toMatchObject({ adapter: "agy", model: "claude-sonnet-4-6", writes: true, role: "dev" });
     expect(dh).toMatchObject({ model: "claude-opus-4-6-thinking", role: "dev" });
-    expect(q).toMatchObject({ model: "claude-sonnet-4-6", writes: false, role: "qa" });
+    expect(q).toMatchObject({ model: "claude-sonnet-4-6", writes: true, role: "qa" });
     expect(img).toMatchObject({ model: "gemini-3.8-flash-high", writes: true, role: "imagen" });
   });
 

@@ -26,6 +26,8 @@ presupuestoTokens: 50000
 - `id`: igual al nombre del archivo (`dev` → `dev.md`); minúsculas, números y guiones.
 - `modelo`: modelo de agy por defecto. `modeloDificil` (opcional): el que se usa si el Jefe marca el paso como difícil.
 - `escribe`: `true`, `false` (solo lectura) o `salidas` (solo escribe en la carpeta de salidas del plan).
+  Ojo: con `false` agy corre sin permisos y **niega todo `run_command`** (probado 2026-10-15, también con `--mode auto`);
+  un rol que deba correr pruebas o builds (QA) necesita `true` y la regla "no edites" va en su texto.
 - `herramientasPermitidas`: lista informativa de herramientas de agy, en una sola línea `[a, b]`.
 - `presupuestoTokens` (opcional): entero positivo.
 - Las 6 secciones son obligatorias y van en ese orden. "Estado final" debe pedir como última línea

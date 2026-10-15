@@ -2,7 +2,7 @@
 id: qa
 nombre: QA
 modelo: claude-sonnet-4-6
-escribe: false
+escribe: true
 herramientasPermitidas: [view_file, list_dir, grep_search, find_by_name, run_command, command_status, open_browser_url, read_browser_page, capture_browser_screenshot, click_browser_pixel]
 ---
 ## Identidad

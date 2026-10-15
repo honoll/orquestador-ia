@@ -53,7 +53,7 @@ describe("parseRole", () => {
 describe("roles incluidos", () => {
   const esperado = {
     dev: { modelo: "claude-sonnet-4-6", modeloDificil: "claude-opus-4-6-thinking", escribe: true },
-    qa: { modelo: "claude-sonnet-4-6", escribe: false },
+    qa: { modelo: "claude-sonnet-4-6", escribe: true },
     imagen: { modelo: "gemini-3.8-flash-high", escribe: "salidas" },
     investigador: { modelo: "gemini-3.8-flash-medium", escribe: false },
     lector: { modelo: "gemini-3.8-flash-low", escribe: false },
