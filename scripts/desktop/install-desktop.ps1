@@ -7,7 +7,8 @@ param(
   [switch]$NoShortcuts
 )
 $ErrorActionPreference = 'Stop'
-$repo = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
+$here = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Definition }
+$repo = (Resolve-Path (Join-Path $here '..\..')).Path
 
 if (Get-Process -Name OrquestadorIA -ErrorAction SilentlyContinue) {
   Write-Host 'OrquestadorIA está corriendo: ciérralo desde la bandeja (Salir) y vuelve a correr este script.' -ForegroundColor Yellow
@@ -20,7 +21,7 @@ $exe = Join-Path $AppDir 'OrquestadorIA.exe'
 # 1. Compilar a un temporal y renombrar (nunca queda un exe a medias), luego self-test.
 $tmp = "$exe.$PID.tmp.exe"
 try {
-  $code = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'Launcher.cs') -Raw -Encoding UTF8
+  $code = Get-Content -LiteralPath (Join-Path $here 'Launcher.cs') -Raw -Encoding UTF8
   Add-Type -TypeDefinition $code -OutputAssembly $tmp -OutputType WindowsApplication -ReferencedAssemblies @(
     'System.Windows.Forms', 'System.Drawing', 'System.Web.Extensions', 'System.Management', 'System.Net.Http')
   Move-Item -LiteralPath $tmp -Destination $exe -Force

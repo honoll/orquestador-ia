@@ -13,12 +13,15 @@ param(
   [Parameter(Mandatory = $true)][ValidateRange(1024, 65535)][int]$Port,
   [string]$Dir = 'C:\ProgramData\orquestador-ia\workers',
   [string]$NodePath = 'C:\Program Files\nodejs\node.exe',
-  [string]$WorkerPath = (Join-Path $PSScriptRoot 'worker.mjs'),
+  [string]$WorkerPath,
   # Quien corre el orquestador y debe leer la llave (por defecto, quien corre este script).
   [string]$Owner = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name,
   [switch]$Force
 )
 $ErrorActionPreference = 'Stop'
+# $PSScriptRoot puede venir vacío en param(); se resuelve aquí.
+$here = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Definition }
+if (-not $WorkerPath) { $WorkerPath = Join-Path $here 'worker.mjs' }
 
 if (-not (Test-Path -LiteralPath $NodePath -PathType Leaf)) {
   throw "No encontré Node en '$NodePath' (debe estar en una ruta que $WindowsUser pueda leer). Usa -NodePath."
