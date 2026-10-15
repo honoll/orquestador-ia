@@ -107,6 +107,8 @@ export function Chat() {
   const [activeShellJobId, setActiveShellJobId] = useState<string | null>(null);
   const [analyzingFiles, setAnalyzingFiles] = useState(false);
   const [talking, setTalking] = useState(false);
+  // Memoria de Cerebro (Ollama) para /plan y «Platicar»: apagada por defecto, no se guarda.
+  const [useMemory, setUseMemory] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -346,6 +348,7 @@ export function Chat() {
         body: JSON.stringify({
           description,
           projectId: selectedProjectId || undefined,
+          useMemory,
         }),
       });
       if (!res.ok) throw new Error(await res.text());
@@ -607,7 +610,7 @@ export function Chat() {
 
   return (
     <div className="flex flex-col h-full bg-surface-0">
-      {talking && <ConversationView projectId={selectedProjectId} onClose={handleTalkClosed} />}
+      {talking && <ConversationView projectId={selectedProjectId} useMemory={useMemory} onClose={handleTalkClosed} />}
       {toast && (
         <div role="status" className="fixed bottom-4 left-1/2 z-[60] -translate-x-1/2 rounded-lg border border-edge-strong bg-surface-2 px-4 py-2 font-mono text-[11px] text-text-primary shadow-lg">
           {toast}
@@ -900,6 +903,13 @@ export function Chat() {
               >
                 Platicar
               </button>
+              <label
+                className="shrink-0 flex cursor-pointer items-center gap-1 font-mono text-[10px] text-text-secondary"
+                title="Usa notas de Cerebro (Ollama, solo CPU) en /plan y en «Platicar»"
+              >
+                <input type="checkbox" checked={useMemory} onChange={(e) => setUseMemory(e.target.checked)} className="accent-accent" />
+                usar memoria
+              </label>
               {/* File attach button — only when a project is selected */}
               {selectedProjectId && !activeRunId && (
                 <button

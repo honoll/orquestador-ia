@@ -69,6 +69,8 @@ interface SessionApi {
  */
 export function useConversationSession(opts: {
   projectId: string | null;
+  /** Memoria de Cerebro (Ollama) en la plática; se lee al arrancar. */
+  useMemory?: boolean;
   onClose: (result: ConversationResult) => void;
   onStarted?: () => void;
 }) {
@@ -437,7 +439,7 @@ export function useConversationSession(opts: {
         return;
       }
       try {
-        const r = await startSession(optsRef.current.projectId);
+        const r = await startSession(optsRef.current.projectId, optsRef.current.useMemory);
         sessionId = r.sessionId;
         conversationId = r.conversationId;
       } catch (err) {

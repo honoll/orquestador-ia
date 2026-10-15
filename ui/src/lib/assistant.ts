@@ -48,8 +48,8 @@ export function parseAssistantEvent(raw: unknown, sessionId: string): AssistantE
   }
 }
 
-export function startBody(projectId: string | null): string {
-  return JSON.stringify(projectId ? { projectId } : {});
+export function startBody(projectId: string | null, useMemory = false): string {
+  return JSON.stringify({ ...(projectId ? { projectId } : {}), ...(useMemory ? { useMemory } : {}) });
 }
 
 export function turnBody(text: string): string {
@@ -166,11 +166,11 @@ export class AssistantRequestError extends Error {
   }
 }
 
-export async function startSession(projectId: string | null): Promise<{ sessionId: string; conversationId: string }> {
+export async function startSession(projectId: string | null, useMemory = false): Promise<{ sessionId: string; conversationId: string }> {
   const r = await fetch(assistantPaths.start, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: startBody(projectId),
+    body: startBody(projectId, useMemory),
   });
   const b = (await json(r)) as { sessionId?: unknown; conversationId?: unknown; error?: unknown };
   if (!r.ok || !str(b.sessionId) || !str(b.conversationId)) {

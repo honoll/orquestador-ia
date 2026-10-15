@@ -27,12 +27,13 @@ app.post("/start", limitBody, async (c) => {
   } catch {
     return c.json({ error: "JSON inválido" }, 400);
   }
-  const b = (body && typeof body === "object" ? body : {}) as { projectId?: unknown };
+  const b = (body && typeof body === "object" ? body : {}) as { projectId?: unknown; useMemory?: unknown };
   if (b.projectId !== undefined && b.projectId !== null && typeof b.projectId !== "string") {
     return c.json({ error: "projectId debe ser texto o null" }, 400);
   }
+  if (b.useMemory !== undefined && typeof b.useMemory !== "boolean") return c.json({ error: "useMemory debe ser booleano" }, 400);
   try {
-    const r = await startAssistant({ projectId: b.projectId ?? null });
+    const r = await startAssistant({ projectId: b.projectId ?? null, useMemory: b.useMemory === true });
     return c.json({ sessionId: r.sessionId, conversationId: r.conversationId });
   } catch (err) {
     if (err instanceof AssistantError) return c.json({ error: err.message }, err.status);

@@ -59,7 +59,7 @@ async function loadMemory(description: string, project: { name: string; path: st
  * Crea un plan: inserta la fila "generating" y lanza en segundo plano tier, memoria, generación,
  * pasos, plan:ready y (trivial) auto-ejecución. Devuelve de inmediato el id.
  */
-export async function createPlan(input: { description: string; projectId?: string | null; cwd?: string | null }): Promise<{ id: string }> {
+export async function createPlan(input: { description: string; projectId?: string | null; cwd?: string | null; useMemory?: boolean }): Promise<{ id: string }> {
   const project = input.projectId
     ? await db.select().from(schema.projects).where(eq(schema.projects.id, input.projectId)).then((r) => r[0])
     : null;
@@ -101,9 +101,13 @@ export async function createPlan(input: { description: string; projectId?: strin
 
     let memorySection = "";
     if (!trivial) {
-      broadcast({ type: "plan:memory", planId, source: "loading", timestamp: new Date().toISOString() } as any);
-      const mem = await loadMemory(input.description, project ? { name: project.name, path: project.path } : null);
-      if (await generationCancelled(planId)) return;
+      // Memoria (Ollama) solo si el usuario la pidió: sin ella no hay índice ni consulta.
+      let mem: MemoryResult = { notes: [], source: "none" };
+      if (input.useMemory) {
+        broadcast({ type: "plan:memory", planId, source: "loading", timestamp: new Date().toISOString() } as any);
+        mem = await loadMemory(input.description, project ? { name: project.name, path: project.path } : null);
+        if (await generationCancelled(planId)) return;
+      }
       memorySection = buildMemorySection(mem);
       const noExcerpt = mem.notes.map(({ excerpt: _excerpt, ...rest }) => rest);
       await db.update(schema.plans)

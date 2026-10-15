@@ -49,6 +49,7 @@ describe("cuerpos y rutas", () => {
   it("startBody", () => {
     expect(JSON.parse(startBody("p1"))).toEqual({ projectId: "p1" });
     expect(JSON.parse(startBody(null))).toEqual({});
+    expect(JSON.parse(startBody(null, true))).toEqual({ useMemory: true });
   });
   it("turnBody recorta", () => {
     expect(JSON.parse(turnBody("  hola  "))).toEqual({ text: "hola" });

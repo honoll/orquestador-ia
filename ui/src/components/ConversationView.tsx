@@ -29,13 +29,15 @@ const PHASE_STYLE: Record<ConvPhase, string> = {
 /** Vista de pantalla completa de «Platicar»; la lógica vive en useConversationSession. */
 export function ConversationView({
   projectId,
+  useMemory,
   onClose,
 }: {
   projectId: string | null;
+  useMemory: boolean;
   onClose: (result: ConversationResult) => void;
 }) {
   const circleRef = useRef<HTMLButtonElement>(null);
-  const talk = useConversationSession({ projectId, onClose, onStarted: () => circleRef.current?.focus() });
+  const talk = useConversationSession({ projectId, useMemory, onClose, onStarted: () => circleRef.current?.focus() });
   const { start, lines, bargeIn, notice } = talk;
 
   useEffect(() => { start(); }, [start]);

@@ -25,8 +25,8 @@ export function createOllamaEmbedder(opts: Opts = {}): Embedder {
         const res = await fetchImpl(`${url}/api/embed`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          // keep_alive: el modelo queda cargado 30 min (la primera consulta de un plan no paga la carga).
-          body: JSON.stringify({ model, input: texts, keep_alive: "30m" }),
+          // Decisión del usuario: bge-m3 solo en CPU (num_gpu 0) y se descarga al terminar (keep_alive 0).
+          body: JSON.stringify({ model, input: texts, keep_alive: 0, options: { num_gpu: 0 } }),
           signal: ctrl.signal,
         });
         if (!res.ok) return null;

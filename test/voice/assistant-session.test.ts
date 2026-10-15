@@ -109,8 +109,9 @@ function setup(over: Over = {}) {
   const startPlan = vi.fn(async (_id: string, _o?: { requireJev?: boolean }) => "started" as Awaited<ReturnType<NonNullable<Deps["startPlan"]>>>);
   const retrieve = vi.fn(async () => ({ notes: [], source: "none" as const }));
   const writeNote = rest.writeNote ?? vi.fn<NoteFn>(() => "Orquestador/Platicas/nota.md");
-  const deps = { agy: agy.factory, createPlan, startPlan, retrieve, ...rest, writeNote } as unknown as Deps;
-  return { agy, createPlan, startPlan, retrieve, writeNote, deps };
+  const index = vi.fn(async () => {});
+  const deps = { agy: agy.factory, createPlan, startPlan, retrieve, index, ...rest, writeNote } as unknown as Deps;
+  return { agy, createPlan, startPlan, retrieve, index, writeNote, deps };
 }
 const asRetrieve = (f: unknown) => f as Deps["retrieve"];
 
@@ -141,8 +142,8 @@ describe("startAssistant", () => {
     await waitFor(() => agy.sent.length === 1);
     expect(agy.sent[0]).toContain("Orquestador-IA");
     expect(agy.sent[0].endsWith("\n\nResponde solo: Listo.")).toBe(true);
-    await waitFor(() => types("accounts:changed").length > 0);
-    const usage = await db.select().from(schema.agyUsage);
+    let usage: (typeof schema.agyUsage.$inferSelect)[] = [];
+    for (let i = 0; i < 100 && !usage.length; i++) { usage = await db.select().from(schema.agyUsage); await new Promise((r) => setTimeout(r, 5)); }
     expect(usage[0].source).toBe("voice");
     expect(types("voice:assistant:delta")).toHaveLength(0);
     expect(await db.select().from(schema.tasks)).toHaveLength(0);
@@ -203,16 +204,32 @@ describe("assistantTurn", () => {
     const note = { path: "a.md", title: "A", score: 0.7, excerpt: "dato útil", isProject: false, generated: false };
     const retrieve = vi.fn(async () => ({ notes: [note], source: "semantic" as const }));
     const { deps, agy } = setup({ retrieve: asRetrieve(retrieve) });
-    const { sessionId } = await session.startAssistant({ projectId: null }, deps);
+    const { sessionId } = await session.startAssistant({ projectId: null, useMemory: true }, deps);
     await say(sessionId, "qué sabes de A");
     expect(retrieve).toHaveBeenCalledWith(expect.objectContaining({ query: "qué sabes de A", topNotes: 3, budgetChars: 6000 }));
     expect(agy.sent[1]).toContain("dato útil");
 
     const retrieve2 = vi.fn(async () => ({ notes: [note], source: "project-only" as const }));
     const s2 = setup({ retrieve: asRetrieve(retrieve2) });
-    const b = await session.startAssistant({ projectId: null }, s2.deps);
+    const b = await session.startAssistant({ projectId: null, useMemory: true }, s2.deps);
     await say(b.sessionId, "otra cosa");
     expect(s2.agy.sent[1]).toBe("otra cosa");
+  });
+
+  it("useMemory: sin él no se indexa ni se consulta; con él, índice una vez al arrancar y consulta por turno", async () => {
+    const off = setup();
+    const a = await session.startAssistant({ projectId: null }, off.deps);
+    await say(a.sessionId, "hola");
+    await say(a.sessionId, "otra");
+    expect(off.index).not.toHaveBeenCalled();
+    expect(off.retrieve).not.toHaveBeenCalled();
+
+    const on = setup();
+    const b = await session.startAssistant({ projectId: null, useMemory: true }, on.deps);
+    await say(b.sessionId, "hola");
+    await say(b.sessionId, "otra");
+    expect(on.index).toHaveBeenCalledTimes(1);
+    expect(on.retrieve).toHaveBeenCalledTimes(2);
   });
 
   it("la memoria que falla o tarda no bloquea el turno", async () => {
@@ -220,7 +237,7 @@ describe("assistantTurn", () => {
       throw new Error("boom");
     });
     const { deps, agy } = setup({ retrieve: asRetrieve(retrieve) });
-    const { sessionId } = await session.startAssistant({ projectId: null }, deps);
+    const { sessionId } = await session.startAssistant({ projectId: null, useMemory: true }, deps);
     const d = await say(sessionId, "hola");
     expect(d.speech).toBeTruthy();
     expect(agy.sent[1]).toBe("hola");
@@ -237,7 +254,7 @@ describe("assistantTurn", () => {
     const d2 = await confirm(sessionId); // no espera a plan:ready
     expect(d2.speech).toBe("Va, lo estoy preparando; te aviso cuando arranque.");
     await waitFor(() => createPlan.mock.calls.length === 1);
-    expect(createPlan).toHaveBeenCalledWith({ description: "Revisa el login", projectId: "p1" });
+    expect(createPlan).toHaveBeenCalledWith({ description: "Revisa el login", projectId: "p1", useMemory: false });
     expect(startPlan).not.toHaveBeenCalled();
     // el turno ya terminó: se puede seguir hablando (no hay 409)
     const d3 = await say(sessionId, "qué hora es");
@@ -636,7 +653,7 @@ describe("revisión final F6", () => {
       return { notes: [], source: "none" as const };
     });
     const { deps, agy } = setup({ retrieve: asRetrieve(retrieve) });
-    const { sessionId } = await session.startAssistant({ projectId: null }, deps);
+    const { sessionId } = await session.startAssistant({ projectId: null, useMemory: true }, deps);
     await waitFor(() => agy.sent.length === 1);
     const r = await session.assistantTurn(sessionId, "hola");
     expect("turnId" in r).toBe(true);
@@ -749,7 +766,7 @@ describe("revisión final F6", () => {
     expect(d.hasAction).toBe(true);
     await confirm(sessionId);
     await waitFor(() => createPlan.mock.calls.length === 1);
-    expect(createPlan).toHaveBeenCalledWith({ description: "X", projectId: "p1" });
+    expect(createPlan).toHaveBeenCalledWith({ description: "X", projectId: "p1", useMemory: false });
   });
 
   it("I4: /start con la cuenta bloqueada por cuota responde 409 sin lanzar agy", async () => {

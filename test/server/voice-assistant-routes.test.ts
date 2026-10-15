@@ -36,11 +36,11 @@ describe("POST /start", () => {
     const r = await post("/start", { projectId: "p1" });
     expect(r.status).toBe(200);
     expect(await r.json()).toEqual({ sessionId: "s1", conversationId: "c1" });
-    expect(h.start).toHaveBeenCalledWith({ projectId: "p1" });
+    expect(h.start).toHaveBeenCalledWith({ projectId: "p1", useMemory: false });
     await post("/start", {});
-    expect(h.start).toHaveBeenLastCalledWith({ projectId: null });
-    await post("/start", { projectId: null });
-    expect(h.start).toHaveBeenLastCalledWith({ projectId: null });
+    expect(h.start).toHaveBeenLastCalledWith({ projectId: null, useMemory: false });
+    await post("/start", { projectId: null, useMemory: true });
+    expect(h.start).toHaveBeenLastCalledWith({ projectId: null, useMemory: true });
   });
   it("409 sin cuenta agy activa", async () => {
     h.start.mockRejectedValue(new h.AssistantError("No hay cuenta", 409));
@@ -50,6 +50,7 @@ describe("POST /start", () => {
   });
   it("400 si projectId no es string/null; 415 sin JSON; 413 enorme", async () => {
     expect((await post("/start", { projectId: 5 })).status).toBe(400);
+    expect((await post("/start", { useMemory: "sí" })).status).toBe(400);
     expect((await post("/start", "no json")).status).toBe(400);
     expect((await post("/start", "{}", { "Content-Type": "text/plain" })).status).toBe(415);
     expect((await post("/start", { projectId: "x".repeat(20000) })).status).toBe(413);

@@ -23,6 +23,14 @@ vi.mock("../../src/memory/vault-index.js", async () => {
   const actual = await vi.importActual<typeof import("../../src/memory/vault-index.js")>("../../src/memory/vault-index.js");
   return { ...actual, indexVault: vi.fn(async () => ({ scanned: 0, updated: 0, removed: 0, chunks: 0, failed: false })) };
 });
+vi.mock("../../src/memory/retrieve.js", async () => {
+  const actual = await vi.importActual<typeof import("../../src/memory/retrieve.js")>("../../src/memory/retrieve.js");
+  return { ...actual, retrieveMemory: vi.fn(async () => ({ notes: [], source: "semantic" })) };
+});
+vi.mock("../../src/memory/ollama.js", async () => {
+  const actual = await vi.importActual<typeof import("../../src/memory/ollama.js")>("../../src/memory/ollama.js");
+  return { ...actual, createOllamaEmbedder: vi.fn(() => async () => null) };
+});
 vi.mock("../../src/server/ws.js", () => ({
   broadcast: (e: Record<string, unknown>) => { h.events.push(e); },
   addClient: () => {},
@@ -39,6 +47,9 @@ const { migrationDone } = await import("../../src/db/migrate.js");
 const { db, schema } = await import("../../src/db/index.js");
 const { createPlan, startPlanIfAllowed } = await import("../../src/server/plan-create.js");
 const { eq } = await import("drizzle-orm");
+const { indexVault } = await import("../../src/memory/vault-index.js");
+const { retrieveMemory } = await import("../../src/memory/retrieve.js");
+const { createOllamaEmbedder } = await import("../../src/memory/ollama.js");
 
 beforeAll(async () => { await migrationDone; });
 beforeEach(() => { h.runPlanDag.mockClear(); h.running.clear(); h.events.length = 0; h.tier = { tier: "normal", confidence: null, source: "fallback" }; });
@@ -111,5 +122,27 @@ describe("startPlanIfAllowed con requireJev (I6: voz sin JEV)", () => {
   it("sin la opción el comportamiento no cambia", async () => {
     const id = await mk({ tier: "normal", tierSource: "fallback" });
     expect(await startPlanIfAllowed(id)).toBe("started");
+  });
+});
+
+describe("createPlan: memoria solo cuando se pide (useMemory)", () => {
+  const plan = (id: string) => db.select().from(schema.plans).where(eq(schema.plans.id, id)).then((r) => r[0]);
+  beforeEach(() => { vi.mocked(indexVault).mockClear(); vi.mocked(retrieveMemory).mockClear(); vi.mocked(createOllamaEmbedder).mockClear(); });
+
+  it("sin useMemory (default): ni índice ni Ollama; memory_source none", async () => {
+    const { id } = await createPlan({ description: "haz algo" });
+    await waitFor(async () => (await plan(id))?.status === "pending");
+    expect(indexVault).not.toHaveBeenCalled();
+    expect(retrieveMemory).not.toHaveBeenCalled();
+    expect(createOllamaEmbedder).not.toHaveBeenCalled();
+    expect((await plan(id)).memorySource).toBe("none");
+    expect(h.events.some((e) => e.type === "plan:memory" && e.source === "loading")).toBe(false);
+  });
+  it("useMemory true: índice incremental + recuperación", async () => {
+    const { id } = await createPlan({ description: "haz algo", useMemory: true });
+    await waitFor(async () => (await plan(id))?.status === "pending");
+    expect(indexVault).toHaveBeenCalledTimes(1);
+    expect(retrieveMemory).toHaveBeenCalledTimes(1);
+    expect((await plan(id)).memorySource).toBe("semantic");
   });
 });

@@ -7,6 +7,8 @@ import { buildMemorySection, retrieveMemory } from "../../memory/retrieve.js";
 import { queryEmbedder } from "../../memory/query-embedder.js";
 import { writeTalkNote } from "../../memory/talk-note.js";
 import { memoryConfig } from "../../memory/config.js";
+import { indexVault } from "../../memory/vault-index.js";
+import { createOllamaEmbedder } from "../../memory/ollama.js";
 import type { AdapterExecutionResult, WsEvent } from "../../lib/types.js";
 import { createAgySession, type AgyTurnResult } from "./agy-session.js";
 import {
@@ -24,6 +26,8 @@ export type AssistantDeps = {
   createPlan?: typeof realCreatePlan;
   startPlan?: typeof startPlanIfAllowed;
   retrieve?: typeof retrieveMemory;
+  /** Índice incremental de Cerebro (solo con useMemory, una vez al arrancar). */
+  index?: () => Promise<unknown>;
   writeNote?: typeof writeTalkNote;
 };
 
@@ -55,6 +59,8 @@ type Session = {
   id: string;
   conversationId: string;
   projectId: string | null;
+  /** Memoria (Ollama) solo si el usuario la pidió al arrancar. */
+  useMemory: boolean;
   deps: Required<AssistantDeps>;
   agy: Agy;
   /** Todo agy que lanzó la sesión: al terminar se cierran todos. */
@@ -127,7 +133,7 @@ async function prepareAndStart(s: Session, action: { pedido: string; projectId: 
   try {
     // Un plan de voz siempre corre en la carpeta de su proyecto: sin ella no se crea (nunca process.cwd()).
     if (!(await projectRow(action.projectId))?.path) throw new Error("el proyecto del plan ya no existe o no tiene carpeta");
-    const { id } = await s.deps.createPlan({ description: action.pedido, projectId: action.projectId });
+    const { id } = await s.deps.createPlan({ description: action.pedido, projectId: action.projectId, useMemory: s.useMemory });
     s.plans.push({ id, description: action.pedido });
     const waited = await watcher.wait(id);
     if (waited === "aborted") return;
@@ -178,6 +184,7 @@ async function projectRow(id: string | null): Promise<Project | null> {
 }
 
 async function memoryFor(s: Session, utterance: string): Promise<string> {
+  if (!s.useMemory) return "";
   try {
     const project = await projectRow(s.projectId);
     const mem = await withTimeout(
@@ -341,7 +348,7 @@ async function runTurn(s: Session, turnId: string, utterance: string) {
 let startChain: Promise<unknown> = Promise.resolve();
 
 export function startAssistant(
-  input: { projectId: string | null },
+  input: { projectId: string | null; useMemory?: boolean },
   deps: AssistantDeps = {},
 ): Promise<{ sessionId: string; conversationId: string }> {
   const run = startChain.then(() => doStart(input, deps));
@@ -350,7 +357,7 @@ export function startAssistant(
 }
 
 async function doStart(
-  input: { projectId: string | null },
+  input: { projectId: string | null; useMemory?: boolean },
   deps: AssistantDeps,
 ): Promise<{ sessionId: string; conversationId: string }> {
   const now = deps.now ?? Date.now;
@@ -366,12 +373,17 @@ async function doStart(
     createPlan: deps.createPlan ?? realCreatePlan,
     startPlan: deps.startPlan ?? startPlanIfAllowed,
     retrieve: deps.retrieve ?? retrieveMemory,
+    index: deps.index ?? (() => {
+      const cfg = memoryConfig();
+      return indexVault({ vaultPath: cfg.vaultPath, embedder: createOllamaEmbedder(cfg), model: cfg.model });
+    }),
     writeNote: deps.writeNote ?? writeTalkNote,
   };
   const s: Session = {
     id: randomUUID(),
     conversationId: randomUUID(),
     projectId: input.projectId,
+    useMemory: input.useMemory === true,
     deps: full,
     agy: full.agy(),
     agys: new Set(),
@@ -391,12 +403,14 @@ async function doStart(
   s.unsub = onBroadcast((e) => handlePlanEvent(s, e, emit));
   current = s;
   touch(s);
+  if (s.useMemory) void s.deps.index().catch(() => {});
 
   // Calentamiento en segundo plano: prepara agy con el prompt de sistema; su respuesta se descarta
   // (nunca arma una acción). Si topa con la cuota, lo dice en voz y cierra la plática.
+  // Se encola antes de devolver la sesión: siempre llega a agy antes del primer turno.
+  const warmup = sendRecorded(s, s.agy, buildAssistantSystemPrompt(await listProjects()) + "\n\nResponde solo: Listo.", () => {});
   void (async () => {
-    const projects = await listProjects();
-    const r = await sendRecorded(s, s.agy, buildAssistantSystemPrompt(projects) + "\n\nResponde solo: Listo.", () => {});
+    const r = await warmup;
     s.warmed = true;
     if (r.quota && !s.ended) {
       emit({ type: "voice:assistant:announce", sessionId: s.id, text: TEXT_QUOTA });

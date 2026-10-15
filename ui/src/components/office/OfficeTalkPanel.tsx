@@ -21,8 +21,10 @@ export function OfficeTalkPanel() {
   const qc = useQueryClient();
   const { selectedProjectId, setActivePlanId, setView, setConversation } = useAppState();
   const [saved, setSaved] = useState(false);
+  const [useMemory, setUseMemory] = useState(false);
   const talk = useConversationSession({
     projectId: selectedProjectId,
+    useMemory,
     onClose: (r) => {
       if (r.conversationId) {
         setConversation(r.conversationId);
@@ -78,6 +80,12 @@ export function OfficeTalkPanel() {
       </button>
       {error && <p role="alert" className="mt-2 break-words text-[11px] text-err">{error}</p>}
       {saved && !active && <p role="status" className="mt-2 text-[11px] text-ok">Nota guardada en Cerebro</p>}
+      {!active && (
+        <label className="mt-2 flex cursor-pointer items-center gap-1.5 text-[11px]" title="Usa notas de Cerebro (Ollama, solo CPU) en la plática">
+          <input type="checkbox" checked={useMemory} onChange={(e) => setUseMemory(e.target.checked)} className="accent-[#60a5fa]" />
+          usar memoria
+        </label>
+      )}
       {active && (
         <div className="mt-2 flex items-center justify-between gap-2 text-[11px]">
           <label className="flex cursor-pointer items-center gap-1.5" title="Permite cortar al asistente hablándole; usa audífonos para evitar el eco">
