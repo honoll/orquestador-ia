@@ -7,7 +7,7 @@ import { dirBetween, DIR_DELTA, fitScale, keyToDir, moverPos, newMover, screenTo
 import { drawBubble, drawCreature, drawFloor, drawSkin, drawUpper } from "../../office/world/render";
 import { creatureFrame, type Dir } from "../../office/sprites/creatures";
 import { EMPTY_SKINS, fetchSkins, resolveSkin, type SkinsConfig } from "../../office/sprites/skins";
-import { loadSkinImages } from "../../office/sprites/skin-images";
+import { loadSkinImages, skinSrc } from "../../office/sprites/skin-images";
 import type { Tile } from "../../office/world/types";
 
 interface Props {
@@ -167,7 +167,7 @@ export function OfficeWorld({ state, onNear, onAdvance, children }: Props) {
         .sort((a, b) => a.pos[1] - b.pos[1]);
       for (const o of people) {
         const px = Math.round(o.pos[0] * 16), py = Math.round(o.pos[1] * 16);
-        const img = o.spec ? w.imgs.get(o.spec.file) : undefined;
+        const img = o.spec ? w.imgs.get(skinSrc(o.spec)) : undefined;
         let top = py - 4;
         if (o.spec && img) top = drawSkin(ctx, img, o.spec, o.m.dir, o.m.step, px, py);
         else drawCreature(ctx, creatureFrame(o.kind, o.m.dir, o.m.step, o.working), px, py);

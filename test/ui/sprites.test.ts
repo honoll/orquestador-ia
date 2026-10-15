@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { creatureFrame, CREATURES } from "../../ui/src/office/sprites/creatures";
-import { resolveSkin, gen3Frame, mergeSkins, EMPTY_SKINS, type SpriteSpec } from "../../ui/src/office/sprites/skins";
+import { resolveSkin, gen3Frame, mergeSkins, normalizeSkins, EMPTY_SKINS, type SpriteSpec } from "../../ui/src/office/sprites/skins";
 
 const s = (file: string): SpriteSpec => ({ file, frameW: 16, frameH: 16, frames: 3, rows: { down: 0, left: 1, right: 2, up: 3 } });
 
@@ -42,6 +42,22 @@ describe("resolveSkin", () => {
     expect(resolveSkin(cfg, { account: "agy3", rol: null, criatura: "agy" })?.file).toBe("robot.png");
     expect(resolveSkin(cfg, { account: "agy3", rol: null, criatura: "jefe" })).toBeNull();
     expect(resolveSkin(cfg, { account: "constructor", criatura: "jefe" })).toBeNull();
+  });
+});
+
+describe("normalizeSkins", () => {
+  it("expande gen3, pone la URL de cada hoja, tolera campos faltantes y descarta basura", () => {
+    const cfg = normalizeSkins({ player: { file: "yo.png", formato: "gen3" }, roles: { dev: { file: "dev.png", formato: "gen3" }, mal: { file: "../x.png", formato: "gen3" }, __proto__: { file: "p.png", formato: "gen3" } } }, "/oficina/sprites/");
+    expect(cfg.player).toEqual({ file: "yo.png", frameW: 16, frameH: 32, frames: 9, rows: { down: 0, left: 0, right: 0, up: 0 }, formato: "gen3", src: "/oficina/sprites/yo.png" });
+    expect(Object.keys(cfg.roles)).toEqual(["dev"]);
+    expect(cfg.agents).toEqual({});
+    expect(cfg.warnings).toEqual([]);
+    expect(normalizeSkins(null, "/x/")).toEqual(EMPTY_SKINS);
+    expect(normalizeSkins({ roles: [] }, "/x/").roles).toEqual({});
+  });
+  it("una spec completa (ya validada por el servidor) conserva sus campos y gana src", () => {
+    const full = { file: "a.png", frameW: 16, frameH: 16, frames: 3, rows: { down: 0, left: 1, right: 2, up: 3 } };
+    expect(normalizeSkins({ roles: { qa: full }, warnings: ["w"] }, "/sprites/")).toEqual({ roles: { qa: { ...full, src: "/sprites/a.png" } }, agents: {}, warnings: ["w"] });
   });
 });
 
