@@ -14,7 +14,7 @@
   --color-edge-strong: #3a3a45;
   --color-text-primary: #e4e4e7;
   --color-text-secondary: #a1a1aa;
-  --color-text-tertiary: #3f3f46;
+  --color-text-tertiary: #8b8b94; /* ≥ 4.5:1 sobre las superficies oscuras (F9) */
   --color-accent: #a78bfa;
   --color-accent-dim: #a78bfa26;
   --color-ok: #34d399;
@@ -31,6 +31,8 @@
   --text-sm--line-height: 1.2;
   --text-base: 20px;
   --text-base--line-height: 1.25;
+  --text-lg: 22px;
+  --text-lg--line-height: 1.25;
   /* esquinas cuadradas en toda la app (--radius = `rounded` sin sufijo) */
   --radius: 0;
   --radius-xs: 0;
