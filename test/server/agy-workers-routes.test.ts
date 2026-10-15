@@ -68,4 +68,12 @@ describe("/api/agy-workers", () => {
     const r = await accountsRoute.request(`/${a.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pool: "Plan 3" }) });
     expect(((await r.json()) as { pool: string }).pool).toBe("Plan 3");
   });
+
+  it("POST /api/accounts/:id/activate de una cuenta con trabajador → 409 con motivo en español", async () => {
+    const a = await createAccount("agy9");
+    expect((await json("/", "POST", { accountId: a.id, port: 3139, keyPath: "C:/k/agy9.key" })).status).toBe(201);
+    const r = await accountsRoute.request(`/${a.id}/activate`, { method: "POST" });
+    expect(r.status).toBe(409);
+    expect(((await r.json()) as { error: string }).error).toMatch(/trabajador/);
+  });
 });

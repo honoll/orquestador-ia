@@ -74,14 +74,23 @@ export function runOnWorker(
 ): { promise: Promise<RunProcessResult>; kill: () => void } {
   const ac = new AbortController();
   let key: string | null = null;
+  let runId: string | null = null;
   let killed = false;
+  let settled = false;
   let timedOut = false;
 
   const kill = () => {
-    if (killed) return;
+    // Tras terminar, el trabajador puede estar corriendo el paso de OTRO plan: no se toca.
+    if (killed || settled) return;
     killed = true;
-    if (key) {
-      fetch(url(t.port, "/cancel"), { method: "POST", headers: { Authorization: `Bearer ${key}` }, signal: AbortSignal.timeout(5000) })
+    // Sin id (aún sin cabeceras, o trabajador viejo) basta el corte de conexión: el trabajador mata su corrida.
+    if (key && runId) {
+      fetch(url(t.port, "/cancel"), {
+        method: "POST",
+        headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ runId }),
+        signal: AbortSignal.timeout(5000),
+      })
         .catch(() => { /* el corte de conexión también lo mata */ });
     }
     ac.abort();
@@ -115,6 +124,7 @@ export function runOnWorker(
         try { msg = String(JSON.parse(text).error ?? ""); } catch { /* sin cuerpo JSON */ }
         throw new WorkerUnavailableError(`trabajador agy en el puerto ${t.port} respondió ${res.status}${msg ? `: ${msg}` : ""}`, res.status);
       }
+      runId = res.headers.get("x-run-id");
 
       const handle = (line: string) => {
         if (!line.trim()) return;
@@ -155,6 +165,7 @@ export function runOnWorker(
       }
       return { exitCode, signal: null, timedOut: timedOut || workerTimedOut, stdout, stderr };
     } finally {
+      settled = true;
       clearTimeout(timer);
     }
   })();

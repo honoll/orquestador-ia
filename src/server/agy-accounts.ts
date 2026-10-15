@@ -27,6 +27,8 @@ export interface AccountView {
   /** Uso de toda su bolsa: es lo que decide bloqueo, aviso y reparto. */
   poolUsage: { short: WindowUsage; long: WindowUsage };
   warn: WarnState;
+  /** Tiene trabajador (otro usuario de Windows): no se puede activar como cuenta local. */
+  hasWorker: boolean;
 }
 
 export class NoActiveAccountError extends Error {
@@ -36,6 +38,8 @@ export class NoActiveAccountError extends Error {
 }
 
 export class AccountValidationError extends Error {}
+/** La acción choca con el estado (p. ej. activar una cuenta que corre en un trabajador): 409. */
+export class AccountConflictError extends Error {}
 
 function validLabel(label: string): string {
   const t = label.trim();
@@ -75,7 +79,7 @@ async function poolMembers(row: AgyAccountRow): Promise<AgyAccountRow[]> {
   return all.filter((r) => poolKey(r) === poolKey(row));
 }
 
-async function toView(row: AgyAccountRow, now: number, all: AgyAccountRow[]): Promise<AccountView> {
+async function toView(row: AgyAccountRow, now: number, all: AgyAccountRow[], withWorker: ReadonlySet<string>): Promise<AccountView> {
   const members = all.filter((r) => poolKey(r) === poolKey(row));
   const poolPoints = await usagePoints(members.map((m) => m.id), now);
   const points = poolPoints.filter((p) => p.accountId === row.id);
@@ -98,6 +102,7 @@ async function toView(row: AgyAccountRow, now: number, all: AgyAccountRow[]): Pr
     usage: { short, long },
     poolUsage,
     warn: warnState([poolUsage.short, poolUsage.long], blocked, now),
+    hasWorker: withWorker.has(row.id),
   };
 }
 
@@ -105,9 +110,11 @@ function notify() {
   broadcast({ type: "accounts:changed", timestamp: new Date().toISOString() } as any);
 }
 
+const accountsWithWorker = async () => new Set((await db.select({ id: schema.agyWorkers.accountId }).from(schema.agyWorkers)).map((w) => w.id));
+
 async function viewOf(id: string, now: number): Promise<AccountView> {
   const row = await getRow(id);
-  return toView(row, now, await db.select().from(schema.agyAccounts));
+  return toView(row, now, await db.select().from(schema.agyAccounts), await accountsWithWorker());
 }
 
 async function getRow(id: string): Promise<AgyAccountRow> {
@@ -118,7 +125,8 @@ async function getRow(id: string): Promise<AgyAccountRow> {
 
 export async function listAccounts(now: number = Date.now()): Promise<AccountView[]> {
   const rows = await db.select().from(schema.agyAccounts).orderBy(schema.agyAccounts.createdAt);
-  return Promise.all(rows.map((r) => toView(r, now, rows)));
+  const withWorker = await accountsWithWorker();
+  return Promise.all(rows.map((r) => toView(r, now, rows, withWorker)));
 }
 
 export async function getActiveAccount(): Promise<AgyAccountRow | null> {
@@ -142,6 +150,11 @@ export async function createAccount(label: string, now: number = Date.now()): Pr
 
 export async function activateAccount(id: string): Promise<void> {
   await getRow(id);
+  // La "activa" es la credencial del usuario normal (chat, voz, análisis y el asiento local): una cuenta de
+  // trabajador corre con otro usuario de Windows, así que activarla cruzaría el uso y la cuota de dos bolsas.
+  if ((await accountsWithWorker()).has(id)) {
+    throw new AccountConflictError("Esa cuenta tiene trabajador (otro usuario de Windows): ya corre pasos de plan por su cuenta y no se puede usar como la cuenta local.");
+  }
   await db.transaction(async (tx) => {
     // Primero desactivar, luego activar: respeta el índice único de cuenta activa.
     await tx.update(schema.agyAccounts).set({ active: 0 }).where(ne(schema.agyAccounts.id, id));

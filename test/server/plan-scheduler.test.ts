@@ -264,6 +264,31 @@ describe("planificador", () => {
     expect(await plan(id)).toMatchObject({ status: "cancelled", pauseReason: null });
   });
 
+  it("F10: cancelar no llama el kill de un paso ya terminado (su trabajador puede estar corriendo otro plan)", async () => {
+    const orig = h.adapters.codex;
+    const killedKeys: string[] = [];
+    let waiting = false;
+    h.adapters.codex = {
+      ...orig,
+      execute: async (ctx: any) => {
+        const key = /\[(s\d+)\]/.exec(ctx.prompt)?.[1] ?? "synth";
+        if (key === "s1") { ctx.onKill?.(() => killedKeys.push("s1")); return orig.execute(ctx); }
+        await new Promise<void>((r) => { waiting = true; ctx.onKill?.(() => { killedKeys.push(key); r(); }); });
+        return orig.execute({ ...ctx, onKill: undefined });
+      },
+    };
+    try {
+      const id = await mkPlan([{ key: "s1" }, { key: "s2", deps: ["s1"] }]);
+      const p = runPlanDag(id, cwd);
+      await vi.waitFor(() => expect(waiting).toBe(true));
+      cancelPlanRun(id);
+      await p;
+      expect(killedKeys).toEqual(["s2"]);
+    } finally {
+      h.adapters.codex = orig;
+    }
+  });
+
   it("si la síntesis falla, el plan queda completed con synthesis_status failed", async () => {
     h.state.fail.add("synth");
     const id = await mkPlan([{ key: "s1" }]);

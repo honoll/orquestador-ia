@@ -4,11 +4,11 @@ import os from "node:os";
 import path from "node:path";
 import { migrationDone } from "../../src/db/migrate.js";
 import { db, schema } from "../../src/db/index.js";
-import { createAccount, updateAccount, recordAgyCall } from "../../src/server/agy-accounts.js";
+import { createAccount, updateAccount, recordAgyCall, activateAccount, getActiveAccount, listAccounts, AccountConflictError } from "../../src/server/agy-accounts.js";
 import {
   createWorker, listWorkers, updateWorker, deleteWorker, importWorkers, pickWorker, agyAvailability, waitAgyRelease,
   parallelLimit, markWorkerHealth, WorkerValidationError, MAX_PARALLEL_CEILING, UNHEALTHY_SKIP_MS,
-  markWorkerBusy, BUSY_COOLDOWN_MS,
+  markWorkerBusy, BUSY_COOLDOWN_MS, cwdAllowsWorkers,
 } from "../../src/server/agy-workers.js";
 import type { AdapterExecutionResult } from "../../src/lib/types.js";
 
@@ -70,6 +70,44 @@ describe("CRUD de trabajadores", () => {
     expect(await listWorkers()).toHaveLength(2);
     const accounts = await db.select().from(schema.agyAccounts);
     expect(accounts.filter((a) => a.active === 1).map((a) => a.label)).toEqual(["local"]);
+  });
+});
+
+describe("importWorkers / raíz / activar", () => {
+  it("reimportar actualiza puerto y ruta de llave del trabajador existente", async () => {
+    await createAccount("local", NOW);
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "workers-"));
+    fs.writeFileSync(path.join(dir, "agy2.json"), JSON.stringify({ account: "agy2", port: 3121 }));
+    await importWorkers(dir);
+    const dir2 = fs.mkdtempSync(path.join(os.tmpdir(), "workers2-"));
+    fs.writeFileSync(path.join(dir2, "agy2.json"), JSON.stringify({ account: "agy2", port: 3125 }));
+    await importWorkers(dir2);
+    const ws = await listWorkers();
+    expect(ws.map((w) => [w.accountLabel, w.port, w.keyPath])).toEqual([["agy2", 3125, path.join(dir2, "agy2.key")]]);
+  });
+
+  it("cwdAllowsWorkers: dentro de la raíz sí (sin importar mayúsculas), hermanas y fuera no", () => {
+    const prev = process.env.AGY_WORKER_ROOT;
+    process.env.AGY_WORKER_ROOT = "C:/estudio";
+    try {
+      expect(cwdAllowsWorkers("C:/estudio/proyecto")).toBe(true);
+      expect(cwdAllowsWorkers("C:/estudio")).toBe(true);
+      if (process.platform === "win32") expect(cwdAllowsWorkers("c:/ESTUDIO/x")).toBe(true);
+      expect(cwdAllowsWorkers("C:/estudio2/x")).toBe(false);
+      expect(cwdAllowsWorkers("D:/otro")).toBe(false);
+    } finally {
+      process.env.AGY_WORKER_ROOT = prev;
+    }
+  });
+
+  it("activar una cuenta con trabajador se rechaza (cruzaría la contabilidad de la local)", async () => {
+    const s = await setup([{ label: "local" }, { label: "agy2", port: 3121 }]);
+    await expect(activateAccount(s.agy2.accountId)).rejects.toBeInstanceOf(AccountConflictError);
+    await expect(activateAccount(s.agy2.accountId)).rejects.toThrow(/trabajador/);
+    expect((await getActiveAccount())?.id).toBe(s.local.accountId);
+    const views = await listAccounts(NOW);
+    expect(views.find((v) => v.id === s.agy2.accountId)?.hasWorker).toBe(true);
+    expect(views.find((v) => v.id === s.local.accountId)?.hasWorker).toBe(false);
   });
 });
 

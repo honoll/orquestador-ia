@@ -100,6 +100,64 @@ describe("runPlanStep", () => {
     expect(runs).toHaveLength(0);
   });
 
+  it("400 del trabajador: se salta solo para este paso (sin marcarlo caído ni dejar run fallido)", async () => {
+    const w = await addWorker("agy2", 3121);
+    await updateAccount(localId, { manualLimit5h: 1000 });
+    await db.insert(schema.agyUsage).values({ id: randomUUID(), accountId: localId, at: new Date().toISOString(), inputTokens: 900, outputTokens: 0, source: "plan" });
+    h.execute.mockImplementationOnce(async () => { throw new WorkerUnavailableError("respondió 400: cuerpo inválido", 400); }).mockImplementationOnce(async () => h.ok);
+    const { planId, stepId, cwd } = await mk();
+    const before = (await db.select().from(schema.runs).where(eq(schema.runs.status, "failed"))).length;
+    expect((await runPlanStep({ planId, stepId, cwd })).status).toBe("succeeded");
+    expect(h.execute.mock.calls[1][0].agyWorker).toBeUndefined();
+    expect((await db.select().from(schema.runs).where(eq(schema.runs.status, "failed"))).length).toBe(before);
+    const { pickWorker } = await import("../../src/server/agy-workers.js");
+    const again = await pickWorker(Date.now(), { accounts: new Set([localId]) });
+    expect(again?.accountId).toBe(w); // no quedó "caído" para los demás pasos
+    again?.release();
+  });
+
+  it("413 en el único trabajador con la local bloqueada: el paso falla una vez con ese error", async () => {
+    await addWorker("agy2", 3121);
+    await db.update(schema.agyAccounts).set({ quotaBlockedUntil: new Date(Date.now() + 3_600_000).toISOString() }).where(eq(schema.agyAccounts.id, localId));
+    h.execute.mockImplementation(async () => { throw new WorkerUnavailableError("trabajador agy en el puerto 3121 respondió 413: cuerpo demasiado grande", 413); });
+    const { planId, stepId, cwd } = await mk();
+    const before = (await db.select().from(schema.runs).where(eq(schema.runs.status, "failed"))).length;
+    expect((await runPlanStep({ planId, stepId, cwd })).status).toBe("failed");
+    expect(h.execute).toHaveBeenCalledTimes(1);
+    expect((await db.select().from(schema.runs).where(eq(schema.runs.status, "failed"))).length).toBe(before);
+    const step = await db.select().from(schema.planSteps).where(eq(schema.planSteps.id, stepId)).then((r) => r[0]);
+    expect(step.errorMessage).toContain("413");
+  });
+
+  it("401 del trabajador: se marca caído (60 s) como sin respuesta", async () => {
+    const w = await addWorker("agy2", 3121);
+    await updateAccount(localId, { manualLimit5h: 1000 });
+    await db.insert(schema.agyUsage).values({ id: randomUUID(), accountId: localId, at: new Date().toISOString(), inputTokens: 900, outputTokens: 0, source: "plan" });
+    h.execute.mockImplementationOnce(async () => { throw new WorkerUnavailableError("respondió 401", 401); }).mockImplementationOnce(async () => h.ok);
+    const { planId, stepId, cwd } = await mk();
+    expect((await runPlanStep({ planId, stepId, cwd })).status).toBe("succeeded");
+    const { pickWorker, markWorkerHealth } = await import("../../src/server/agy-workers.js");
+    expect(await pickWorker(Date.now(), { accounts: new Set([localId]) })).toBeNull();
+    const wid = (await db.select().from(schema.agyWorkers).where(eq(schema.agyWorkers.accountId, w)))[0].id;
+    markWorkerHealth(wid, true);
+  });
+
+  it("proyecto fuera de la raíz de los trabajadores: solo la cuenta local", async () => {
+    await addWorker("agy2", 3121);
+    await updateAccount(localId, { manualLimit5h: 1000 });
+    await db.insert(schema.agyUsage).values({ id: randomUUID(), accountId: localId, at: new Date().toISOString(), inputTokens: 900, outputTokens: 0, source: "plan" });
+    h.execute.mockImplementation(async () => h.ok);
+    const prev = process.env.AGY_WORKER_ROOT;
+    process.env.AGY_WORKER_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), "otra-raiz-"));
+    try {
+      const { planId, stepId, cwd } = await mk();
+      expect((await runPlanStep({ planId, stepId, cwd })).status).toBe("succeeded");
+      expect(h.execute.mock.calls[0][0].agyWorker).toBeUndefined();
+    } finally {
+      process.env.AGY_WORKER_ROOT = prev;
+    }
+  });
+
   it("reintento sin cuenta libre (la otra está ocupada): vuelve a pending como requeued, sin esperar", async () => {
     await addWorker("agy2", 3121);
     const { pickWorker } = await import("../../src/server/agy-workers.js");

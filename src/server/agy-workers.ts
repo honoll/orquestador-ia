@@ -49,6 +49,14 @@ export interface AgyExclude {
   pools?: ReadonlySet<string>;
   /** Cuentas cuyo trabajador no respondió en este paso. */
   accounts?: ReadonlySet<string>;
+  /** Solo la cuenta local (proyecto fuera de la raíz de los trabajadores). */
+  localOnly?: boolean;
+}
+
+/** worker.mjs solo acepta cwd dentro de su raíz fija (C:\estudio; AGY_WORKER_ROOT solo para tests). */
+export function cwdAllowsWorkers(cwd: string): boolean {
+  const rel = path.relative(path.resolve(process.env.AGY_WORKER_ROOT || "C:\\estudio"), path.resolve(cwd));
+  return !rel.startsWith("..") && !path.isAbsolute(rel);
 }
 
 export class WorkerValidationError extends Error {}
@@ -182,7 +190,13 @@ export async function importWorkers(dir: string = process.env.AGY_WORKERS_DIR ||
         acc = (await db.select().from(schema.agyAccounts).where(eq(schema.agyAccounts.id, id)))[0];
       }
       const has = await db.select().from(schema.agyWorkers).where(eq(schema.agyWorkers.accountId, acc.id)).then((r) => r[0]);
-      if (!has) await db.insert(schema.agyWorkers).values({ id: randomUUID(), accountId: acc.id, port, keyPath: path.join(dir, `${cfg.account}.key`), enabled: 1 });
+      const keyPath = path.join(dir, `${cfg.account}.key`);
+      if (!has) await db.insert(schema.agyWorkers).values({ id: randomUUID(), accountId: acc.id, port, keyPath, enabled: 1 });
+      // Reregistrar con otro puerto/carpeta: se actualiza (si no, el viejo queda "caído" para siempre).
+      else if (has.port !== port || has.keyPath !== keyPath) {
+        await db.update(schema.agyWorkers).set({ port, keyPath }).where(eq(schema.agyWorkers.id, has.id));
+        health.delete(has.id);
+      }
       imported.push({ account: cfg.account, port, accountCreated, workerCreated: !has });
     } catch (err) {
       skipped.push({ file, error: (err as Error).message.slice(0, 200) });
@@ -213,7 +227,7 @@ const isBlocked = (v: AccountView, now: number) => !!v.quotaBlockedUntil && Date
 const poolPct = (v: AccountView) => Math.max(v.poolUsage.short.pct ?? 0, v.poolUsage.long.pct ?? 0);
 
 function usable(c: Candidate, now: number, ex: AgyExclude): boolean {
-  return !isBlocked(c.view, now) && !ex.pools?.has(c.pool) && !ex.accounts?.has(c.view.id);
+  return !isBlocked(c.view, now) && !ex.pools?.has(c.pool) && !ex.accounts?.has(c.view.id) && !(ex.localOnly && c.worker);
 }
 
 function skipForNow(c: Candidate, now: number): boolean {

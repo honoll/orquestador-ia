@@ -103,6 +103,18 @@ describe("trabajador agy", () => {
     await again.text(); // termina el paso antes del siguiente test
   }, 20_000);
 
+  it("/run da un id de corrida; /cancel con un id viejo no mata la corrida actual, con el suyo sí", async () => {
+    const first = await run({ prompt: "LENTO", cwd: root });
+    const runId = first.headers.get("x-run-id");
+    expect(runId).toMatch(/^[0-9a-f-]{36}$/);
+    const cancel = (b: unknown) => fetch(`${base}/cancel`, { method: "POST", headers: { ...auth, "Content-Type": "application/json" }, body: JSON.stringify(b) }).then((r) => r.json());
+    expect(await cancel({ runId: "00000000-0000-0000-0000-000000000000" })).toEqual({ cancelled: false });
+    expect(((await (await fetch(`${base}/health`, { headers: auth })).json()) as { busy: boolean }).busy).toBe(true);
+    expect(await cancel({ runId })).toEqual({ cancelled: true });
+    const evs = await events(first);
+    expect(evs.at(-1)?.event).toBe("worker:done");
+  }, 20_000);
+
   it("timeoutSec mata agy y reporta timedOut", async () => {
     const evs = await events(await run({ prompt: "LENTO", cwd: root, timeoutSec: 1 }));
     expect(evs.at(-1)).toMatchObject({ event: "worker:done", timedOut: true });

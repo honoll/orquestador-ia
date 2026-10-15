@@ -1,6 +1,7 @@
 // Trabajador agy por usuario de Windows (F10). Uso: node worker.mjs --account <cuenta> --port <n>
 // Solo escucha en 127.0.0.1; toda petición exige `Authorization: Bearer <llave>` (la llave nunca se imprime).
 import { spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
@@ -74,7 +75,9 @@ export function createWorker({ account, key, root = "C:\\estudio", agyPath = "C:
     if (!cwd) return send(res, 400, { error: "cwd inválido: debe existir y estar dentro de " + root });
     if (!busy.tryAcquire()) return send(res, 409, { error: "ocupado: un paso a la vez" });
 
-    res.writeHead(200, { "Content-Type": "application/x-ndjson" });
+    // El id liga /cancel a ESTA corrida: un cancel viejo de otro plan no puede matar la siguiente.
+    const runId = randomUUID();
+    res.writeHead(200, { "Content-Type": "application/x-ndjson", "X-Run-Id": runId });
     const write = (o) => res.write(JSON.stringify(o) + "\n");
     let endsWithNewline = true;
     let timedOut = false;
@@ -87,7 +90,7 @@ export function createWorker({ account, key, root = "C:\\estudio", agyPath = "C:
       env: withoutSecrets(process.env),
       stdio: ["pipe", "pipe", "pipe"],
     });
-    current = child;
+    current = { child, runId };
     const timer = setTimeout(() => {
       timedOut = true;
       killTree(child);
@@ -141,9 +144,15 @@ export function createWorker({ account, key, root = "C:\\estudio", agyPath = "C:
       return;
     }
     if (req.method === "POST" && url.pathname === "/cancel") {
-      if (!current) return send(res, 200, { cancelled: false });
-      killTree(current);
-      return send(res, 200, { cancelled: true });
+      // Cuerpo opcional { runId }: sin él mata lo que corra (compatibilidad); con él, solo si coincide.
+      readBody(req).then((raw) => {
+        let runId;
+        try { runId = raw ? JSON.parse(raw).runId : undefined; } catch { /* sin JSON = sin id */ }
+        if (!current || (runId !== undefined && runId !== current.runId)) return send(res, 200, { cancelled: false });
+        killTree(current.child);
+        send(res, 200, { cancelled: true });
+      }, (err) => send(res, err.status ?? 400, { error: "cuerpo inválido" }));
+      return;
     }
     send(res, 404, { error: "no existe" });
   });

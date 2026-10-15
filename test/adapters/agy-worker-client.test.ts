@@ -20,7 +20,7 @@ const AGY_LINES = [
 ].map((o) => JSON.stringify(o) + "\n");
 
 interface Seen { path: string; auth?: string; body?: any }
-let mode: "ok" | "quota" | "500" | "409" | "hang" | "cut" = "ok";
+let mode: "ok" | "quota" | "500" | "409" | "400" | "401" | "hang" | "cut" = "ok";
 const seen: Seen[] = [];
 let server: http.Server;
 let port: number;
@@ -38,7 +38,9 @@ beforeAll(async () => {
       if (req.url === "/cancel") { res.writeHead(200); res.end(JSON.stringify({ cancelled: true })); return; }
       if (mode === "500") { res.writeHead(500); res.end(JSON.stringify({ error: "error interno" })); return; }
       if (mode === "409") { res.writeHead(409); res.end(JSON.stringify({ error: "ocupado" })); return; }
-      res.writeHead(200, { "Content-Type": "application/x-ndjson" });
+      if (mode === "400") { res.writeHead(400); res.end(JSON.stringify({ error: "cwd inválido" })); return; }
+      if (mode === "401") { res.writeHead(401); res.end("{}"); return; }
+      res.writeHead(200, { "Content-Type": "application/x-ndjson", "X-Run-Id": "run-123" });
       if (mode === "hang") { res.write(AGY_LINES[0]); return; }
       if (mode === "cut") { res.write(AGY_LINES[0]); setTimeout(() => res.destroy(), 30); return; }
       if (mode === "quota") {
@@ -125,6 +127,33 @@ describe("cliente del trabajador agy", () => {
     expect(out.exitCode).toBeNull();
     await new Promise((r) => setTimeout(r, 50));
     expect(seen.some((s) => s.path === "/cancel")).toBe(true);
+  });
+
+  it("kill después de terminar no llama /cancel (no puede parar otro paso del trabajador)", async () => {
+    const h = runOnWorker({ port, keyPath }, body, { onLog: () => {} });
+    expect((await h.promise).exitCode).toBe(0);
+    h.kill();
+    await new Promise((r) => setTimeout(r, 50));
+    expect(seen.some((s) => s.path === "/cancel")).toBe(false);
+  });
+
+  it("kill manda a /cancel el id de corrida que dio el trabajador", async () => {
+    mode = "hang";
+    const h = runOnWorker({ port, keyPath }, body, { onLog: () => {} });
+    await new Promise((r) => setTimeout(r, 50));
+    h.kill();
+    await h.promise;
+    await new Promise((r) => setTimeout(r, 50));
+    expect(seen.find((s) => s.path === "/cancel")?.body).toEqual({ runId: "run-123" });
+  });
+
+  it("el error trae el código HTTP (400/401) y sin respuesta no trae ninguno", async () => {
+    mode = "400";
+    const e400 = await runOnWorker({ port, keyPath }, body, { onLog: () => {} }).promise.catch((e) => e);
+    expect(e400).toMatchObject({ status: 400 });
+    expect(e400.message).toContain("cwd inválido");
+    mode = "401";
+    expect(await runOnWorker({ port, keyPath }, body, { onLog: () => {} }).promise.catch((e) => e)).toMatchObject({ status: 401 });
   });
 
   it("tope de tiempo del cliente: cancela y marca timedOut", async () => {

@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import {
-  listAccounts, createAccount, activateAccount, updateAccount, deleteAccount, getActiveAccount, AccountValidationError,
+  listAccounts, createAccount, activateAccount, updateAccount, deleteAccount, getActiveAccount, AccountValidationError, AccountConflictError,
 } from "../agy-accounts.js";
 import { resolveAgyPath } from "../../lib/agy-path.js";
 import { openAgyTerminal } from "../../lib/agy-terminal.js";
@@ -45,6 +45,7 @@ app.post("/:id/activate", async (c) => {
     await activateAccount(c.req.param("id"));
     return c.body(null, 204);
   } catch (err) {
+    if (err instanceof AccountConflictError) return c.json({ error: err.message }, 409);
     const f = fail(err);
     return c.json({ error: f.error }, f.status === 400 ? 404 : 500);
   }

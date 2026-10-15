@@ -21,6 +21,8 @@ export interface AccountView {
   poolUsage: { short: WindowUsage; long: WindowUsage };
   usage: { short: WindowUsage; long: WindowUsage };
   warn: { warn: boolean; reason: string | null };
+  /** Corre en un trabajador (otro usuario de Windows): no se puede activar como local. */
+  hasWorker: boolean;
 }
 
 async function json<T>(res: Response): Promise<T> {

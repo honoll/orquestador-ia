@@ -5,7 +5,7 @@ import { getAdapter } from "../adapters/registry.js";
 import { broadcast } from "./ws.js";
 import { claudeProfileManager } from "../adapters/claude/profile-manager.js";
 import { recordAgyCall, NoActiveAccountError } from "./agy-accounts.js";
-import { pickWorker, agyAvailability, markWorkerHealth, markWorkerBusy, tagLease, type AgyLease } from "./agy-workers.js";
+import { pickWorker, agyAvailability, markWorkerHealth, markWorkerBusy, tagLease, cwdAllowsWorkers, type AgyLease } from "./agy-workers.js";
 import { WorkerUnavailableError } from "../adapters/agy/worker-client.js";
 import pino from "pino";
 
@@ -40,9 +40,9 @@ export interface StepRunOptions {
 }
 
 /** No quedó cuenta de agy para el paso: cancelado, sin cuentas, todas las bolsas sin cuota (pausa) o trabajadores caídos. */
-async function agyNoAccount(o: { planId: string; stepId: string; lastQuotaLabel: string | null; lastError: string | null; tokensUsed: number }): Promise<StepOutcome> {
+async function agyNoAccount(o: { planId: string; stepId: string; lastQuotaLabel: string | null; lastError: string | null; tokensUsed: number; localOnly: boolean }): Promise<StepOutcome> {
   const { planId, stepId, tokensUsed } = o;
-  const avail = await agyAvailability();
+  const avail = await agyAvailability(Date.now(), { localOnly: o.localOnly });
   if (avail.total > 0 && avail.usable === 0) {
     const msg = `${QUOTA_PAUSE_PREFIX}: todas las bolsas de agy están sin cuota${o.lastQuotaLabel ? ` (última cuenta: "${o.lastQuotaLabel}")` : ""}; vuelve a ejecutar el plan cuando se libere alguna.`;
     await db.update(schema.planSteps).set({ status: "pending", errorMessage: msg }).where(eq(schema.planSteps.id, stepId));
@@ -97,6 +97,7 @@ async function runPlanStepInner(options: StepRunOptions): Promise<StepOutcome> {
   const downAccounts = new Set<string>();
   let preLease = options.agyLease ?? null;
   let lastQuotaLabel: string | null = null;
+  const localOnly = isAgy && !cwdAllowsWorkers(cwd);
 
   let sessionId = step.sessionId ?? undefined;
   let lastError: string | null = null;
@@ -119,13 +120,13 @@ async function runPlanStepInner(options: StepRunOptions): Promise<StepOutcome> {
 
     let lease: AgyLease | null = null;
     if (isAgy) {
-      const ex = { pools: quotaPools, accounts: downAccounts };
+      const ex = { pools: quotaPools, accounts: downAccounts, localOnly };
       lease = preLease ?? await pickWorker(Date.now(), ex);
       preLease = null;
       if (lease) tagLease(lease.accountId, step.description, step.model ?? null);
       if (!lease) {
         if ((await agyAvailability(Date.now(), ex)).usable > 0) return requeue(planId, stepId, tokensUsed, attempt);
-        return agyNoAccount({ planId, stepId, lastQuotaLabel, lastError, tokensUsed });
+        return agyNoAccount({ planId, stepId, lastQuotaLabel, lastError, tokensUsed, localOnly });
       }
     }
 
@@ -290,9 +291,11 @@ async function runPlanStepInner(options: StepRunOptions): Promise<StepOutcome> {
       if (lease && err instanceof WorkerUnavailableError) {
         // El trabajador no tomó el paso: no es fallo del paso, se prueba otra cuenta.
         downAccounts.add(lease.accountId);
-        if (err.status === 409) {
-          // Ocupado (p. ej. un trabajo huérfano tras reiniciar): enfriamiento corto y no cuenta como intento, sin run fallido.
-          if (lease.worker) markWorkerBusy(lease.worker.id);
+        // Sin respuesta, 401 o 5xx = caído (60 s, para todos). 409 = ocupado. Otro 4xx (400/413) es del paso:
+        // se salta esa cuenta solo aquí, sin run fallido; si ninguna lo toma, el paso falla una vez con este error.
+        const down = err.status === undefined || err.status === 401 || err.status >= 500;
+        if (!down) {
+          if (err.status === 409 && lease.worker) markWorkerBusy(lease.worker.id);
           await db.update(schema.planSteps).set({ runId: prevRunId }).where(eq(schema.planSteps.id, stepId));
           linkedRunId = prevRunId;
           await db.delete(schema.runs).where(eq(schema.runs.id, runId));

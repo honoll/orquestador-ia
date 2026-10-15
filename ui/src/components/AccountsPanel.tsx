@@ -49,7 +49,16 @@ function AccountCard({ a }: { a: AccountView }) {
         <span className="min-w-0 truncate text-text-primary">{a.label}</span>
         {a.active && <span className="text-ok">activa</span>}
         <span className="ml-auto flex flex-wrap gap-x-2">
-          {!a.active && <button className="hover:text-text-primary" onClick={() => activate.mutate()}>usar esta</button>}
+          {!a.active && (
+            <button
+              className="hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:text-inherit"
+              disabled={a.hasWorker}
+              title={a.hasWorker ? "Tiene trabajador (otro usuario de Windows): ya corre pasos de plan y no puede ser la cuenta local" : undefined}
+              onClick={() => activate.mutate()}
+            >
+              usar esta
+            </button>
+          )}
           <button
             className="hover:text-err"
             onClick={() => { if (confirm(`¿Eliminar la cuenta "${a.label}" y su historial de uso?`)) remove.mutate(); }}
@@ -70,6 +79,7 @@ function AccountCard({ a }: { a: AccountView }) {
         </div>
       </details>
       {update.error && <p className="text-err">{(update.error as Error).message}</p>}
+      {activate.error && <p className="break-words text-err">{(activate.error as Error).message}</p>}
     </li>
   );
 }
