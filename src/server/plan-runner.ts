@@ -7,6 +7,7 @@ import { claudeProfileManager } from "../adapters/claude/profile-manager.js";
 import { recordAgyCall, NoActiveAccountError } from "./agy-accounts.js";
 import { pickWorker, agyAvailability, markWorkerHealth, markWorkerBusy, tagLease, cwdAllowsWorkers, type AgyLease } from "./agy-workers.js";
 import { WorkerUnavailableError } from "../adapters/agy/worker-client.js";
+import { parseStepStatus } from "./step-status.js";
 import pino from "pino";
 
 const log = pino({ name: "plan-runner" });
@@ -85,7 +86,7 @@ async function runPlanStepInner(options: StepRunOptions): Promise<StepOutcome> {
   if (!adapter) throw new Error(`Unknown adapter: ${step.adapter}`);
 
   await db.update(schema.planSteps)
-    .set({ status: "running", startedAt: new Date().toISOString(), errorMessage: null })
+    .set({ status: "running", startedAt: new Date().toISOString(), errorMessage: null, statusDetail: null })
     .where(eq(schema.planSteps.id, stepId));
 
   broadcast({ type: "plan:step", planId, stepId, status: "running", adapter: step.adapter, timestamp: new Date().toISOString() } as any);
@@ -233,10 +234,23 @@ async function runPlanStepInner(options: StepRunOptions): Promise<StepOutcome> {
         .set({ status: succeeded ? "succeeded" : "failed", updatedAt: new Date().toISOString() })
         .where(eq(schema.tasks.id, taskId));
 
+      // F11: un paso con rol debe cerrar con su estado final; bloqueado, necesita o sin estado → failed sin reintento.
+      const finalStatus = succeeded && step.role ? parseStepStatus(result.summary || result.stdout) : null;
+      if (succeeded && step.role && finalStatus?.kind !== "terminado") {
+        const statusDetail = finalStatus ? (finalStatus.detalle ?? "(sin detalle)") : "sin estado final";
+        const msg = finalStatus ? `${finalStatus.kind}: ${statusDetail}` : statusDetail;
+        await db.update(schema.planSteps)
+          .set({ status: "failed", result: result.summary || result.stdout.slice(0, 4000), errorMessage: msg, statusDetail, finishedAt: new Date().toISOString() })
+          .where(eq(schema.planSteps.id, stepId));
+        broadcast({ type: "plan:step", planId, stepId, status: "failed", adapter: step.adapter, error: msg, timestamp: new Date().toISOString() } as any);
+        return { status: "failed", tokensUsed };
+      }
+
       if (succeeded) {
         await db.update(schema.planSteps)
           .set({
             status: "succeeded",
+            statusDetail: finalStatus?.detalle ?? null,
             runId,
             result: result.summary || result.stdout.slice(0, 4000),
             costUsd: result.costUsd,

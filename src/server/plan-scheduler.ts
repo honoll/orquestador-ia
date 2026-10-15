@@ -8,6 +8,7 @@ import { startWatch, stopWatch } from "./file-watcher.js";
 import { runPlanStep, type StepOutcome } from "./plan-runner.js";
 import { agyAvailability, pickWorker, waitAgyRelease, cwdAllowsWorkers, type AgyLease } from "./agy-workers.js";
 import { guardStep } from "./plan-guard.js";
+import { getRole } from "./roles.js";
 import { getAdapter } from "../adapters/registry.js";
 import { PLANNER_MODEL } from "../config/models.js";
 import {
@@ -194,7 +195,7 @@ export async function runPlanDag(planId: string, cwd: string, opts: { mode?: "al
           planId,
           stepId: step.id,
           cwd,
-          promptOverride: buildStepPrompt(row.prompt, deps),
+          promptOverride: buildStepPrompt(row.prompt, deps, undefined, stepRole(row.role)),
           // Si cancelaron entre el arranque del paso y el spawn, se mata en cuanto haya proceso.
           onKillRegistered: (kill) => { stepKills.push(kill); registerKill(run, kill); },
           agyLease,
@@ -296,6 +297,15 @@ export async function runPlanDag(planId: string, cwd: string, opts: { mode?: "al
   }
 }
 
+/** Instrucciones del rol del paso; si su archivo ya no existe o es inválido, al menos se pide el estado final (el runner lo exige). */
+function stepRole(id: string | null): { nombre: string; body: string } | undefined {
+  if (!id) return undefined;
+  return getRole(id) ?? {
+    nombre: id,
+    body: 'Termina tu respuesta con una sola línea de estado: <<<ESTADO terminado>>>, <<<ESTADO bloqueado {"detalle":"…"}>>> o <<<ESTADO necesita {"detalle":"…"}>>>.',
+  };
+}
+
 /** Opus 5.5 junta los resultados en la respuesta final. Asume que el plan no tiene pasos corriendo. */
 export async function runSynthesis(planId: string, run?: ActiveRun): Promise<void> {
   const plan = await getPlan(planId);
@@ -314,7 +324,7 @@ export async function runSynthesis(planId: string, run?: ActiveRun): Promise<voi
   const keyById = new Map(dag.map((d) => [d.id, d.key]));
   const prompt = buildSynthesisPrompt(
     plan.description,
-    rows.filter((r) => r.status === "succeeded").map((r) => ({ key: keyById.get(r.id)!, description: r.description, adapter: r.adapter, result: r.result })),
+    rows.filter((r) => r.status === "succeeded").map((r) => ({ key: keyById.get(r.id)!, description: r.description, adapter: r.adapter, result: r.result, role: r.role, statusDetail: r.statusDetail })),
   );
 
   const claude = getAdapter("claude");

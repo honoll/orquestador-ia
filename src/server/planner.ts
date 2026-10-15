@@ -5,6 +5,7 @@ import os from "node:os";
 import { CLAUDE_ISOLATION_ARGS, READ_ONLY_DISALLOWED_TOOLS } from "../adapters/claude/execute.js";
 import { validateDag } from "./plan-dag.js";
 import { CLAUDE_STEP_TEMPLATE, FLASH_STEP_TEMPLATE } from "./step-prompt-templates.js";
+import { getRole, loadRoles, type RoleDef } from "./roles.js";
 import { MODEL_CATALOG, PLANNER_MODEL, ROUTABLE_ADAPTERS, plannerAdapters, type AdapterType } from "../config/models.js";
 
 export interface PlanStep {
@@ -18,6 +19,8 @@ export interface PlanStep {
   model: string;
   reason: string;
   prompt: string;
+  /** F11: id del rol; null/ausente en pasos sin rol (trivial, revisión crítica, planes viejos). */
+  role?: string | null;
 }
 
 export interface GeneratedPlan {
@@ -72,6 +75,26 @@ function defaultModelFor(adapter: AdapterType, writes: boolean): string {
   return MODEL_CATALOG[adapter].defaultModel;
 }
 
+const WRITES_LABEL = { true: "yes", false: "no", salidas: "outputs folder only" } as const;
+
+/** Primera viñeta de "## Qué haces" del rol: qué hace, en una línea. */
+function roleSummary(r: RoleDef): string {
+  const m = /^## Qué haces\s*(?:- )?(.+)$/m.exec(r.body);
+  return (m?.[1] ?? r.nombre).trim();
+}
+
+/** Catálogo de roles para el Jefe (F11); vacío si no hay roles válidos. */
+function rolesSection(): string {
+  const roles = loadRoles();
+  if (!roles.length) return "";
+  const list = roles.map((r) => `- ${r.id} (${r.nombre}): ${roleSummary(r)} Writes: ${WRITES_LABEL[String(r.escribe) as keyof typeof WRITES_LABEL]}.`).join("\n");
+  return `Agent roles (assign one to EVERY step with "role"; the role decides the model and whether the step may write, and the agent receives the role's own instructions, so the step prompt only describes the specific task):
+${list}
+- Set "dificil": true only for dev steps that are truly hard (architecture, multi-file refactors, tricky bugs).
+
+`;
+}
+
 export function routingSystem(): string {
   return `You are a planning agent for a local AI orchestrator that routes tasks to the best CLI tool.
 
@@ -79,7 +102,7 @@ Available adapters and their strengths:
 ${buildAdaptersSection()}
 
 ${modelGuidance()}
-Rules:
+${rolesSection()}Rules:
 - Break the request into 2-8 concrete steps that form a dependency graph (DAG).
 - Give each step a short unique "id" (s1, s2, ...). "dependsOn" lists ONLY the ids whose output this step needs; steps that do not need each other must not depend on each other, so they can run in parallel.
 - "writes": false for steps that only read, analyze, research or review; true for steps that create or edit files or run commands that change the project. Writing steps run one at a time; reading steps run in parallel.
@@ -98,6 +121,8 @@ Respond ONLY with valid JSON, no markdown fences:
       "writes": false,
       "estimatedTokens": 0,
       "description": "Short label (< 60 chars)",
+      "role": "role id",
+      "dificil": false,
       "adapter": "${plannerAdapters().join("|")}",
       "model": "one of the valid model ids for that adapter, or empty string for default",
       "reason": "One sentence explaining why this adapter",
@@ -178,7 +203,18 @@ export function normalizeSteps(raw: unknown[]): PlanStep[] {
       throw new Error(`El planner eligió un adapter no permitido: ${adapter}`);
     }
     let rawModel = String(s.model ?? "");
-    if (!(plannerAdapters() as string[]).includes(adapter)) {
+    let writes = s.writes !== false;
+    // F11: con rol, modelo y escritura salen del rol y el paso va a agy (claude si agy no está permitido).
+    let role: RoleDef | null = null;
+    if (typeof s.role === "string" && s.role.trim()) {
+      role = getRole(s.role.trim()) ?? getRole(writes ? "dev" : "lector");
+    }
+    if (role) {
+      const allowed = plannerAdapters();
+      adapter = allowed.includes("agy") ? "agy" : allowed.includes("claude") ? "claude" : allowed[0];
+      writes = role.escribe !== false;
+      rawModel = s.dificil === true && role.modeloDificil ? role.modeloDificil : role.modelo;
+    } else if (!(plannerAdapters() as string[]).includes(adapter)) {
       const allowed = plannerAdapters();
       const to = allowed.includes("agy") ? "agy" : allowed[0];
       console.warn(`[planner] adapter ${adapter} excluido (PLANNER_ADAPTERS); paso ${i + 1} reasignado a ${to}`);
@@ -192,13 +228,14 @@ export function normalizeSteps(raw: unknown[]): PlanStep[] {
       stepIndex: i,
       key: String(s.id ?? "").trim() || `s${i + 1}`,
       dependsOn: Array.isArray(s.dependsOn) ? s.dependsOn.map(String) : [],
-      writes: s.writes !== false,
+      writes,
       estimatedTokens: Number.isFinite(Number(s.estimatedTokens)) && Number(s.estimatedTokens) > 0 ? Math.round(Number(s.estimatedTokens)) : null,
       description: String(s.description ?? `Paso ${i + 1}`),
       adapter: adapter as AdapterType,
-      model: validModel ? model : defaultModelFor(adapter as AdapterType, s.writes !== false),
+      model: validModel ? model : defaultModelFor(adapter as AdapterType, writes),
       reason: String(s.reason ?? ""),
       prompt: String(s.prompt ?? s.description ?? ""),
+      role: role?.id ?? null,
     };
   });
 }

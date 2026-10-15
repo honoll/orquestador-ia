@@ -89,6 +89,10 @@ export const planSteps = sqliteTable("plan_steps", {
   guardFlags: text("guard_flags"),
   // 1 = el usuario aprobó correr el paso aunque la guardia lo marcó.
   guardApproved: integer("guard_approved").notNull().default(0),
+  // F11: id del rol (roles/<id>.md); null en pasos sin rol (planes viejos, revisión crítica).
+  role: text("role"),
+  // F11: detalle del estado final del agente (o "sin estado final").
+  statusDetail: text("status_detail"),
 });
 
 export const runs = sqliteTable("runs", {

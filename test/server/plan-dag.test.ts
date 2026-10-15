@@ -161,6 +161,31 @@ describe("prompts", () => {
   });
 });
 
+describe("prompts con rol (F11)", () => {
+  const role = { nombre: "DEV", body: "## Identidad\nEres DEV." };
+  it("el prompt del paso empieza con el cuerpo del rol y termina con la tarea", () => {
+    const p = buildStepPrompt("haz X", [{ key: "s1", description: "leer", result: "R1" }], "n0nce", role);
+    expect(p.startsWith("INSTRUCCIONES DE TU ROL (DEV):\n## Identidad\nEres DEV.")).toBe(true);
+    expect(p).toContain("<<<RESULTADO s1 #n0nce>>>");
+    expect(p.indexOf("Eres DEV.")).toBeLessThan(p.indexOf("<<<RESULTADO s1"));
+    expect(p.endsWith("TU TAREA (solo esta; no hagas commit ni push ni sigas flujos globales que no se pidan aquí):\nhaz X")).toBe(true);
+  });
+  it("con rol y sin dependencias también lleva el encabezado de la tarea", () => {
+    const p = buildStepPrompt("haz X", [], "n0nce", role);
+    expect(p).toBe("INSTRUCCIONES DE TU ROL (DEV):\n## Identidad\nEres DEV.\n\nTU TAREA (solo esta; no hagas commit ni push ni sigas flujos globales que no se pidan aquí):\nhaz X");
+  });
+  it("la síntesis muestra rol y estado por paso; sin rol queda igual", () => {
+    const p = buildSynthesisPrompt("pedido", [
+      { key: "s1", description: "leer", adapter: "agy", result: "R1", role: "lector", statusDetail: "3 archivos" },
+      { key: "s2", description: "hacer", adapter: "agy", result: "R2", role: "dev", statusDetail: null },
+      { key: "s3", description: "revisar", adapter: "claude", result: "R3" },
+    ], "n0nce");
+    expect(p).toContain("### s1 — leer (agy · rol lector · estado terminado: 3 archivos)\nR1");
+    expect(p).toContain("### s2 — hacer (agy · rol dev · estado terminado)\nR2");
+    expect(p).toContain("### s3 — revisar (claude)\nR3");
+  });
+});
+
 describe("splitSynthesis / bloque MEMORIA", () => {
   const block = (json: string) => ["<<<MEMORIA>>>", json, "<<<FIN MEMORIA>>>"].join("\n");
   it("separa el bloque JSON y lo quita de la respuesta", () => {
