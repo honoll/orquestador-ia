@@ -8,6 +8,8 @@ import { recordAgyCall, NoActiveAccountError } from "./agy-accounts.js";
 import { pickWorker, agyAvailability, markWorkerHealth, markWorkerBusy, tagLease, cwdAllowsWorkers, type AgyLease } from "./agy-workers.js";
 import { WorkerUnavailableError } from "../adapters/agy/worker-client.js";
 import { parseStepStatus } from "./step-status.js";
+import { getRole } from "./roles.js";
+import { ensureOutputsDir, ensureGitignore, gitSnapshot, changedOutside } from "./outputs.js";
 import pino from "pino";
 
 const log = pino({ name: "plan-runner" });
@@ -80,7 +82,20 @@ async function runPlanStepInner(options: StepRunOptions): Promise<StepOutcome> {
   const stepRows = await db.select().from(schema.planSteps).where(eq(schema.planSteps.id, stepId));
   if (stepRows.length === 0) throw new Error(`Step ${stepId} not found`);
   const step = stepRows[0];
-  const prompt = options.promptOverride ?? step.prompt;
+  let prompt = options.promptOverride ?? step.prompt;
+  const planLog = (stream: "stdout" | "stderr", data: string) =>
+    broadcast({ type: "plan:log", planId, stepId, stream, data, timestamp: new Date().toISOString() } as any);
+
+  // F11: los roles que escriben "salidas" (imagen) guardan todo en una carpeta propia del plan, dentro del proyecto.
+  let gitBefore: Set<string> | null = null;
+  if (step.role && getRole(step.role)?.escribe === "salidas") {
+    try {
+      if (ensureGitignore(cwd)) planLog("stdout", "\n[orquestador] se agregó .orquestador/ al .gitignore del proyecto\n");
+      const outDir = ensureOutputsDir(cwd, planId);
+      prompt += `\n\nCARPETA DE SALIDAS de este plan: ${outDir}\nGuarda TODO lo que generes únicamente aquí; no escribas ni modifiques nada fuera de esa carpeta.`;
+      gitBefore = await gitSnapshot(cwd);
+    } catch (err) { log.error({ err, stepId }, "No se pudo preparar la carpeta de salidas"); }
+  }
 
   const adapter = getAdapter(step.adapter);
   if (!adapter) throw new Error(`Unknown adapter: ${step.adapter}`);
@@ -246,11 +261,22 @@ async function runPlanStepInner(options: StepRunOptions): Promise<StepOutcome> {
         return { status: "failed", tokensUsed };
       }
 
+      let statusDetail = finalStatus?.detalle ?? null;
+      if (succeeded && gitBefore) {
+        const after = await gitSnapshot(cwd);
+        const outside = after ? changedOutside(gitBefore, after) : [];
+        if (outside.length) {
+          const warn = `AVISO: el paso de salidas tocó archivos fuera de su carpeta: ${outside.slice(0, 10).join(", ")}${outside.length > 10 ? ` y ${outside.length - 10} más` : ""}`;
+          planLog("stderr", `\n[orquestador] ${warn}\n`);
+          statusDetail = statusDetail ? `${statusDetail} — ${warn}` : warn;
+        }
+      }
+
       if (succeeded) {
         await db.update(schema.planSteps)
           .set({
             status: "succeeded",
-            statusDetail: finalStatus?.detalle ?? null,
+            statusDetail,
             runId,
             result: result.summary || result.stdout.slice(0, 4000),
             costUsd: result.costUsd,

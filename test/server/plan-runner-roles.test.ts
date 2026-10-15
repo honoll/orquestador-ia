@@ -83,3 +83,39 @@ describe("runPlanStep: estado final de pasos con rol (F11)", () => {
     expect(step.statusDetail).toBeNull();
   });
 });
+
+describe("runPlanStep: carpeta de salidas del rol imagen (F11)", () => {
+  it("prompt con la carpeta, .gitignore y aviso si toca archivos fuera (git)", async () => {
+    const { execFileSync } = await import("node:child_process");
+    try { execFileSync("git", ["--version"], { stdio: "ignore" }); } catch { return; }
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "plan-"));
+    execFileSync("git", ["init", "-q"], { cwd });
+    const planId = randomUUID();
+    const stepId = randomUUID();
+    await db.insert(schema.plans).values({ id: planId, description: "p", status: "running" });
+    await db.insert(schema.planSteps).values({ id: stepId, planId, stepIndex: 0, description: "d", adapter: "agy", prompt: "haz logo", status: "pending", role: "imagen" });
+    h.execute.mockImplementation(async (ctx: any) => {
+      fs.writeFileSync(path.join(cwd, "colado.js"), "x");
+      return { ...h.base, summary: 'Listo.\n<<<ESTADO terminado {"detalle":"1 imagen"}>>>', prompt: ctx.prompt };
+    });
+    const out = await runPlanStep({ planId, stepId, cwd });
+    const sent = h.execute.mock.calls[0][0].prompt as string;
+    expect(sent).toContain(path.join(cwd, ".orquestador", "salidas", planId));
+    expect(sent).toContain("únicamente aquí");
+    expect(fs.readFileSync(path.join(cwd, ".gitignore"), "utf8")).toContain(".orquestador/");
+    const step = await db.select().from(schema.planSteps).where(eq(schema.planSteps.id, stepId)).then((r) => r[0]);
+    expect(out.status).toBe("succeeded");
+    expect(step.statusDetail).toContain("colado.js");
+  });
+
+  it("roles que no escriben salidas no crean carpeta", async () => {
+    reply('<<<ESTADO terminado {"detalle":"ok"}>>>');
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "plan-"));
+    const planId = randomUUID();
+    const stepId = randomUUID();
+    await db.insert(schema.plans).values({ id: planId, description: "p", status: "running" });
+    await db.insert(schema.planSteps).values({ id: stepId, planId, stepIndex: 0, description: "d", adapter: "agy", prompt: "p", status: "pending", role: "dev" });
+    await runPlanStep({ planId, stepId, cwd });
+    expect(fs.existsSync(path.join(cwd, ".orquestador"))).toBe(false);
+  });
+});
