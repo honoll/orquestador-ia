@@ -26,6 +26,8 @@ agy gana `planId`/`stepKey`/`progress` para el cuadro.
 - Todo texto de UI en español de México. Commits en español + línea en blanco + `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`; `git push`. Nunca stagear `.superpowers/` ni `AGENTS.md`.
 - Antes de cada commit: `npm test`, `npm run lint` (0 errores), `npm run typecheck`, `npm run build:ui`. Archivos con Write/Edit (no heredocs en bash: Windows).
 - Pruebas de UI: lógica pura en `test/ui/*.test.ts` (vitest `environment: node`, sin DOM). No probar el canvas con DOM.
+- **Sala limpia (decisión del usuario, 2026-10-15):** la mecánica estilo GBA 3.ª gen. se escribe desde cero a partir de reglas observables (tiempos y comportamientos listados en las tareas). **Prohibido abrir, leer, copiar o traducir** cualquier archivo de `C:\GAMES_N_SHIT\` (incluidos `pokeemerald` y `esmeralda-port`) o de pret/pokeemerald: es código derivado de Nintendo sin licencia. Tampoco usar nombres de símbolos de ese código.
+- Skins en **formato `gen3`**: hoja de 144×32 = 9 cuadros de 16×32 en fila (orden: de pie abajo, arriba, izquierda; caminar abajo 1, abajo 2, arriba 1, arriba 2, izquierda 1, izquierda 2; derecha = espejo de izquierda). Es el formato que el usuario ya tiene en su máquina y el de los sprites originales que generó el propio orquestador.
 - Puerto del orquestador 3110 (no tocarlo en pruebas; usar `ORQUESTADOR_PORT=3111` para revisar visualmente). Trabajadores agy: no tocarlos.
 
 ---
@@ -59,7 +61,7 @@ agy gana `planId`/`stepKey`/`progress` para el cuadro.
 **Interfaces:**
 - Produces: `type Tile = readonly [x: number, y: number]`; `interface Zone { id: string; etiqueta: string; color: string; x: number; y: number; w: number; h: number; fijos?: Record<string, Tile> }`; `interface FloorMap { piso: number; nombre: string; fondo: string; filas: readonly string[]; zonas: readonly Zone[]; elevador: Tile; llegada: Tile; salida?: Tile }`; `FLOORS: readonly FloorMap[]` (índice 0 = piso 1); `floorOf(piso: number): FloorMap`; `isSolid(map, x, y, occupied?: ReadonlySet<string>): boolean`; `key(t: Tile): string` (`"x,y"`); `findPath(map, from: Tile, to: Tile, occupied?): Tile[]` (sin incluir `from`; `[]` si no hay ruta o ya estás); `isNear(a: Tile, b: Tile): boolean`; `zoneSeats(map, zoneId): Tile[]` (asientos `s` dentro del rectángulo que no son puestos fijos); `freeTileIn(map, zone, taken: ReadonlySet<string>): Tile | null`; `zoneAt(map, t): Zone | null`.
 
-Leyenda de las filas: `#` pared · `.` piso · `=` escritorio · `*` planta · `B` librero · `S` sofá · `E` elevador (se pisa) · `s` asiento (se pisa) · `p` salida del jugador (se pisa). Sólidos: `#=*BS`.
+Leyenda de las filas: `#` pared · `.` piso · `=` escritorio · `*` planta · `B` librero · `S` sofá · `|` y `-` mampara de cubículo · `d` puerta (se pisa) · `E` elevador (se pisa) · `s` asiento (se pisa) · `p` salida del jugador (se pisa). Sólidos: `#=*BS|-`. Los pisos tienen pasillos de 2 casillas, cubículos con mamparas abiertos al pasillo y salas con puerta.
 
 - [ ] **Step 1: Escribir la prueba que falla**
 
@@ -86,16 +88,16 @@ describe("mapas de la Oficina", () => {
 
   it("findPath rodea escritorios, va a una vecina libre si el destino es sólido y devuelve [] sin ruta", () => {
     const f = floorOf(2);
-    const p = findPath(f, [3, 4], [3, 7]);
+    const p = findPath(f, [3, 3], [3, 7]); // de un cubículo al de abajo: sale al pasillo y rodea mamparas
     expect(p.at(-1)).toEqual([3, 7]);
     for (const t of p) expect(isSolid(f, ...t)).toBe(false);
-    expect(p.length).toBeGreaterThan(3); // no atraviesa el escritorio de (3,6)
-    const toDesk = findPath(f, [3, 4], [3, 6]); // escritorio: termina junto a él
-    expect(isNear(toDesk.at(-1)!, [3, 6]) || Math.abs(toDesk.at(-1)![0] - 3) + Math.abs(toDesk.at(-1)![1] - 6) === 1).toBe(true);
-    expect(findPath(f, [3, 4], [0, 0])).toEqual([]); // pared rodeada de paredes
-    expect(findPath(f, [3, 4], [3, 4])).toEqual([]);
+    expect(p.length).toBeGreaterThan(6);
+    expect(findPath(f, [3, 3], [3, 8]).at(-1)).toEqual([3, 7]); // escritorio: termina en la única vecina libre
+    expect(findPath(f, [3, 3], [0, 0])).toEqual([]); // pared rodeada de paredes
+    expect(findPath(f, [3, 3], [3, 3])).toEqual([]);
+    const f1 = floorOf(1);
     const occupied = new Set([key([4, 4])]);
-    expect(findPath(f, [3, 4], [5, 4], occupied).some((t) => key(t) === "4,4")).toBe(false);
+    expect(findPath(f1, [3, 4], [5, 4], occupied).some((t) => key(t) === "4,4")).toBe(false);
   });
 
   it("isNear: vecino a 1 casilla incluida la diagonal; la misma casilla no", () => {
@@ -152,7 +154,7 @@ export const FLOORS: readonly FloorMap[] = [
       "#............................#",
       "#.....===............===.....#",
       "#......s..............s......#",
-      "#######.###########.##########",
+      "#######d###########d##########",
       "#............................#",
       "#*...........................#",
       "#..SSSS......SSS......SSSS...#",
@@ -174,21 +176,23 @@ export const FLOORS: readonly FloorMap[] = [
       "##############################",
       "#*.............E............*#",
       "#............................#",
-      "#.===.===.===.....#.===.===..#",
-      "#..s...s...s......#..s...s...#",
-      "#.................#..........#",
-      "#.===.===.===.....#.===......#",
-      "#..s...s...s......#..s.......#",
-      "#.................#..........#",
-      "#.....===.===.....#....B.B...#",
-      "#......s...s......#..........#",
-      "#*................#.........*#",
+      "#.|s.|s.|s.|....######d#######",
+      "#.|==|==|==|....#..........*.#",
+      "#.----------....#..=s=..=s=..#",
+      "#...............#............#",
+      "#.|s.|s.|s.|....#..=s=.......#",
+      "#.|==|==|==|....#............#",
+      "#.----------....#....B.B.....#",
+      "#...............#............#",
+      "#......|s.|s.|..#............#",
+      "#......|==|==|..#............#",
+      "#*.....-------..#...........*#",
       "##############################",
     ],
     zonas: [
-      { id: "dev", etiqueta: "DEV · CUBÍCULOS", color: "#60a5fa", x: 1, y: 2, w: 17, h: 6 },
-      { id: "agentes", etiqueta: "CLAUDE Y CODEX", color: "#e879f9", x: 1, y: 8, w: 17, h: 4, fijos: { claude: [7, 10], codex: [11, 10] } },
-      { id: "qa", etiqueta: "QA · LABORATORIO", color: "#34d399", x: 19, y: 2, w: 10, h: 10 },
+      { id: "dev", etiqueta: "DEV · CUBÍCULOS", color: "#60a5fa", x: 1, y: 3, w: 15, h: 7 },
+      { id: "agentes", etiqueta: "CLAUDE Y CODEX", color: "#e879f9", x: 1, y: 10, w: 15, h: 4, fijos: { claude: [8, 11], codex: [11, 11] } },
+      { id: "qa", etiqueta: "QA · LABORATORIO", color: "#34d399", x: 17, y: 4, w: 12, h: 10 },
     ],
   },
   {
@@ -197,22 +201,22 @@ export const FLOORS: readonly FloorMap[] = [
       "##############################",
       "#*.............E............*#",
       "#............................#",
-      "#.===.===....#....B.B.B.B....#",
-      "#..s...s.....#...............#",
-      "#............#...===.===.....#",
-      "#............#....s...s......#",
-      "#####.#########.##############",
-      "#.===.===....#...===.===.....#",
-      "#..s...s.....#....s...s......#",
-      "#............#...............#",
-      "#*...........#..............*#",
+      "######d#######..######d#######",
+      "#.==...==....#..#.B.B..B.B...#",
+      "#..s....s....#..#............#",
+      "#............#..#..==...==...#",
+      "#*...........#..#...s....s..*#",
+      "######d#######..######d#######",
+      "#.==...==....#..#..==...==...#",
+      "#..s....s....#..#...s....s...#",
+      "#*...........#..#..........*.#",
       "##############################",
     ],
     zonas: [
-      { id: "imagen", etiqueta: "IMAGEN · ESTUDIO", color: "#fb923c", x: 1, y: 2, w: 12, h: 5 },
-      { id: "investigador", etiqueta: "INVESTIGADOR · BIBLIOTECA", color: "#f472b6", x: 14, y: 2, w: 15, h: 5 },
-      { id: "lector", etiqueta: "LECTOR · SALA DE LECTURA", color: "#fbbf24", x: 1, y: 8, w: 12, h: 4 },
-      { id: "redactor", etiqueta: "REDACTOR", color: "#e879f9", x: 14, y: 8, w: 15, h: 4 },
+      { id: "imagen", etiqueta: "IMAGEN · ESTUDIO", color: "#fb923c", x: 1, y: 4, w: 12, h: 4 },
+      { id: "investigador", etiqueta: "INVESTIGADOR · BIBLIOTECA", color: "#f472b6", x: 17, y: 4, w: 12, h: 4 },
+      { id: "lector", etiqueta: "LECTOR · SALA DE LECTURA", color: "#fbbf24", x: 1, y: 9, w: 12, h: 3 },
+      { id: "redactor", etiqueta: "REDACTOR", color: "#e879f9", x: 17, y: 9, w: 12, h: 3 },
     ],
   },
 ];
@@ -224,7 +228,7 @@ export const floorOf = (piso: number): FloorMap => FLOORS[piso - 1];
 // ui/src/office/world/path.ts
 import type { FloorMap, Tile, Zone } from "./types";
 
-const SOLID = "#=*BS";
+const SOLID = "#=*BS|-";
 const DIRS: readonly Tile[] = [[1, 0], [-1, 0], [0, 1], [0, -1]];
 
 export const key = (t: Tile): string => `${t[0]},${t[1]}`;
@@ -364,7 +368,7 @@ describe("colocación de agentes por rol", () => {
     const out = placeAgents(st, new Map());
     const by = Object.fromEntries(out.map((a) => [a.key, a]));
     expect(by.jefe).toMatchObject({ piso: 1, tile: [7, 3], criatura: "jefe" });
-    expect(by.claude).toMatchObject({ piso: 2, tile: [7, 10] });
+    expect(by.claude).toMatchObject({ piso: 2, tile: [8, 11] });
     expect(by["agy:agy2"]).toMatchObject({ piso: 2, criatura: "dev", rol: "dev" });
     expect(by["agy:agy4"]).toMatchObject({ piso: 1, criatura: "agy", working: false });
     expect(by["agy:local"]).toMatchObject({ piso: 3, criatura: "imagen", nombre: "tu cuenta" });
@@ -375,8 +379,8 @@ describe("colocación de agentes por rol", () => {
 
   it("conserva el asiento previo si sigue en la misma zona", () => {
     const st = base([seat("agy2", { working: true, role: "dev" })]);
-    const out = placeAgents(st, new Map([["agy:agy2", { piso: 2, tile: [11, 7] as const }]]));
-    expect(out.find((a) => a.key === "agy:agy2")!.tile).toEqual([11, 7]);
+    const out = placeAgents(st, new Map([["agy:agy2", { piso: 2, tile: [6, 7] as const }]]));
+    expect(out.find((a) => a.key === "agy:agy2")!.tile).toEqual([6, 7]);
   });
 
   it("más agentes que asientos: los sobrantes van a casillas libres de la zona", () => {
@@ -387,12 +391,12 @@ describe("colocación de agentes por rol", () => {
   });
 
   it("planRoute entre pisos pasa por el elevador y aparece en la llegada", () => {
-    const legs = planRoute({ piso: 1, tile: [3, 11] }, { piso: 2, tile: [3, 4] });
+    const legs = planRoute({ piso: 1, tile: [3, 11] }, { piso: 2, tile: [3, 3] });
     expect(legs).toHaveLength(2);
     expect(legs[0].path.at(-1)).toEqual([15, 1]);
     expect(legs[1].path[0]).toEqual([15, 2]);
-    expect(legs[1].path.at(-1)).toEqual([3, 4]);
-    expect(planRoute({ piso: 2, tile: [3, 4] }, { piso: 2, tile: [7, 4] })).toHaveLength(1);
+    expect(legs[1].path.at(-1)).toEqual([3, 3]);
+    expect(planRoute({ piso: 2, tile: [3, 3] }, { piso: 2, tile: [6, 3] })).toHaveLength(1);
   });
 });
 ```
@@ -548,7 +552,7 @@ git commit -m "F12 tarea 2: asiento con plan/paso/avance y colocación de agente
 
 **Interfaces:**
 - Consumes: `CreatureKind` (Task 2).
-- Produces (UI): `type Dir = "down" | "up" | "left" | "right"`; `creatureFrame(kind: CreatureKind, dir: Dir, frame: 0 | 1 | 2, working: boolean): Rect[]` (rects `[x, y, w, h, color]` en una caja de 16×16; usa el tipo `Rect` de `ui/src/lib/office.ts`); `interface SpriteSpec { file: string; frameW: number; frameH: number; frames: number; rows: Record<Dir, number> }`; `interface SkinsConfig { player?: SpriteSpec; roles: Record<string, SpriteSpec>; agents: Record<string, SpriteSpec>; warnings: string[] }`; `resolveSkin(cfg: SkinsConfig, who: { player?: boolean; agentKey?: string; account?: string | null; rol?: string | null; criatura: CreatureKind }): SpriteSpec | null` (prioridad: jugador → `agents[account]` → `agents[agentKey]` → `roles[rol]` → `roles[criatura]` → `null`).
+- Produces (UI): `gen3Frame(dir: Dir, step: 0 | 1 | 2): { index: number; mirror: boolean }` (step 1 = de pie, 0 = paso 1, 2 = paso 2; índices 0–8 en el orden de Global Constraints; `right` usa los de `left` con `mirror: true`); `type Dir = "down" | "up" | "left" | "right"`; `creatureFrame(kind: CreatureKind, dir: Dir, frame: 0 | 1 | 2, working: boolean): Rect[]` (rects `[x, y, w, h, color]` en una caja de 16×16; usa el tipo `Rect` de `ui/src/lib/office.ts`); `interface SpriteSpec { file: string; frameW: number; frameH: number; frames: number; rows: Record<Dir, number>; formato?: "gen3" }` (en `sprites.json`, `{ "file": "x.png", "formato": "gen3" }` basta y el servidor lo expande a `frameW 16, frameH 32, frames 9, rows {down:0,left:0,right:0,up:0}, formato "gen3"`); `interface SkinsConfig { player?: SpriteSpec; roles: Record<string, SpriteSpec>; agents: Record<string, SpriteSpec>; warnings: string[] }`; `resolveSkin(cfg: SkinsConfig, who: { player?: boolean; agentKey?: string; account?: string | null; rol?: string | null; criatura: CreatureKind }): SpriteSpec | null` (prioridad: jugador → `agents[account]` → `agents[agentKey]` → `roles[rol]` → `roles[criatura]` → `null`).
 - Produces (servidor): `spritesDir(): string` (env `OFFICE_SPRITES_DIR`, leído en cada llamada, default `C:\tools\sprites`); `validateSprites(raw: unknown): SkinsConfig`; `SPRITE_FILE = /^[A-Za-z0-9_-]{1,64}\.(png|gif|webp)$/`; rutas `GET /sprites/:file` y `GET /api/office/sprites`.
 
 Criaturas originales (arte propio, nada copiado): un cuerpo base redondo de 16×16 con 3 cuadros por dirección (cuadro 1 = de pie; 0 y 2 = pierna izquierda/derecha adelantada) y rasgos por especie:
@@ -630,7 +634,12 @@ export const CREATURES = Object.keys(BASE) as CreatureKind[];
 import type { CreatureKind } from "../world/placement";
 import type { Dir } from "./creatures";
 
-export interface SpriteSpec { file: string; frameW: number; frameH: number; frames: number; rows: Record<Dir, number> }
+export interface SpriteSpec { file: string; frameW: number; frameH: number; frames: number; rows: Record<Dir, number>; formato?: "gen3" }
+
+const GEN3: Record<"down" | "up" | "left", [walk1: number, stand: number, walk2: number]> = { down: [3, 0, 4], up: [5, 1, 6], left: [7, 2, 8] };
+export function gen3Frame(dir: Dir, step: 0 | 1 | 2): { index: number; mirror: boolean } {
+  return { index: GEN3[dir === "right" ? "left" : dir][step], mirror: dir === "right" };
+}
 export interface SkinsConfig { player?: SpriteSpec; roles: Record<string, SpriteSpec>; agents: Record<string, SpriteSpec>; warnings: string[] }
 export const EMPTY_SKINS: SkinsConfig = { roles: {}, agents: {}, warnings: [] };
 
@@ -674,13 +683,18 @@ const MAX_JSON = 64 * 1024;
 
 export const spritesDir = (): string => process.env.OFFICE_SPRITES_DIR || "C:\\tools\\sprites";
 
-type Spec = { file: string; frameW: number; frameH: number; frames: number; rows: Record<(typeof DIRS)[number], number> };
+type Spec = { file: string; frameW: number; frameH: number; frames: number; rows: Record<(typeof DIRS)[number], number>; formato?: "gen3" };
 export interface SkinsConfig { player?: Spec; roles: Record<string, Spec>; agents: Record<string, Spec>; warnings: string[] }
 
 const int = (v: unknown, min: number, max: number) => Number.isInteger(v) && (v as number) >= min && (v as number) <= max;
 
 function spec(v: unknown, where: string, warnings: string[]): Spec | null {
   const o = v as Record<string, unknown> | null;
+  if (o && o.formato === "gen3") {
+    if (typeof o.file === "string" && SPRITE_FILE.test(o.file)) return { file: o.file, frameW: 16, frameH: 32, frames: 9, rows: { down: 0, left: 0, right: 0, up: 0 }, formato: "gen3" };
+    warnings.push(`${where}: formato gen3 sin "file" válido (.png/.gif/.webp)`);
+    return null;
+  }
   const rows = o?.rows as Record<string, unknown> | undefined;
   const ok = o && typeof o.file === "string" && SPRITE_FILE.test(o.file) && int(o.frameW, 8, 128) && int(o.frameH, 8, 128)
     && int(o.frames, 1, 8) && rows && DIRS.every((d) => int(rows[d], 0, 63));
@@ -789,6 +803,13 @@ describe("sprites.json", () => {
     expect(validateSprites([]).warnings).toEqual(["sprites.json debe ser un objeto"]);
   });
 
+  it("formato gen3: basta file + formato; se expande a 16×32 × 9", () => {
+    const cfg = validateSprites({ roles: { dev: { file: "dev.png", formato: "gen3" }, qa: { formato: "gen3" } } });
+    expect(cfg.roles.dev).toEqual({ file: "dev.png", frameW: 16, frameH: 32, frames: 9, rows: { down: 0, left: 0, right: 0, up: 0 }, formato: "gen3" });
+    expect(cfg.roles.qa).toBeUndefined();
+    expect(cfg.warnings).toHaveLength(1);
+  });
+
   it("sin carpeta o sin sprites.json → vacío sin avisos; JSON roto → aviso", () => {
     expect(readSpritesConfig(path.join(dir, "no"))).toEqual({ roles: {}, agents: {}, warnings: [] });
     fs.writeFileSync(path.join(dir, "sprites.json"), "{roto");
@@ -818,7 +839,7 @@ describe("sprites.json", () => {
 // test/ui/sprites.test.ts
 import { describe, it, expect } from "vitest";
 import { creatureFrame, CREATURES } from "../../ui/src/office/sprites/creatures";
-import { resolveSkin, EMPTY_SKINS, type SpriteSpec } from "../../ui/src/office/sprites/skins";
+import { resolveSkin, gen3Frame, EMPTY_SKINS, type SpriteSpec } from "../../ui/src/office/sprites/skins";
 
 const s = (file: string): SpriteSpec => ({ file, frameW: 16, frameH: 16, frames: 3, rows: { down: 0, left: 1, right: 2, up: 3 } });
 
@@ -840,6 +861,17 @@ describe("criaturas originales", () => {
   });
 });
 
+describe("gen3Frame", () => {
+  it("orden de la hoja gen3; derecha = espejo de izquierda", () => {
+    expect(gen3Frame("down", 1)).toEqual({ index: 0, mirror: false });
+    expect(gen3Frame("up", 1)).toEqual({ index: 1, mirror: false });
+    expect(gen3Frame("down", 0)).toEqual({ index: 3, mirror: false });
+    expect(gen3Frame("up", 2)).toEqual({ index: 6, mirror: false });
+    expect(gen3Frame("left", 2)).toEqual({ index: 8, mirror: false });
+    expect(gen3Frame("right", 1)).toEqual({ index: 2, mirror: true });
+  });
+});
+
 describe("resolveSkin", () => {
   it("prioridad: cuenta → agente → rol → criatura; jugador aparte; sin skin → null", () => {
     const cfg = { ...EMPTY_SKINS, player: s("yo.png"), roles: { dev: s("dev.png"), agy: s("robot.png") }, agents: { agy2: s("a2.png") } };
@@ -852,6 +884,8 @@ describe("resolveSkin", () => {
   });
 });
 ```
+
+**Sprites generados por el orquestador (plan `fa75a0a7`, proyecto `C:\estudio\oficina-sprites`):** son arte original en formato gen3. Si el controlador los aprueba, se copian a `ui/public/oficina/sprites/*.png` + `ui/public/oficina/sprites/sprites.json` (dentro del repo: son propios) y `fetchSkins` los usa como **capa base**: orden final = skins del usuario (`/api/office/sprites`) → sprites del repo (`/oficina/sprites/sprites.json`) → criaturas por código. `resolveSkin` recibe la config ya combinada (`mergeSkins(base, user)`: el usuario gana por clave; exportarla y probarla con un caso). Si no se aprueban, esta parte se omite.
 
 Si la prueba "x + w ≤ 16" falla por un rasgo, ajustar las coordenadas de ese rasgo (no relajar la prueba). Rasgos con `y` negativa (orejas de conejo) están permitidos: el render dibuja la caja desplazada 4 px hacia arriba (Task 4).
 
@@ -879,12 +913,21 @@ git commit -m "F12 tarea 3: criaturas originales y skins del usuario fuera del r
 
 Comportamiento de `OfficeWorld`:
 - **Estado en refs** (no en React): `player: { piso, tile, dir, frame, route: Tile[], moving: { from, to, t0 } | null }`, `agents: Map<key, { agent: WorldAgent; place: Place; legs: Leg[]; dir; frame; moving }>`, `piso` visible = el del jugador. React solo guarda el agente cercano (para el cuadro, Task 5) y si el menú del elevador está abierto.
-- **Bucle** `requestAnimationFrame`; con `document.hidden` no dibuja ni avanza (escuchar `visibilitychange` y reanudar). Movimiento: una casilla cada **150 ms**, posición interpolada; cuadro de caminata alterna 0/2 cada media casilla y vuelve a 1 al detenerse.
+- **Bucle de paso fijo a 60 Hz** (acumulador sobre `requestAnimationFrame`; como máximo 4 pasos por cuadro para no "ponerse al día" de golpe); con `document.hidden` no dibuja ni avanza (escuchar `visibilitychange` y reanudar sin acumular el tiempo oculto).
+- **Mecánica estilo GBA 3.ª gen. (reglas, escritas desde cero):**
+  - Caminar: **16 pasos (cuadros de 60 Hz) por casilla**; correr con **Shift** sostenido: **8 por casilla**. Posición interpolada de forma lineal.
+  - Animación: en cada casilla recorrida alterna paso 1 / paso 2 (cambia en la mitad de la casilla); al detenerse, de pie.
+  - Girar: si se pulsa una dirección distinta a la que mira, primero solo gira; si la tecla sigue sostenida **8 pasos** después, empieza a caminar. Si ya mira hacia allá, camina de inmediato.
+  - Chocar: si la casilla de enfrente es sólida u ocupada, gira y hace la animación de caminar en su lugar (16 pasos) sin moverse; no repite el choque mientras la tecla siga sostenida contra la misma casilla, solo se queda caminando en su lugar.
+  - Al terminar una casilla con la tecla sostenida, encadena la siguiente sin pausa.
+  - Los NPC (agentes **en reposo** en la sala de descanso) **deambulan**: cada 2–5 s (aleatorio) intentan moverse 1 casilla al azar dentro de su zona si está libre, y vuelven a su asiento cuando el estado les asigna uno nuevo. Con reduced motion no deambulan.
+  - Capas: primero piso y muebles bajos; luego personajes ordenados por `y`; al final la **capa de arriba** (la parte alta de libreros `B`, paredes `#` y plantas `*` que caen sobre la casilla de abajo), para que un personaje detrás de un mueble quede tapado.
+- Las skins `gen3` miden 16×32: se dibujan con el borde de abajo alineado al de la casilla (16 px salen hacia arriba) y se eligen con `gen3Frame`; las criaturas por código (16×16) se dibujan 4 px más arriba.
 - **Reduced motion** (`matchMedia("(prefers-reduced-motion: reduce)")`, leer una vez): sin interpolación; el jugador salta a la casilla final de su ruta; los agentes aparecen directo en su destino.
 - **Agentes:** en cada `state` nuevo, `placeAgents(state, prevPlaces)` da el destino; si cambió el lugar de un agente, `legs = planRoute(lugarActual, destino)`; si la ruta total pasa de **40 casillas**, o el agente aún tenía más de 12 casillas pendientes, se teletransporta (spec: "si la animación no alcanza"). Al terminar un tramo en el elevador cambia de piso. Los agentes de otros pisos no se dibujan.
-- **Jugador:** aparece en `floorOf(1).salida`. **Clic** en el canvas → `screenToTile` → si hay un agente en esa casilla, el destino es una vecina libre de él (usar `findPath` con la casilla del agente en `occupied`); si no, `findPath` al punto. **Flechas/WASD** solo con el canvas enfocado (`tabIndex=0`): una casilla por pulsación (repetir con tecla sostenida usando el `keydown` repetido del navegador), `preventDefault`; si la casilla es sólida u ocupada por un agente, solo gira. Las casillas de agentes del piso actual son `occupied` para el jugador.
+- **Jugador:** aparece en `floorOf(1).salida`. **Clic** en el canvas → `screenToTile` → si hay un agente en esa casilla, el destino es una vecina libre de él (usar `findPath` con la casilla del agente en `occupied`); si no, `findPath` al punto. **Flechas/WASD** solo con el canvas enfocado (`tabIndex=0`): se lleva un conjunto de teclas sostenidas (`keydown`/`keyup`, `blur` lo vacía; ignorar el `repeat` del navegador) y el bucle aplica las reglas de girar/caminar/chocar de arriba; la última dirección pulsada gana. `preventDefault` en flechas. Clic y teclado se cancelan entre sí (una tecla borra la ruta del clic). Las casillas de agentes del piso actual son `occupied` para el jugador.
 - **Elevador:** al pisar `E` se abre un menú DOM superpuesto (`role="menu"`, botones "1 · Dirección y Recepción", "2 · Desarrollo y Pruebas", "3 · Estudio y Biblioteca", "salir"); teclas 1–3 eligen y Esc cierra. Al elegir un piso: el jugador aparece en `llegada` de ese piso mirando abajo; "salir" lo deja en la `llegada` del piso actual. Mientras el menú está abierto no hay movimiento.
-- **Dibujo:** canvas de `cols*16 × rows*16` px (el piso más ancho: 30×16), escalado por CSS a `fitScale(anchoContenedor, 30)` (medido con `ResizeObserver`), `image-rendering: pixelated`. Cada cuadro: `drawFloor` (baldosas como en el prototipo: pared, escritorio con monitor, planta, librero, sofá, elevador con foco que parpadea; el foco no parpadea con reduced motion), etiquetas de zona (texto 6 px `Silkscreen` si ya está cargada, si no `monospace`, color de la zona) y un rectángulo de borde tenue por zona; luego las entidades ordenadas por `y` (las de abajo encima). Cada persona: skin si `resolveSkin` da una y su imagen cargó (`drawImage` del cuadro `frames` × fila `rows[dir]`, escalado a 16×16), si no `creatureFrame`. Dibujar la caja 4 px más arriba (`py - 4`) para que quepan orejas. Sobre los agentes que trabajan, un globo amarillo de 4×4 (como el prototipo). HUD DOM arriba a la izquierda con el nombre del piso.
+- **Dibujo:** canvas de `cols*16 × rows*16` px (el piso más ancho: 30×16), escalado por CSS a `fitScale(anchoContenedor, 30)` (medido con `ResizeObserver`), `image-rendering: pixelated`. Cada cuadro: `drawFloor` (baldosas como en el prototipo: pared, escritorio con monitor, planta, librero, sofá, elevador con foco que parpadea; el foco no parpadea con reduced motion), etiquetas de zona (texto 6 px `Silkscreen` si ya está cargada, si no `monospace`, color de la zona) y un rectángulo de borde tenue por zona; luego las entidades ordenadas por `y` (las de abajo encima). Cada persona: skin si `resolveSkin` da una y su imagen cargó (gen3: `gen3Frame` y espejo con `scale(-1, 1)`; otras: cuadro × fila `rows[dir]`), si no `creatureFrame`. Sobre los agentes que trabajan, un globo amarillo de 4×4 (como el prototipo). HUD DOM arriba a la izquierda con el nombre del piso.
 - `aria-label` del canvas: `"Oficina, ${nombre del piso}. Usa clic o flechas para caminar."`.
 
 - [ ] **Step 1: Prueba que falla**
@@ -955,7 +998,9 @@ export function dirBetween(a: Tile, b: Tile): Dir {
 
 - [ ] **Step 4: Correr la prueba** → PASS.
 
-- [ ] **Step 5: Implementar `render.ts` y `OfficeWorld.tsx`** siguiendo el comportamiento de arriba. Copiar el dibujo de baldosas de `tile()` del prototipo `f12-oficina-jugable-prototipo.html` (mapeo de caracteres: `#` pared, `=` escritorio "D", `*` planta "P", `B` librero, `S` sofá, `E` elevador; `s` y `p` se dibujan como piso, con un tapete `#ffffff10` de 12×12 en `s`). `OfficeWorld` todavía no muestra el cuadro de diálogo: solo llama `onNear(agenteCercano | null)` cuando cambia el agente vecino (`isNear` entre el jugador y algún agente del piso actual; si hay varios, el primero por orden de `key`).
+Agregar a `input.ts` y a su prueba la máquina de movimiento pura (para no probar el canvas): `type Mover = { tile: Tile; dir: Dir; from: Tile | null; t: number; frames: number; step: 0 | 1 | 2; parity: 0 | 1; turnWait: number; bumping: boolean }`; `tickMover(m: Mover, held: Dir | null, run: boolean, blocked: (t: Tile) => boolean): Mover` (un paso de 60 Hz; devuelve un objeto nuevo). Casos de prueba obligatorios: (a) sostener la dirección que ya mira → tras 16 ticks está en la casilla vecina y `step` volvió a 1; (b) con `run` → 8 ticks; (c) pulsar otra dirección 3 ticks y soltar → solo giró, misma casilla; (d) sostenerla 8 ticks → empieza a moverse; (e) contra pared → no cambia de casilla tras 32 ticks y `bumping` es `true`; (f) sostener 2 casillas seguidas → 32 ticks, 2 casillas, la animación alternó paso 1 y paso 2.
+
+- [ ] **Step 5: Implementar `render.ts` y `OfficeWorld.tsx`** siguiendo el comportamiento de arriba. Copiar el dibujo de baldosas de `tile()` del prototipo `f12-oficina-jugable-prototipo.html` (mapeo de caracteres: `#` pared, `=` escritorio "D", `*` planta "P", `B` librero, `S` sofá, `E` elevador; `s` y `p` se dibujan como piso, con un tapete `#ffffff10` de 12×12 en `s`). Nuevos: `|` y `-` mampara (panel gris azulado `#3a3f4b` de 4 px de ancho/alto centrado, con borde claro arriba), `d` puerta (marco café `#5b4636` en los lados y piso más claro). `OfficeWorld` todavía no muestra el cuadro de diálogo: solo llama `onNear(agenteCercano | null)` cuando cambia el agente vecino (`isNear` entre el jugador y algún agente del piso actual; si hay varios, el primero por orden de `key`).
 
 - [ ] **Step 6: Revisión visual temporal.** Montar `OfficeWorld` provisionalmente en `OfficeView` (la integración final es la Task 5), `npm run build:ui`, backend en :3111 (`ORQUESTADOR_PORT=3111 npm start` en segundo plano), abrir `http://127.0.0.1:3111/?vista=oficina` en el navegador integrado a 1300 px: caminar con clic y con flechas, entrar al elevador, cambiar a los 3 pisos, ver criaturas de colores en sus zonas; probar a 700 px (escala ×1). Guardar capturas en `.superpowers/sdd/2026-10-15-f12-oficina-jugable/mundo-piso{1,2,3}.png`. Detener :3111.
 
@@ -985,7 +1030,7 @@ Reglas de `dialogFor`:
 - `lineas` (solo las que tengan dato, en este orden): `activity` (o `"libre, en la sala de descanso"` para un agy en reposo); `"paso <stepKey> · <done>/<total> pasos del plan"` (si hay `progress`; sin `stepKey` → `"<done>/<total> pasos del plan"`); `"modelo: <model>"`; `"tokens: <formatTokens(tokens)>"` (solo si `tokens` es número > 0); `"cuenta: <cuenta>"` (agy).
 - `planId` = el del agente.
 
-`WorldDialog` (DOM sobre el canvas, abajo, estilo del prototipo: fondo `#0b0b10`, borde 4 px `#e4e4e7`, sombra 4 px negra, VT323 si está cargada): contenedor con `aria-live="polite"`; título con el color del agente + estado; las líneas; botones **"abrir plan"** (solo con `planId`; llama `onOpenPlan(planId)`, que en `OfficeView` ya respeta el bloqueo de Platicar) y **"ver log"** (despliega dentro del cuadro las últimas 5 entradas de `officeLog` cuyo `agent` corresponda: `agy` para agentes de agy, su id para los fijos). Con el menú del elevador abierto, el cuadro se oculta.
+`WorldDialog` (DOM sobre el canvas, abajo, estilo del prototipo: fondo `#0b0b10`, borde 4 px `#e4e4e7`, sombra 4 px negra, VT323 si está cargada), **caja de texto estilo GBA**: el texto (título + líneas) se parte en páginas de **2 líneas**; cada página se escribe letra por letra a **1 carácter cada 2 pasos de 60 Hz** (instantánea con reduced motion); al completarse una página parpadea un **▼** abajo a la derecha; **Enter, Espacio, Z o clic** completan la página si aún se escribe, o pasan a la siguiente; tras la última, el cuadro queda en la última página hasta que el jugador se aleja. Lógica pura `paginate(lines: string[], maxChars = 42): string[][]` (corta por palabras; agregar casos a `test/ui/world-dialog.test.ts`: una línea larga se parte en 2; 5 líneas → 3 páginas). El texto completo de la página actual va en un nodo `sr-only` con `aria-live="polite"` (los lectores de pantalla no leen letra por letra); título con el color del agente + estado; las líneas; botones **"abrir plan"** (solo con `planId`; llama `onOpenPlan(planId)`, que en `OfficeView` ya respeta el bloqueo de Platicar) y **"ver log"** (despliega dentro del cuadro las últimas 5 entradas de `officeLog` cuyo `agent` corresponda: `agy` para agentes de agy, su id para los fijos). Con el menú del elevador abierto, el cuadro se oculta.
 
 Integración en `OfficeView`:
 - Selector pequeño "mundo · escritorios" (`aria-pressed`) arriba de la escena; el modo se guarda en `localStorage[MODE_KEY]` (try/catch, como `VIEW_KEY`).
