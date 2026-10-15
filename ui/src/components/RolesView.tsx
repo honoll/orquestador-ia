@@ -31,6 +31,10 @@ export function RolesView() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const current = roles.find((r) => r.id === selected);
+  // Si "dev" (u otro id elegido) ya no existe, abre el primero de la lista.
+  useEffect(() => {
+    if (selected !== null && roles.length > 0 && !current) setSelected(roles[0].id);
+  }, [roles, selected, current]);
 
   useEffect(() => {
     setError(null); setNotice(null); setDirty(false);
@@ -66,8 +70,9 @@ export function RolesView() {
     setError(null); setNotice(null);
     const r = await fetch(`/api/roles/${encodeURIComponent(selected)}/restore`, { method: "POST", headers: JSON_HEADERS, body: "{}" }).catch(() => null);
     if (!r?.ok) { setError(r ? await errorOf(r) : "Sin conexión con el servidor"); return; }
-    const t = await fetch(`/api/roles/${encodeURIComponent(selected)}`).then((x) => x.text());
-    setText(t); setDirty(false); setNotice("Restaurado al original");
+    const x = await fetch(`/api/roles/${encodeURIComponent(selected)}`).catch(() => null);
+    if (!x?.ok) { setError(x ? await errorOf(x) : "Sin conexión con el servidor"); return; }
+    setText(await x.text()); setDirty(false); setNotice("Restaurado al original");
     void qc.invalidateQueries({ queryKey: ["roles"] });
   };
 

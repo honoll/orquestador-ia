@@ -80,6 +80,19 @@ describe("/api/roles", () => {
     expect(fs.existsSync(path.join(dir, "otro.md"))).toBe(false);
   });
 
+  it("POST / simultáneos con el mismo id: uno 201, el otro 409, sin .tmp sueltos", async () => {
+    const md = asId(devMd, "doble");
+    const codes = (await Promise.all([send("/", "POST", { markdown: md }), send("/", "POST", { markdown: md })])).map((r) => r.status).sort();
+    expect(codes).toEqual([201, 409]);
+    expect(fs.readdirSync(dir).filter((n) => n.endsWith(".tmp"))).toEqual([]);
+  });
+
+  it("GET / sin carpeta roles/ → []", async () => {
+    const res = await createRolesRoute(path.join(dir, "no-existe")).request("/");
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual([]);
+  });
+
   it("POST /:id/restore copia el original; sin original → 404", async () => {
     fs.writeFileSync(path.join(dir, "dev.md"), "cambiado");
     expect((await send("/dev/restore", "POST", {}, "text/plain")).status).toBe(415);

@@ -20,6 +20,15 @@ function writeAtomic(file: string, text: string): void {
   try { fs.renameSync(tmp, file); } catch (err) { fs.rmSync(tmp, { force: true }); throw err; }
 }
 
+/** Crea sin pisar: link falla con EEXIST si otro POST ganó la carrera. Devuelve false en ese caso. */
+function createAtomic(file: string, text: string): boolean {
+  const tmp = `${file}.${randomUUID()}.tmp`;
+  fs.writeFileSync(tmp, text, "utf8");
+  try { fs.linkSync(tmp, file); return true; }
+  catch (err) { if ((err as NodeJS.ErrnoException).code === "EEXIST") return false; throw err; }
+  finally { fs.rmSync(tmp, { force: true }); }
+}
+
 async function readMarkdown(c: Context): Promise<string | null> {
   const b = await c.req.json().catch(() => null) as { markdown?: unknown } | null;
   return b && typeof b.markdown === "string" ? b.markdown : null;
@@ -32,7 +41,9 @@ export function createRolesRoute(dir: string = ROLES_DIR) {
   const fail = (err: unknown) => ({ error: (err as Error).message });
 
   app.get("/", (c) => {
-    const ids = fs.readdirSync(dir).filter((n) => n.endsWith(".md")).map((n) => n.slice(0, -3)).filter((id) => ROLE_ID.test(id)).sort();
+    let names: string[];
+    try { names = fs.readdirSync(dir); } catch { return c.json([]); }
+    const ids = names.filter((n) => n.endsWith(".md")).map((n) => n.slice(0, -3)).filter((id) => ROLE_ID.test(id)).sort();
     return c.json(ids.map((id) => {
       const original = fs.existsSync(path.join(dir, "_originales", `${id}.md`));
       try {
@@ -71,7 +82,7 @@ export function createRolesRoute(dir: string = ROLES_DIR) {
     }
     if (fs.existsSync(file(id))) return c.json({ error: `Ya existe el rol "${id}"` }, 409);
     try { parseRole(md, id); } catch (err) { return c.json(fail(err), 400); }
-    writeAtomic(file(id), md);
+    if (!createAtomic(file(id), md)) return c.json({ error: `Ya existe el rol "${id}"` }, 409);
     return c.json({ ok: true, id }, 201);
   });
 
