@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseStepStatus } from "../../src/server/step-status.js";
+import { parseStepStatus, stripStepStatus } from "../../src/server/step-status.js";
 
 describe("parseStepStatus", () => {
   it("terminado sin detalle", () => {
@@ -17,8 +17,19 @@ describe("parseStepStatus", () => {
     expect(parseStepStatus("<<<ESTADO listo>>>")).toBeNull();
     expect(parseStepStatus("")).toBeNull();
   });
-  it("vale el último bloque (uno citado antes no cuenta)", () => {
+  it("solo vale la última línea: uno citado antes no cuenta", () => {
     expect(parseStepStatus('dice `<<<ESTADO terminado>>>`\n<<<ESTADO bloqueado {"detalle":"d"}>>>')).toEqual({ kind: "bloqueado", detalle: "d" });
+  });
+  it("bloque citado a media respuesta sin bloque propio al final → null", () => {
+    expect(parseStepStatus("El paso s1 dijo:\n<<<ESTADO terminado>>>\nY yo seguí trabajando…")).toBeNull();
+    expect(parseStepStatus("ver `<<<ESTADO terminado>>>` en el rol")).toBeNull();
+  });
+  it("bloque en la última línea con espacios alrededor → se lee", () => {
+    expect(parseStepStatus('Listo.\n  <<<ESTADO terminado {"detalle":"ok"}>>>  \n\n\t')).toEqual({ kind: "terminado", detalle: "ok" });
+  });
+  it("stripStepStatus quita solo la línea final de estado", () => {
+    expect(stripStepStatus('Resultado.\n<<<ESTADO terminado {"detalle":"x"}>>>\n')).toBe("Resultado.");
+    expect(stripStepStatus("cita <<<ESTADO terminado>>> aquí\nfin")).toBe("cita <<<ESTADO terminado>>> aquí\nfin");
   });
   it("JSON inválido → estado sin detalle", () => {
     expect(parseStepStatus("<<<ESTADO bloqueado {detalle: roto}>>>")).toEqual({ kind: "bloqueado", detalle: null });

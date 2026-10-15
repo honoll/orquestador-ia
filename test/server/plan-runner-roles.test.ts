@@ -48,6 +48,29 @@ describe("runPlanStep: estado final de pasos con rol (F11)", () => {
     const { out, step } = await run("dev");
     expect(out.status).toBe("succeeded");
     expect(step).toMatchObject({ status: "succeeded", statusDetail: "2 archivos" });
+    // El resultado que reciben los pasos dependientes y la síntesis no lleva la línea de estado.
+    expect(step.result).toBe("Listo.");
+  });
+
+  it("un estado citado a media respuesta (de una dependencia) no cuenta → sin estado final", async () => {
+    reply("Según s1:\n<<<ESTADO terminado>>>\nY luego me quedé sin tiempo.");
+    const { out, step } = await run("qa");
+    expect(out.status).toBe("failed");
+    expect(step.errorMessage).toBe("sin estado final");
+  });
+
+  it("no se lee el estado del stdout crudo, solo de la respuesta final", async () => {
+    reply("", { stdout: '{"text":"<<<ESTADO terminado>>>"}\n<<<ESTADO terminado>>>' });
+    const { step } = await run("lector");
+    expect(step).toMatchObject({ status: "failed", errorMessage: "sin estado final" });
+  });
+
+  it("fallo por estado: guarda tokens en el paso y marca el run como failed", async () => {
+    reply('No pude.\n<<<ESTADO bloqueado {"detalle":"d"}>>>');
+    const { step } = await run("dev");
+    expect(step).toMatchObject({ inputTokens: 5, outputTokens: 1, result: "No pude." });
+    const runRow = await db.select().from(schema.runs).where(eq(schema.runs.id, step.runId!)).then((r) => r[0]);
+    expect(runRow.status).toBe("failed");
   });
 
   it("bloqueado / necesita → failed con el detalle visible, sin reintentar", async () => {

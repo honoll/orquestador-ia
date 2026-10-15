@@ -7,7 +7,7 @@ import { claudeProfileManager } from "../adapters/claude/profile-manager.js";
 import { recordAgyCall, NoActiveAccountError } from "./agy-accounts.js";
 import { pickWorker, agyAvailability, markWorkerHealth, markWorkerBusy, tagLease, cwdAllowsWorkers, type AgyLease } from "./agy-workers.js";
 import { WorkerUnavailableError } from "../adapters/agy/worker-client.js";
-import { parseStepStatus } from "./step-status.js";
+import { parseStepStatus, stripStepStatus } from "./step-status.js";
 import { getRole } from "./roles.js";
 import { ensureOutputsDir, ensureGitignore, gitSnapshot, changedOutside } from "./outputs.js";
 import pino from "pino";
@@ -225,11 +225,15 @@ async function runPlanStepInner(options: StepRunOptions): Promise<StepOutcome> {
       const isSilentRateLimit = step.adapter === "claude" && result.exitCode === 1 && !(result.stderr ?? "").trim();
       const isTransient = TRANSIENT_RE.test((result.errorMessage ?? "") + result.stderr) || isSilentRateLimit;
       const isUnknownSession = UNKNOWN_SESSION_RE.test(result.stderr + (result.errorMessage ?? ""));
+      // F11: un paso con rol debe cerrar su propia respuesta (summary, no el stdout crudo) con el estado final.
+      const finalStatus = succeeded && step.role ? parseStepStatus(result.summary ?? "") : null;
+      const roleFailed = succeeded && !!step.role && finalStatus?.kind !== "terminado";
+      const stepResult = step.role ? stripStepStatus(result.summary ?? "") : result.summary || result.stdout.slice(0, 4000);
 
       // Update the run record
       await db.update(schema.runs)
         .set({
-          status: succeeded ? "succeeded" : "failed",
+          status: succeeded && !roleFailed ? "succeeded" : "failed",
           result: result.stdout,
           summary: result.summary,
           sessionId: result.sessionId,
@@ -246,16 +250,18 @@ async function runPlanStepInner(options: StepRunOptions): Promise<StepOutcome> {
         .where(eq(schema.runs.id, runId));
 
       await db.update(schema.tasks)
-        .set({ status: succeeded ? "succeeded" : "failed", updatedAt: new Date().toISOString() })
+        .set({ status: succeeded && !roleFailed ? "succeeded" : "failed", updatedAt: new Date().toISOString() })
         .where(eq(schema.tasks.id, taskId));
 
-      // F11: un paso con rol debe cerrar con su estado final; bloqueado, necesita o sin estado → failed sin reintento.
-      const finalStatus = succeeded && step.role ? parseStepStatus(result.summary || result.stdout) : null;
-      if (succeeded && step.role && finalStatus?.kind !== "terminado") {
+      // Bloqueado, necesita o sin estado → failed sin reintento.
+      if (roleFailed) {
         const statusDetail = finalStatus ? (finalStatus.detalle ?? "(sin detalle)") : "sin estado final";
         const msg = finalStatus ? `${finalStatus.kind}: ${statusDetail}` : statusDetail;
         await db.update(schema.planSteps)
-          .set({ status: "failed", result: result.summary || result.stdout.slice(0, 4000), errorMessage: msg, statusDetail, finishedAt: new Date().toISOString() })
+          .set({
+            status: "failed", runId, result: stepResult, errorMessage: msg, statusDetail, costUsd: result.costUsd,
+            inputTokens: result.inputTokens, outputTokens: result.outputTokens, sessionId: result.sessionId, finishedAt: new Date().toISOString(),
+          })
           .where(eq(schema.planSteps.id, stepId));
         broadcast({ type: "plan:step", planId, stepId, status: "failed", adapter: step.adapter, error: msg, timestamp: new Date().toISOString() } as any);
         return { status: "failed", tokensUsed };
@@ -278,7 +284,7 @@ async function runPlanStepInner(options: StepRunOptions): Promise<StepOutcome> {
             status: "succeeded",
             statusDetail,
             runId,
-            result: result.summary || result.stdout.slice(0, 4000),
+            result: stepResult,
             costUsd: result.costUsd,
             inputTokens: result.inputTokens,
             outputTokens: result.outputTokens,
