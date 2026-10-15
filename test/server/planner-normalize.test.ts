@@ -1,5 +1,31 @@
-import { describe, it, expect } from "vitest";
-import { normalizeSteps } from "../../src/server/planner.js";
+import { describe, it, expect, vi, afterEach } from "vitest";
+import { normalizeSteps, routingSystem } from "../../src/server/planner.js";
+
+afterEach(() => vi.unstubAllEnvs());
+
+describe("PLANNER_ADAPTERS", () => {
+  it("por defecto el prompt del planner no menciona codex", () => {
+    expect(routingSystem().toLowerCase()).not.toContain("codex");
+  });
+
+  it("PLANNER_ADAPTERS=claude,agy,codex lo reactiva", () => {
+    vi.stubEnv("PLANNER_ADAPTERS", "claude,agy,codex");
+    expect(routingSystem()).toContain("- codex:");
+    expect(normalizeSteps([{ adapter: "codex", model: "gpt-5.5" }])[0].adapter).toBe("codex");
+  });
+
+  it("adapter excluido se reasigna: lector → agy, escritor → claude, con su modelo por defecto", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const [r, w] = normalizeSteps([
+      { adapter: "codex", model: "gpt-5.5", writes: false },
+      { adapter: "codex", model: "gpt-5.5", writes: true },
+    ]);
+    expect(r).toMatchObject({ adapter: "agy", model: "gemini-3.8-flash-medium" });
+    expect(w).toMatchObject({ adapter: "claude", model: "claude-opus-5-5" });
+    expect(warn).toHaveBeenCalledTimes(2);
+    warn.mockRestore();
+  });
+});
 
 describe("normalizeSteps", () => {
   it("adapter no permitido lanza", () => {
@@ -8,6 +34,7 @@ describe("normalizeSteps", () => {
   });
 
   it("modelo retirado o vacío → default del adapter", () => {
+    vi.stubEnv("PLANNER_ADAPTERS", "claude,agy,codex");
     const [a, b] = normalizeSteps([
       { adapter: "codex", model: "gpt-5.4" },
       { adapter: "claude", model: "" },
@@ -22,7 +49,7 @@ describe("normalizeSteps", () => {
   });
 
   it("descripción faltante → Paso N", () => {
-    const steps = normalizeSteps([{ adapter: "claude" }, { adapter: "codex" }]);
+    const steps = normalizeSteps([{ adapter: "claude" }, { adapter: "agy" }]);
     expect(steps.map((s) => s.description)).toEqual(["Paso 1", "Paso 2"]);
     expect(steps[1].stepIndex).toBe(1);
   });

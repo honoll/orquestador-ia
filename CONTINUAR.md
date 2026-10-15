@@ -4,6 +4,7 @@
 
 **Rama:** `f8-oficina` (encima de `f7-app-escritorio`). Orden de merge: F7 → F8 → F9, solo cuando Alejandro lo diga. Detalle técnico en `CLAUDE.md`, sección "Office view (F8)".
 
+- Planner sin Codex (2026-10-15): Opus solo asigna `claude,agy` (env `PLANNER_ADAPTERS`; `claude,agy,codex` lo reactiva). Codex sigue a mano en el chat
 - Selector `Chat | Oficina`: 7 agentes en escritorios pixel-art, cola de pasos, planes recientes, log de eventos y cuentas; "Platicar" dentro de la Oficina (gris → azul)
 - Verificado en vivo (2026-10-15): JEFE/GUARDIA/BIBLIO trabajando al generar un plan, AGY al chatear, estado correcto tras recargar a mitad. 771 tests
 - GPU (2026-10-15): escritorios ya no cuentan doble; bge-m3 solo CPU y solo con «usar memoria» (sin índice automático); Whisper se apaga tras `WHISPER_IDLE_MINUTES` (5) sin uso. 783 tests

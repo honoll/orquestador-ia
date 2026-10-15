@@ -57,6 +57,8 @@ POST /api/tasks → POST /api/tasks/:id/run
 
 ### Plan System (F2: DAG, Parallelism, Budget, Opus Synthesis)
 
+**Planner adapters:** Opus only routes to `plannerAdapters()` (`src/config/models.ts`, env `PLANNER_ADAPTERS`, default `claude,agy`, read lazily); an excluded adapter in a generated step is remapped to `agy` (reader) or `claude` (writer) in `normalizeSteps`. Codex stays in the registry/picker/PATCH.
+
 **Core design:** Plans are DAGs where each step has `step_key`, `depends_on` (JSON array of step keys), `writes` (0=read, 1=write), and `estimated_tokens`. Plans track `estimated_tokens`, `budget_tokens` (default `ceil(1.5 × estimated)`), `used_tokens`, `max_parallel` (default **3**, configurable 1–5), `pause_reason` (quota|budget), and the final `synthesis` / `synthesis_status` / `synthesis_error`. Old plans without step keys run as a linear chain where every step writes.
 
 **Step execution model:**
