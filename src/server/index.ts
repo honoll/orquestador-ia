@@ -24,6 +24,7 @@ import jevRoute from "./routes/jev.js";
 import memoryRoute from "./routes/memory.js";
 import voiceRoute from "./routes/voice.js";
 import voiceAssistantRoute from "./routes/voice-assistant.js";
+import { createSystemRoute } from "./routes/system.js";
 import { shutdownAssistant } from "../voice/assistant/session.js";
 import { originGuard } from "./origin-guard.js";
 import { whisper } from "../voice/whisper.js";
@@ -40,7 +41,7 @@ import { migrationDone } from "../db/migrate.js";
 await migrationDone;
 
 const log = pino({ name: "server" });
-const PORT = parseInt(process.env.ORQUESTADOR_PORT || "3100", 10);
+const PORT = parseInt(process.env.ORQUESTADOR_PORT || "3110", 10);
 
 const app = new Hono();
 const { injectWebSocket, upgradeWebSocket } = createNodeWebSocket({ app });
@@ -66,6 +67,7 @@ app.route("/api/jev", jevRoute);
 app.route("/api/memory", memoryRoute);
 app.route("/api/voice/assistant", voiceAssistantRoute);
 app.route("/api/voice", voiceRoute);
+app.route("/api/system", createSystemRoute({ shutdown }));
 
 app.get(
   "/ws",
@@ -106,16 +108,17 @@ try {
 // whisper-server (voz, F5) arranca de forma perezosa; se apaga junto con el orquestador.
 // Ducking de audio: restaura al arrancar lo que quedó atenuado por un cierre brusco, y al salir.
 void getDucker().recover();
-process.on("exit", () => {
+function cleanup() {
   shutdownAssistant();
   whisper.stop();
   getDucker().closeHelper();
-});
+}
+// Mismo apagado para señales y para POST /api/system/shutdown (hoisted: la ruta lo usa arriba).
+function shutdown(code: number) {
+  cleanup();
+  process.exit(code);
+}
+process.on("exit", cleanup);
 for (const sig of ["SIGINT", "SIGTERM"] as const) {
-  process.on(sig, () => {
-    shutdownAssistant();
-    whisper.stop();
-    getDucker().closeHelper();
-    process.exit(sig === "SIGINT" ? 130 : 143);
-  });
+  process.on(sig, () => shutdown(sig === "SIGINT" ? 130 : 143));
 }

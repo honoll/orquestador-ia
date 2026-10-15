@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 # Backend
-npm run dev          # Backend with hot-reload (tsx watch), port 3100
+npm run dev          # Backend with hot-reload (tsx watch), port 3110
 npm start            # Backend production
 
 # Frontend
@@ -31,7 +31,7 @@ Two separate `node_modules` exist: root (backend) and `ui/` (frontend). Run `npm
 
 ## Architecture
 
-Three-tier local app: **Hono backend** (`:3100`) + **React 19 frontend** (`:5173` dev, or served from backend in prod) + **SQLite** (`~/.orquestador-ia/data/orquestador.db`).
+Three-tier local app: **Hono backend** (`:3110`) + **React 19 frontend** (`:5173` dev, or served from backend in prod) + **SQLite** (`~/.orquestador-ia/data/orquestador.db`).
 
 ### Adapter System
 
@@ -144,7 +144,7 @@ The 168k Codex step mentioned in F2 was caused by global config leakage. With wo
 
 ### Key Design Constraints
 
-- **Single-user, local-only**: backend binds `127.0.0.1:3100`, no auth.
+- **Single-user, local-only**: backend binds `127.0.0.1:3110`, no auth.
 - **Session resume is adapter-scoped**: a conversation's `sessionId` is only passed as `--resume` if the new task uses the same adapter. Cross-adapter turns fall back to text prefix injection.
 - **Windows spawn**: `process-runner.ts` uses `shell: true` on Windows to avoid `ENOENT`, except agy (`agy.exe`, `shell:false`). Codex requires prompt via stdin (using `-` flag) because its args don't survive cmd.exe quoting.
 - **No prompts as cmd.exe arguments (F1 rule)**: `quoteWindowsArg` cannot make `&` or `%VAR%` safe under cmd.exe (see `it.fails` in `test/lib/quote-windows-arg.test.ts`). Send prompts via stdin or spawn with `shell:false`.
@@ -267,7 +267,7 @@ Introduced in F5 (2026-10-06, branch `f5-voz-local`). Local dictation (Whisper) 
 - `POST /speak` — JSON `{ text, summary? }`, `Content-Type: application/json` (415); body ≤ 64 KB (413); nothing speakable 400; → `audio/wav`; Piper failure 503.
 - `POST /duck` — JSON `{ reason: "mic"|"speak", on: boolean }`, JSON content-type required, body ≤ 1 KB; → `{ supported, active }`. The `sendBeacon` Blob JSON on `pagehide` is accepted.
 - Concurrency: max 2 simultaneous `/speak` and 2 `/transcribe` jobs; extra → 429.
-- **Origin check (`src/server/origin-guard.ts`):** CORS stays `*`, but POST/PUT/PATCH/DELETE get 403 if an `Origin` header is present and not `http://127.0.0.1|localhost` on `ORQUESTADOR_PORT` (3100) or `ORQUESTADOR_UI_PORT` (5173), or if `Sec-Fetch-Site: cross-site`. No `Origin` (curl, scripts) passes. It applies to **all** mutating `/api/*`, not just voice: any web page in the user's browser could otherwise fire them at 127.0.0.1.
+- **Origin check (`src/server/origin-guard.ts`):** CORS stays `*`, but POST/PUT/PATCH/DELETE get 403 if an `Origin` header is present and not `http://127.0.0.1|localhost` on `ORQUESTADOR_PORT` (3110) or `ORQUESTADOR_UI_PORT` (5173), or if `Sec-Fetch-Site: cross-site`. No `Origin` (curl, scripts) passes. It applies to **all** mutating `/api/*`, not just voice: any web page in the user's browser could otherwise fire them at 127.0.0.1.
 
 **Speech text (`toSpeechText`):** input cut to 4 × `SPEECH_MAX_CHARS` before any regex; output ≤ `SPEECH_MAX_CHARS` 2000 (cut at a word). Code blocks → "(código)", inline code keeps its text, `[[a|b]]` → `b`, links → label, bare URLs → "(enlace)", tables and markdown markers dropped, whitespace collapsed. **Summary mode** (`summary: true`, used by auto-read): first `SUMMARY_SENTENCES` 3 sentences, ≤ `SUMMARY_MAX_CHARS` 400. Linear sentence splitter: ends at `.?!…` (+ closers) followed by space and uppercase/`¿`/`¡`/digit/end of text; does not split decimals or abbreviations (Sr., Dr., ej., p. ej., etc., núm., aprox., EE. UU., capital initials).
 

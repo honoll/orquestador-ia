@@ -9,6 +9,8 @@ interface WsEvent {
   status?: string;
   result?: any;
   adapters?: Record<string, any>;
+  open?: string;
+  planId?: string;
   timestamp?: string;
 }
 

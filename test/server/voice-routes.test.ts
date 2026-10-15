@@ -196,7 +196,7 @@ describe("seguridad: Origin, Content-Type y concurrencia (I4)", () => {
     voiceRoute.request(p, { method: "POST", body, headers });
   const json = { "Content-Type": "application/json" };
 
-  it.each(["http://127.0.0.1:3100", "http://localhost:3100", "http://127.0.0.1:5173", "http://localhost:5173"])(
+  it.each(["http://127.0.0.1:3110", "http://localhost:3110", "http://127.0.0.1:5173", "http://localhost:5173"])(
     "acepta Origin %s",
     async (origin) => {
       expect((await send("/duck", '{"reason":"mic","on":false}', { ...json, Origin: origin })).status).toBe(200);

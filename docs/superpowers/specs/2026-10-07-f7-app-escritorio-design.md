@@ -39,7 +39,7 @@ Fecha: 2026-10-07 · Estado: aprobado en conversación · Base: F6 en `main` (me
 **Lanzador `OrquestadorIA.exe`** (`scripts/desktop/Launcher.cs`):
 - Mutex con nombre para instancia única; la segunda instancia avisa a la primera (p. ej. por un evento con nombre)
   para que muestre la ventana y termina.
-- Servidor: si `GET http://127.0.0.1:3100/api/voice/status` responde → lo **adopta** (no lo apaga al salir). Si no →
+- Servidor: si `GET http://127.0.0.1:3110/api/voice/status` responde → lo **adopta** (no lo apaga al salir). Si no →
   lanza oculto `node <repo>\node_modules\tsx\dist\cli.mjs src\server\index.ts` (equivalente a `npm start`), `cwd` =
   repo, `PATH` = carpeta MSIX de npm + `PATH` actual, salida a `C:\Users\sidel\.orquestador-ia\logs\server.log`
   (rotación a ~5 MB, se conserva un `.1`). Espera hasta 60 s a que responda.
@@ -47,7 +47,7 @@ Fecha: 2026-10-07 · Estado: aprobado en conversación · Base: F6 en `main` (me
   ventana viva de ese perfil (proceso `msedge` con ese `--user-data-dir` y ventana visible), se trae al frente y la
   acción se entrega por el servidor (`POST /api/system/ui-intent {"open":"platicar"|"plan","planId"?}` → evento WS
   `ui:intent` que la UI atiende); si no hay ventana, se abre una nueva con `?platicar=1` o `?plan=<id>`.
-- Notificaciones: cliente WebSocket (`System.Net.WebSockets.ClientWebSocket`) a `ws://127.0.0.1:3100/ws`, con
+- Notificaciones: cliente WebSocket (`System.Net.WebSockets.ClientWebSocket`) a `ws://127.0.0.1:3110/ws`, con
   reconexión; reacciona a `plan:done` (`completed` → "Plan terminado", `failed` → "Plan falló", `pending` con `paused`
   → "Plan pausado por cuota/presupuesto/guardia"). Usa `NotifyIcon.ShowBalloonTip` (toast en Windows 11); el clic abre
   `?plan=<id>`. El título del plan se pide a `GET /api/plans/:id`.
