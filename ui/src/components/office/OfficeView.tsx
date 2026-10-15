@@ -97,7 +97,7 @@ export function OfficeView() {
             {near && <WorldDialog key={near.key} ref={dialog} agent={near} log={officeLog} onOpenPlan={openPlan} />}
           </OfficeWorld>
         ) : (
-          <div className="font-mono text-xs"><OfficeScene agents={agents} queue={queue} /></div>
+          <div className="font-mono text-[12px]"><OfficeScene agents={agents} queue={queue} /></div>
         )}
         <div className="grid content-start gap-2.5 @min-[700px]:grid-cols-3 @min-[1060px]:grid-cols-1">
           {mode === "mundo" && <><AccountRack /><OfficeTalkPanel /></>}

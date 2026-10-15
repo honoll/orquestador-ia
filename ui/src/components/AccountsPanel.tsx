@@ -60,7 +60,7 @@ function AccountCard({ a }: { a: AccountView }) {
             </button>
           )}
           <button
-            className="px-btn hover:text-err"
+            className="px-btn hover:text-err!"
             onClick={() => { if (confirm(`¿Eliminar la cuenta "${a.label}" y su historial de uso?`)) remove.mutate(); }}
           >
             eliminar

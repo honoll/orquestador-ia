@@ -106,7 +106,7 @@ export function GitHubCloneModal({ initialUrl = "", onClose, onCloned }: GitHubC
                   URL O USUARIO/REPO
                 </label>
                 <input
-                  className="px-input w-full px-3 py-2 font-mono text-[12px] focus:border-accent"
+                  className="px-input w-full px-3 py-2 font-code focus:border-accent!"
                   placeholder="https://github.com/usuario/repo  o  usuario/repo"
                   value={url}
                   onChange={e => setUrl(e.target.value)}
@@ -123,7 +123,7 @@ export function GitHubCloneModal({ initialUrl = "", onClose, onCloned }: GitHubC
                   CARPETA DESTINO
                 </label>
                 <input
-                  className="px-input w-full px-3 py-2 font-mono text-[12px] focus:border-accent"
+                  className="px-input w-full px-3 py-2 font-code focus:border-accent!"
                   placeholder="C:\proyectos"
                   value={destination}
                   onChange={e => setDestination(e.target.value)}
@@ -156,7 +156,7 @@ export function GitHubCloneModal({ initialUrl = "", onClose, onCloned }: GitHubC
                     NOMBRE DEL PROYECTO
                   </label>
                   <input
-                    className="px-input w-full px-3 py-2 text-sm focus:border-accent"
+                    className="px-input w-full px-3 py-2 text-sm focus:border-accent!"
                     placeholder={projectName || "nombre"}
                     value={projectName}
                     onChange={e => setProjectName(e.target.value)}

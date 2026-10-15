@@ -55,7 +55,7 @@ export function OfficeTalkPanel() {
         aria-pressed={active}
         title={active ? "Clic para interrumpir (también Esc o espacio)" : undefined}
         onClick={() => (active ? talk.interrupt() : (setSaved(false), talk.start()))}
-        className="block w-full text-left focus-visible:outline-[#60a5fa]"
+        className="block w-full text-left focus-visible:outline-[#60a5fa]!"
       >
         <div className="mb-2.5 font-pixel text-[11px]">RECEPCIÓN · PLATICAR</div>
         <div className="flex items-center gap-3">
@@ -77,7 +77,7 @@ export function OfficeTalkPanel() {
           type="button"
           onClick={talk.approve}
           disabled={phase === "ending"}
-          className="px-btn mt-2 w-full border-warn! bg-[#2a2108]! text-warn! focus-visible:outline-[#60a5fa]"
+          className="px-btn mt-2 w-full border-warn! bg-[#2a2108]! text-warn! focus-visible:outline-[#60a5fa]!"
         >
           ABRIR PLAN PARA APROBAR
         </button>
@@ -100,7 +100,7 @@ export function OfficeTalkPanel() {
             type="button"
             onClick={talk.end}
             disabled={phase === "ending" || phase === "starting"}
-            className="px-btn hover:text-err focus-visible:outline-[#60a5fa]"
+            className="px-btn hover:text-err! focus-visible:outline-[#60a5fa]!"
           >
             TERMINAR
           </button>

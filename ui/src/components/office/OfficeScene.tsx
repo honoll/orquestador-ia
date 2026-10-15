@@ -83,7 +83,7 @@ export function OfficeScene({ agents, queue }: { agents: AgentState[]; queue: Qu
         <div aria-hidden="true" className="relative flex flex-col gap-7 pl-[30px] pr-[316px] pt-[150px]">
           {ZONES.map(([zone, title]) => (
             <section key={zone}>
-              <div className="text-xs font-bold tracking-[.22em]" style={{ color: IDLE }}>{title}</div>
+              <div className="text-[12px] font-bold tracking-[.22em]" style={{ color: IDLE }}>{title}</div>
               <div className="mt-2.5 flex flex-wrap gap-x-2 gap-y-3">
                 {agents.filter((a) => ROLES[a.id]?.zone === zone).map((a) => <Desks key={a.id} agent={a} />)}
               </div>

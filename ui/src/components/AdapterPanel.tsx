@@ -360,7 +360,7 @@ export function AdapterPanel() {
               {a.available ? (
                 <>
                   <p
-                    className="font-mono text-[10px] text-text-tertiary truncate mb-2 pl-3.5"
+                    className="font-code text-text-tertiary truncate mb-2 pl-3.5"
                     title={a.resolvedPath ?? undefined}
                   >
                     {a.resolvedPath}

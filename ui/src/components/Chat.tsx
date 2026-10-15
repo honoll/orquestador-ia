@@ -823,10 +823,10 @@ export function Chat() {
                     i === paletteIndex ? "bg-surface-3" : "hover:bg-surface-2"
                   }`}
                 >
-                  <span className="font-mono text-[11px] text-text-tertiary w-4 shrink-0">{cmd.icon}</span>
-                  <span className="font-mono text-[12px] text-accent shrink-0">{cmd.name}</span>
+                  <span className="font-code text-text-tertiary w-4 shrink-0">{cmd.icon}</span>
+                  <span className="font-code text-accent shrink-0">{cmd.name}</span>
                   {cmd.args && (
-                    <span className="font-mono text-[11px] text-text-tertiary shrink-0">{cmd.args}</span>
+                    <span className="font-code text-text-tertiary shrink-0">{cmd.args}</span>
                   )}
                   <span className="text-xs text-text-tertiary ml-auto truncate pl-4">
                     {cmd.description}
@@ -953,11 +953,11 @@ export function Chat() {
             <div className="flex flex-wrap gap-1.5 mt-2">
               {attachedFiles.map(f => (
                 <div key={f.path} className="flex items-center gap-1 bg-surface-2 border-2 border-edge px-2 py-0.5">
-                  <span className="font-mono text-[10px] text-text-secondary truncate max-w-[160px]">{f.path}</span>
-                  {f.truncated && <span className="font-mono text-[10px] text-text-tertiary">…</span>}
+                  <span className="font-code text-text-secondary truncate max-w-[160px]">{f.path}</span>
+                  {f.truncated && <span className="font-code text-text-tertiary">…</span>}
                   <button
                     onClick={() => setAttachedFiles(prev => prev.filter(x => x.path !== f.path))}
-                    className="font-mono text-[12px] text-text-tertiary hover:text-err transition-colors ml-0.5"
+                    className="font-code text-text-tertiary hover:text-err transition-colors ml-0.5"
                   >×</button>
                 </div>
               ))}

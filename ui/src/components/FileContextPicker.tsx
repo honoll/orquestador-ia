@@ -73,7 +73,7 @@ export function FileContextPicker({ projectId, onAttach, onClose }: FileContextP
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b-[3px] border-edge">
           <div className="flex items-center gap-1.5 min-w-0">
-            <span className="font-mono text-[10px] text-text-tertiary shrink-0">📎</span>
+            <span className="font-code text-text-tertiary shrink-0">📎</span>
             {/* Breadcrumb */}
             <button
               onClick={() => setCurrentDir("")}
@@ -83,10 +83,10 @@ export function FileContextPicker({ projectId, onAttach, onClose }: FileContextP
             </button>
             {breadcrumbs.map((part, i) => (
               <span key={i} className="flex items-center gap-1">
-                <span className="font-mono text-[10px] text-text-tertiary">/</span>
+                <span className="font-code text-text-tertiary">/</span>
                 <button
                   onClick={() => setCurrentDir(breadcrumbs.slice(0, i + 1).join("/"))}
-                  className="font-mono text-[10px] text-text-secondary hover:text-accent transition-colors truncate max-w-[80px]"
+                  className="font-code text-text-secondary hover:text-accent transition-colors truncate max-w-[80px]"
                 >
                   {part}
                 </button>
@@ -129,7 +129,7 @@ export function FileContextPicker({ projectId, onAttach, onClose }: FileContextP
                     {selected.has(f.relativePath) && <span className="text-surface-0 text-xs leading-none">✓</span>}
                   </div>
                 )}
-                <span className={`font-mono text-[12px] truncate ${
+                <span className={`font-code truncate ${
                   f.type === "dir" ? "text-text-secondary" : "text-text-primary"
                 }`}>
                   {f.name}
