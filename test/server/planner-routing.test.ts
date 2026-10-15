@@ -27,15 +27,24 @@ describe("routingSystem: reglas de modelo agy (F10)", () => {
   it("no menciona codex por defecto", () => {
     expect(sys.toLowerCase()).not.toContain("codex");
   });
+
+  it("con agy excluido no describe agy ni sus modelos", () => {
+    vi.stubEnv("PLANNER_ADAPTERS", "claude");
+    const only = routingSystem();
+    expect(only).not.toContain("adapter agy");
+    expect(only).not.toContain("- agy:");
+    expect(only).not.toContain("gemini-3.8-flash");
+    expect(only).toContain(CLAUDE_STEP_TEMPLATE);
+  });
 });
 
 describe("normalizeSteps: modelo agy por defecto según escriba", () => {
-  it("escritor agy sin modelo válido → claude-sonnet-4-6; lector → default flash", () => {
+  it("escritor agy sin modelo válido → claude-sonnet-4-6; lector → gemini-3.8-flash-low", () => {
     const [w, r] = normalizeSteps([
       { adapter: "agy", model: "claude-opus-5-5-high", writes: true },
       { adapter: "agy", model: "", writes: false },
     ]);
     expect(w.model).toBe("claude-sonnet-4-6");
-    expect(r.model).toBe("gemini-3.8-flash-medium");
+    expect(r.model).toBe("gemini-3.8-flash-low");
   });
 });

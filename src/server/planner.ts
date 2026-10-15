@@ -45,13 +45,14 @@ function buildAdaptersSection(): string {
   }).join("\n");
 }
 
-export function routingSystem(): string {
-  return `You are a planning agent for a local AI orchestrator that routes tasks to the best CLI tool.
-
-Available adapters and their strengths:
-${buildAdaptersSection()}
-
-Model selection (always set "model"):
+/** Reglas de modelo y plantillas; las de agy solo si agy está en plannerAdapters() (el prompt no nombra adapters excluidos). */
+function modelGuidance(): string {
+  if (!plannerAdapters().includes("agy")) {
+    return `Step prompt template (fill the <...> parts):
+${CLAUDE_STEP_TEMPLATE}
+`;
+  }
+  return `Model selection (always set "model"):
 - Hard code (architecture, multi-file refactors, tricky bugs) → adapter agy, model claude-opus-4-6-thinking.
 - Normal code (single-file changes, tests, small features) → adapter agy, model claude-sonnet-4-6.
 - Reading, search, summaries, listing → adapter agy, model gemini-3.8-flash-low (gemini-3.8-flash-medium for long documents).
@@ -62,7 +63,22 @@ Step prompt templates (fill the <...> parts):
 ${CLAUDE_STEP_TEMPLATE}
 - Gemini Flash models:
 ${FLASH_STEP_TEMPLATE}
+`;
+}
 
+/** Modelo cuando el planner no dio uno válido: agy sigue sus reglas (escritor → Sonnet, lector → Flash low). */
+function defaultModelFor(adapter: AdapterType, writes: boolean): string {
+  if (adapter === "agy") return writes ? "claude-sonnet-4-6" : "gemini-3.8-flash-low";
+  return MODEL_CATALOG[adapter].defaultModel;
+}
+
+export function routingSystem(): string {
+  return `You are a planning agent for a local AI orchestrator that routes tasks to the best CLI tool.
+
+Available adapters and their strengths:
+${buildAdaptersSection()}
+
+${modelGuidance()}
 Rules:
 - Break the request into 2-8 concrete steps that form a dependency graph (DAG).
 - Give each step a short unique "id" (s1, s2, ...). "dependsOn" lists ONLY the ids whose output this step needs; steps that do not need each other must not depend on each other, so they can run in parallel.
@@ -163,7 +179,8 @@ export function normalizeSteps(raw: unknown[]): PlanStep[] {
     }
     let rawModel = String(s.model ?? "");
     if (!(plannerAdapters() as string[]).includes(adapter)) {
-      const to = s.writes === false ? "agy" : "claude";
+      const allowed = plannerAdapters();
+      const to = allowed.includes("agy") ? "agy" : allowed[0];
       console.warn(`[planner] adapter ${adapter} excluido (PLANNER_ADAPTERS); paso ${i + 1} reasignado a ${to}`);
       adapter = to;
       rawModel = "";
@@ -179,8 +196,7 @@ export function normalizeSteps(raw: unknown[]): PlanStep[] {
       estimatedTokens: Number.isFinite(Number(s.estimatedTokens)) && Number(s.estimatedTokens) > 0 ? Math.round(Number(s.estimatedTokens)) : null,
       description: String(s.description ?? `Paso ${i + 1}`),
       adapter: adapter as AdapterType,
-      // Escritor agy sin modelo válido: código normal (Sonnet), nunca Flash.
-      model: validModel ? model : adapter === "agy" && s.writes !== false ? "claude-sonnet-4-6" : cat.defaultModel,
+      model: validModel ? model : defaultModelFor(adapter as AdapterType, s.writes !== false),
       reason: String(s.reason ?? ""),
       prompt: String(s.prompt ?? s.description ?? ""),
     };

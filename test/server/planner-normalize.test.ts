@@ -14,15 +14,23 @@ describe("PLANNER_ADAPTERS", () => {
     expect(normalizeSteps([{ adapter: "codex", model: "gpt-5.5" }])[0].adapter).toBe("codex");
   });
 
-  it("adapter excluido se reasigna: lector → agy, escritor → claude, con su modelo por defecto", () => {
+  it("adapter excluido se reasigna a agy con las reglas de modelo: lector → flash-low, escritor → sonnet-4-6", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const [r, w] = normalizeSteps([
       { adapter: "codex", model: "gpt-5.5", writes: false },
       { adapter: "codex", model: "gpt-5.5", writes: true },
     ]);
-    expect(r).toMatchObject({ adapter: "agy", model: "gemini-3.8-flash-medium" });
-    expect(w).toMatchObject({ adapter: "claude", model: "claude-opus-5-5" });
+    expect(r).toMatchObject({ adapter: "agy", model: "gemini-3.8-flash-low" });
+    expect(w).toMatchObject({ adapter: "agy", model: "claude-sonnet-4-6" });
     expect(warn).toHaveBeenCalledTimes(2);
+    warn.mockRestore();
+  });
+
+  it("PLANNER_ADAPTERS=claude: el excluido cae a claude", () => {
+    vi.stubEnv("PLANNER_ADAPTERS", "claude");
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const [w] = normalizeSteps([{ adapter: "codex", model: "gpt-5.5", writes: true }]);
+    expect(w).toMatchObject({ adapter: "claude", model: "claude-opus-5-5" });
     warn.mockRestore();
   });
 });
