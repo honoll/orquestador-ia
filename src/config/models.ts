@@ -46,6 +46,17 @@ export const MODEL_CATALOG = {
 /** Adapters que el planner puede elegir. Gemini CLI se retiró en F1 (UNSUPPORTED_CLIENT para la cuenta); agy lo reemplaza. */
 export const ROUTABLE_ADAPTERS: readonly AdapterType[] = ["claude", "codex", "agy"];
 
+/**
+ * Adapters que Opus puede asignar al generar un plan (env PLANNER_ADAPTERS, lista con comas; se lee en cada
+ * llamada). Por defecto sin codex (la cuenta de ChatGPT no soporta Codex). Siempre ⊆ ROUTABLE_ADAPTERS.
+ * Codex sigue disponible a mano (picker del chat, PATCH de pasos).
+ */
+export function plannerAdapters(): AdapterType[] {
+  const raw = (process.env.PLANNER_ADAPTERS ?? "claude,agy").split(",").map((x) => x.trim());
+  const list = ROUTABLE_ADAPTERS.filter((a) => raw.includes(a));
+  return list.length ? [...list] : ["claude", "agy"];
+}
+
 /** Modelo barato para el pre-análisis de archivos adjuntos (vía agy). */
 export const AGY_ANALYSIS_MODEL = "gemini-3.8-flash-low";
 export const AGY_VOICE_MODEL = "gemini-3.8-flash-low";

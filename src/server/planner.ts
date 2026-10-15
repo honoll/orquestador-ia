@@ -4,7 +4,7 @@ import path from "node:path";
 import os from "node:os";
 import { CLAUDE_ISOLATION_ARGS, READ_ONLY_DISALLOWED_TOOLS } from "../adapters/claude/execute.js";
 import { validateDag } from "./plan-dag.js";
-import { MODEL_CATALOG, PLANNER_MODEL, ROUTABLE_ADAPTERS, type AdapterType } from "../config/models.js";
+import { MODEL_CATALOG, PLANNER_MODEL, ROUTABLE_ADAPTERS, plannerAdapters, type AdapterType } from "../config/models.js";
 
 export interface PlanStep {
   stepIndex: number;
@@ -38,13 +38,14 @@ const ADAPTER_STRENGTHS: Record<AdapterType, string> = {
 };
 
 function buildAdaptersSection(): string {
-  return ROUTABLE_ADAPTERS.map((type) => {
+  return plannerAdapters().map((type) => {
     const ids = MODEL_CATALOG[type].models.map((m) => m.id).join(", ");
     return `- ${type}: ${ADAPTER_STRENGTHS[type]}. Valid models: ${ids} (default: ${MODEL_CATALOG[type].defaultModel})`;
   }).join("\n");
 }
 
-export const ROUTING_SYSTEM = `You are a planning agent for a local AI orchestrator that routes tasks to the best CLI tool.
+export function routingSystem(): string {
+  return `You are a planning agent for a local AI orchestrator that routes tasks to the best CLI tool.
 
 Available adapters and their strengths:
 ${buildAdaptersSection()}
@@ -68,13 +69,14 @@ Respond ONLY with valid JSON, no markdown fences:
       "writes": false,
       "estimatedTokens": 0,
       "description": "Short label (< 60 chars)",
-      "adapter": "${ROUTABLE_ADAPTERS.join("|")}",
+      "adapter": "${plannerAdapters().join("|")}",
       "model": "one of the valid model ids for that adapter, or empty string for default",
       "reason": "One sentence explaining why this adapter",
       "prompt": "Full prompt for the CLI to execute"
     }
   ]
 }`;
+}
 
 export function buildPlanningPrompt(
   description: string,
@@ -142,12 +144,19 @@ export function extractJsonFromOutput(stdout: string): any {
 export function normalizeSteps(raw: unknown[]): PlanStep[] {
   return raw.map((item, i) => {
     const s = (item ?? {}) as Record<string, unknown>;
-    const adapter = String(s.adapter ?? "");
+    let adapter = String(s.adapter ?? "");
     if (!(ROUTABLE_ADAPTERS as readonly string[]).includes(adapter)) {
       throw new Error(`El planner eligió un adapter no permitido: ${adapter}`);
     }
+    let rawModel = String(s.model ?? "");
+    if (!(plannerAdapters() as string[]).includes(adapter)) {
+      const to = s.writes === false ? "agy" : "claude";
+      console.warn(`[planner] adapter ${adapter} excluido (PLANNER_ADAPTERS); paso ${i + 1} reasignado a ${to}`);
+      adapter = to;
+      rawModel = "";
+    }
     const cat = MODEL_CATALOG[adapter as AdapterType];
-    const model = String(s.model ?? "");
+    const model = rawModel;
     const validModel = (cat.models as readonly { id: string }[]).some((m) => m.id === model);
     return {
       stepIndex: i,
@@ -231,7 +240,7 @@ export async function generatePlan(
   // Write system prompt to a temp file to avoid Windows cmd.exe quoting issues with multi-line/JSON strings.
   // Using --system-prompt-file is safer than --system-prompt for complex prompts.
   const tmpSystemFile = path.join(os.tmpdir(), `orquestador-plan-sys-${Date.now()}.txt`);
-  fs.writeFileSync(tmpSystemFile, ROUTING_SYSTEM, "utf8");
+  fs.writeFileSync(tmpSystemFile, routingSystem(), "utf8");
 
   const args = buildPlannerArgs(tmpSystemFile);
 

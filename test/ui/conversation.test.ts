@@ -6,6 +6,8 @@ import {
   createSpeechQueue,
   createMaxSpeechTimer,
   MAX_SPEECH_MS,
+  nextApprovalPlan,
+  openApprovalPlan,
   type ConvState,
   type ConvEvent,
 } from "../../ui/src/lib/conversation.js";
@@ -416,5 +418,37 @@ describe("createMaxSpeechTimer", () => {
     t.start();
     t.start();
     expect(f.timers).toHaveLength(1);
+  });
+});
+
+describe("plan de voz por aprobar", () => {
+  it("guarda el último announce con needsApproval y planId", () => {
+    let id: string | null = null;
+    id = nextApprovalPlan(id, { planId: "p1", needsApproval: true });
+    expect(id).toBe("p1");
+    id = nextApprovalPlan(id, {}); // aviso normal (p. ej. «el plan terminó») no lo borra
+    expect(id).toBe("p1");
+    id = nextApprovalPlan(id, { planId: "p2" }); // sin needsApproval no cuenta
+    expect(id).toBe("p1");
+    id = nextApprovalPlan(id, { planId: "p3", needsApproval: true });
+    expect(id).toBe("p3");
+  });
+
+  it("al cerrar abre el plan en el chat y refresca la lista", () => {
+    const calls: string[] = [];
+    const deps = {
+      invalidatePlans: () => calls.push("plans"),
+      setActivePlanId: (id: string) => calls.push(`plan:${id}`),
+      setView: (v: string) => calls.push(`view:${v}`),
+    };
+    expect(openApprovalPlan("p1", deps)).toBe(true);
+    expect(calls).toEqual(["plans", "plan:p1", "view:chat"]);
+  });
+
+  it("sin plan pendiente no toca nada", () => {
+    const calls: string[] = [];
+    const deps = { invalidatePlans: () => calls.push("x"), setActivePlanId: () => calls.push("x"), setView: () => calls.push("x") };
+    expect(openApprovalPlan(null, deps)).toBe(false);
+    expect(calls).toEqual([]);
   });
 });

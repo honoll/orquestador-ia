@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useCallback, type ReactNode } from "react";
+import { readView, VIEW_KEY, type View } from "../lib/office-view";
 
 interface AppState {
   selectedAdapter: string;
@@ -6,6 +7,11 @@ interface AppState {
   selectedProjectId: string | null;
   conversationId: string | null;
   activePlanId: string | null;
+  view: View;
+  setView: (view: View) => void;
+  /** «Platicar» abierto: la Oficina ocultaría sus controles con el micrófono abierto. */
+  talkActive: boolean;
+  setTalkActive: (on: boolean) => void;
   setAdapter: (adapter: string, model?: string) => void;
   setModel: (model: string) => void;
   setProject: (projectId: string | null) => void;
@@ -20,6 +26,10 @@ const AppStateContext = createContext<AppState>({
   selectedProjectId: null,
   conversationId: null,
   activePlanId: null,
+  view: "chat",
+  setView: () => {},
+  talkActive: false,
+  setTalkActive: () => {},
   setAdapter: () => {},
   setModel: () => {},
   setProject: () => {},
@@ -38,6 +48,17 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [activePlanId, setActivePlanIdState] = useState<string | null>(null);
+  const [view, setViewState] = useState<View>(() => {
+    let stored: string | null = null;
+    try { stored = localStorage.getItem(VIEW_KEY); } catch { /* almacenamiento bloqueado */ }
+    return readView(window.location.search, stored);
+  });
+
+  const [talkActive, setTalkActive] = useState(false);
+  const setView = useCallback((v: View) => {
+    setViewState(v);
+    try { localStorage.setItem(VIEW_KEY, v); } catch { /* almacenamiento bloqueado */ }
+  }, []);
 
   const setAdapter = useCallback((adapter: string, model?: string) => {
     setSelectedAdapter(adapter);
@@ -76,6 +97,10 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         selectedProjectId,
         conversationId,
         activePlanId,
+        view,
+        setView,
+        talkActive,
+        setTalkActive,
         setAdapter,
         setModel,
         setProject,

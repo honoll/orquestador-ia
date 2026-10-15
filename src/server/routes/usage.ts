@@ -208,7 +208,7 @@ app.get("/summary", async (c) => {
   });
 });
 
-const SERVER_STARTED_AT = new Date().toISOString();
+export const SERVER_STARTED_AT = new Date().toISOString();
 
 /** GET /api/usage/session — tokens de todos los adapters desde que arrancó el servidor. */
 app.get("/session", async (c) => {

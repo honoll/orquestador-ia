@@ -22,6 +22,7 @@ const { db, schema } = await import("../../src/db/index.js");
 const { runPlanStep, QUOTA_PAUSE_PREFIX } = await import("../../src/server/plan-runner.js");
 const { createAccount } = await import("../../src/server/agy-accounts.js");
 const { eq } = await import("drizzle-orm");
+const { collectOfficeInput, buildOfficeState } = await import("../../src/server/office-state.js");
 
 beforeAll(async () => { await migrationDone; await createAccount("Prueba"); });
 beforeEach(() => h.execute.mockClear());
@@ -63,5 +64,26 @@ describe("runPlanStep", () => {
     const { planId, stepId, cwd } = await mk({ readOnly: 0 });
     await runPlanStep({ planId, stepId, cwd });
     expect(h.execute.mock.calls[0][0].readOnly).toBe(false);
+  });
+});
+
+describe("Oficina: escritorios con filas reales (regresión: contaban doble)", () => {
+
+  const agyDesks = async () => buildOfficeState(await collectOfficeInput()).agents.find((a) => a.id === "agy")!.desks;
+
+  it("1 paso corriendo → 1 escritorio; 2 pasos → 2", async () => {
+    const seen: number[] = [];
+    h.execute.mockImplementationOnce(async () => { seen.push(await agyDesks()); return h.quota; });
+    const a = await mk();
+    await runPlanStep({ planId: a.planId, stepId: a.stepId, cwd: a.cwd });
+
+    let release!: () => void;
+    const gate = new Promise<void>((r) => { release = r; });
+    let started = 0;
+    const both = async () => { if (++started === 2) { seen.push(await agyDesks()); release(); } await gate; return h.quota; };
+    h.execute.mockImplementationOnce(both).mockImplementationOnce(both);
+    const b = await mk(); const c = await mk();
+    await Promise.all([runPlanStep({ planId: b.planId, stepId: b.stepId, cwd: b.cwd }), runPlanStep({ planId: c.planId, stepId: c.stepId, cwd: c.cwd })]);
+    expect(seen).toEqual([1, 2]);
   });
 });

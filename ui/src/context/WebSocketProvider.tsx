@@ -1,5 +1,7 @@
 import { createContext, useContext, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { eventToLog } from "../lib/office";
+import { appendLog, type OfficeLogEntry } from "../lib/office-view";
 
 interface WsEvent {
   type: string;
@@ -20,6 +22,8 @@ interface WsContextValue {
   logs: Map<string, string>;
   /** Escucha TODOS los eventos, uno por uno y sin perder ninguno (a diferencia de lastEvent). */
   subscribe: (listener: (event: WsEvent) => void) => () => void;
+  /** Log de la Oficina: últimos 100 eventos desde que se abrió la página, el más nuevo primero. */
+  officeLog: OfficeLogEntry[];
 }
 
 const WsContext = createContext<WsContextValue>({
@@ -27,6 +31,7 @@ const WsContext = createContext<WsContextValue>({
   lastEvent: null,
   logs: new Map(),
   subscribe: () => () => {},
+  officeLog: [],
 });
 
 export function useWs() {
@@ -36,6 +41,8 @@ export function useWs() {
 export function WebSocketProvider({ children }: { children: ReactNode }) {
   const [connected, setConnected] = useState(false);
   const [lastEvent, setLastEvent] = useState<WsEvent | null>(null);
+  const [officeLog, setOfficeLog] = useState<OfficeLogEntry[]>([]);
+  const logSeq = useRef(0);
   const logsRef = useRef(new Map<string, string>());
   const listenersRef = useRef(new Set<(event: WsEvent) => void>());
   const subscribe = useCallback((l: (event: WsEvent) => void) => {
@@ -72,6 +79,8 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
           // Los deltas del asistente llegan a ráfagas: solo van a los suscriptores (ni lastEvent ni logs).
           if (event.type === "voice:assistant:delta") return;
           setLastEvent(event);
+          const entry = eventToLog(event as Parameters<typeof eventToLog>[0]);
+          if (entry) setOfficeLog((l) => appendLog(l, { ...entry, key: String(logSeq.current++) }));
 
           if (event.type === "log" && event.runId && event.data && event.stream === "stdout") {
             const prev = logsRef.current.get(event.runId) ?? "";
@@ -137,7 +146,7 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
   }, [queryClient]);
 
   return (
-    <WsContext.Provider value={{ connected, lastEvent, logs: logsRef.current, subscribe }}>
+    <WsContext.Provider value={{ connected, lastEvent, logs: logsRef.current, subscribe, officeLog }}>
       {children}
     </WsContext.Provider>
   );

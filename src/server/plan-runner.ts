@@ -43,13 +43,13 @@ export async function runPlanStep(options: StepRunOptions): Promise<StepOutcome>
     .set({ status: "running", startedAt: new Date().toISOString(), errorMessage: null })
     .where(eq(schema.planSteps.id, stepId));
 
-  broadcast({ type: "plan:step", planId, stepId, status: "running", timestamp: new Date().toISOString() } as any);
+  broadcast({ type: "plan:step", planId, stepId, status: "running", adapter: step.adapter, timestamp: new Date().toISOString() } as any);
 
   const agyAccount = step.adapter === "agy" ? await getActiveAccount() : null;
   if (step.adapter === "agy" && !agyAccount) {
     const msg = new NoActiveAccountError().message;
     await db.update(schema.planSteps).set({ status: "failed", errorMessage: msg, finishedAt: new Date().toISOString() }).where(eq(schema.planSteps.id, stepId));
-    broadcast({ type: "plan:step", planId, stepId, status: "failed", error: msg, timestamp: new Date().toISOString() } as any);
+    broadcast({ type: "plan:step", planId, stepId, status: "failed", adapter: step.adapter, error: msg, timestamp: new Date().toISOString() } as any);
     return { status: "failed", tokensUsed: 0 };
   }
 
@@ -91,6 +91,8 @@ export async function runPlanStep(options: StepRunOptions): Promise<StepOutcome>
       prompt,
       cwd,
     });
+    // Liga el paso a su run desde el arranque: la Oficina excluye estos runs del "chat suelto".
+    await db.update(schema.planSteps).set({ runId }).where(eq(schema.planSteps.id, stepId));
 
     try {
       const callStartedAt = Date.now();
@@ -127,7 +129,7 @@ export async function runPlanStep(options: StepRunOptions): Promise<StepOutcome>
         await db.update(schema.runs).set({ status: "failed", errorMessage: result.errorMessage, errorFamily: result.errorFamily, result: result.stdout, finishedAt: new Date().toISOString() }).where(eq(schema.runs.id, runId));
         await db.update(schema.tasks).set({ status: "failed", updatedAt: new Date().toISOString() }).where(eq(schema.tasks.id, taskId));
         await db.update(schema.planSteps).set({ status: "pending", errorMessage: msg, runId }).where(eq(schema.planSteps.id, stepId));
-        broadcast({ type: "plan:step", planId, stepId, status: "pending", error: msg, timestamp: new Date().toISOString() } as any);
+        broadcast({ type: "plan:step", planId, stepId, status: "pending", adapter: step.adapter, error: msg, timestamp: new Date().toISOString() } as any);
         return { status: "paused_quota", tokensUsed };
       }
 
@@ -173,7 +175,7 @@ export async function runPlanStep(options: StepRunOptions): Promise<StepOutcome>
           })
           .where(eq(schema.planSteps.id, stepId));
 
-        broadcast({ type: "plan:step", planId, stepId, status: "succeeded", timestamp: new Date().toISOString() } as any);
+        broadcast({ type: "plan:step", planId, stepId, status: "succeeded", adapter: step.adapter, timestamp: new Date().toISOString() } as any);
         return { status: "succeeded", tokensUsed };
       }
 
@@ -227,6 +229,6 @@ export async function runPlanStep(options: StepRunOptions): Promise<StepOutcome>
     })
     .where(eq(schema.planSteps.id, stepId));
 
-  broadcast({ type: "plan:step", planId, stepId, status: "failed", error: lastError, timestamp: new Date().toISOString() } as any);
+  broadcast({ type: "plan:step", planId, stepId, status: "failed", adapter: step.adapter, error: lastError, timestamp: new Date().toISOString() } as any);
   return { status: "failed", tokensUsed };
 }

@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import fs from "node:fs";
 import { withoutOrchestratorSecrets } from "../lib/process-runner.js";
 import { voiceConfig, type VoiceConfig } from "./config.js";
+import { activeAssistant } from "./assistant/session.js";
 
 export type WhisperState = "stopped" | "starting" | "warming" | "ready" | "failed";
 
@@ -11,6 +12,8 @@ export interface WhisperDeps {
   wait(ms: number): Promise<void>;
   /** Existencia de exe/modelo; por defecto fs.existsSync. */
   exists?(p: string): boolean;
+  /** ¿Hay una plática de voz activa? (no se descarga Whisper a media plática). */
+  assistantActive?(): boolean;
 }
 
 const HEALTH_POLL_MS = 500;
@@ -93,6 +96,28 @@ export function createWhisper(cfg: VoiceConfig | (() => VoiceConfig) = voiceConf
   let proc: { kill(): void } | null = null;
   let startPromise: Promise<boolean> | null = null;
   let generation = 0;
+  let inFlight = 0;
+  let idleTimer: NodeJS.Timeout | null = null;
+  const assistantActive = d.assistantActive ?? (() => activeAssistant() !== null);
+
+  function clearIdle(): void {
+    if (idleTimer) clearTimeout(idleTimer);
+    idleTimer = null;
+  }
+
+  /** Tras cada uso: sin actividad en WHISPER_IDLE_MINUTES se apaga el hijo y se libera la GPU. */
+  function armIdle(): void {
+    clearIdle();
+    const min = getCfg().whisperIdleMinutes;
+    if (!(min > 0)) return;
+    idleTimer = setTimeout(() => {
+      idleTimer = null;
+      if (!proc) return; // adoptado (no es nuestro) o ya apagado: nunca se mata
+      if (inFlight > 0 || state !== "ready" || assistantActive()) return armIdle();
+      api.stop();
+    }, min * 60_000);
+    idleTimer.unref?.();
+  }
 
   async function post(wav: Buffer): Promise<string | null> {
     try {
@@ -134,7 +159,10 @@ export function createWhisper(cfg: VoiceConfig | (() => VoiceConfig) = voiceConf
     state = "warming";
     // Calentamiento en segundo plano: la primera inferencia compila (JIT) y tarda ~40 s.
     void post(silentWav(1)).finally(() => {
-      if (gen === generation && state === "warming") state = "ready";
+      if (gen === generation && state === "warming") {
+        state = "ready";
+        armIdle();
+      }
     });
   }
 
@@ -216,19 +244,24 @@ export function createWhisper(cfg: VoiceConfig | (() => VoiceConfig) = voiceConf
     return startPromise;
   }
 
-  return {
+  const api = {
     ensureStarted,
     async transcribe(wav16k: Buffer): Promise<string | null> {
+      inFlight++;
       try {
         if (!(await ensureStarted())) return null;
         return await post(wav16k);
       } catch {
         return null;
+      } finally {
+        inFlight--;
+        armIdle();
       }
     },
     status: (): WhisperState => state,
     lastError: (): string | null => lastError,
     stop(): void {
+      clearIdle();
       generation++;
       startPromise = null;
       const p = proc;
@@ -237,6 +270,7 @@ export function createWhisper(cfg: VoiceConfig | (() => VoiceConfig) = voiceConf
       try { p?.kill(); } catch { /* nada */ }
     },
   };
+  return api;
 }
 
 export const whisper = createWhisper();

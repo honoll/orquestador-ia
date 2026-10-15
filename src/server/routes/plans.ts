@@ -54,9 +54,9 @@ app.get("/:id", async (c) => {
 
 // Create plan — immediately returns plan ID, generates steps in background with streaming
 app.post("/", async (c) => {
-  const body = await c.req.json<{ description: string; projectId?: string; cwd?: string }>();
+  const body = await c.req.json<{ description: string; projectId?: string; cwd?: string; useMemory?: unknown }>();
   if (!body.description?.trim()) return c.json({ error: "description required" }, 400);
-  const { id: planId } = await createPlan(body);
+  const { id: planId } = await createPlan({ ...body, useMemory: body.useMemory === true });
   return c.json({ id: planId, status: "generating", description: body.description, steps: [] }, 202);
 });
 

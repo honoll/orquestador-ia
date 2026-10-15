@@ -21,6 +21,13 @@ describe("voiceConfig", () => {
     expect(c.voiceModel).toBe(path.join("D:\\v", "voces", "es_MX-ald-medium.onnx"));
     expect(c.ffmpeg).toBe("D:\\ff.exe");
   });
+  it("WHISPER_IDLE_MINUTES: default 5, 0 vale, inválido cae al default", () => {
+    expect(voiceConfig({}).whisperIdleMinutes).toBe(5);
+    expect(voiceConfig({ WHISPER_IDLE_MINUTES: "0" }).whisperIdleMinutes).toBe(0);
+    expect(voiceConfig({ WHISPER_IDLE_MINUTES: "12" }).whisperIdleMinutes).toBe(12);
+    expect(voiceConfig({ WHISPER_IDLE_MINUTES: "-1" }).whisperIdleMinutes).toBe(5);
+    expect(voiceConfig({ WHISPER_IDLE_MINUTES: "x" }).whisperIdleMinutes).toBe(5);
+  });
   it("puerto inválido cae al default", () => {
     expect(voiceConfig({ WHISPER_PORT: "abc" }).whisperPort).toBe(8091);
   });

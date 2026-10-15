@@ -22,6 +22,8 @@ import accountsRoute from "./routes/accounts.js";
 import workersRoute from "./routes/workers.js";
 import jevRoute from "./routes/jev.js";
 import memoryRoute from "./routes/memory.js";
+import officeRoute from "./routes/office.js";
+import { startOfficeEventTracker } from "./office-state.js";
 import voiceRoute from "./routes/voice.js";
 import voiceAssistantRoute from "./routes/voice-assistant.js";
 import { createSystemRoute } from "./routes/system.js";
@@ -29,9 +31,6 @@ import { shutdownAssistant } from "../voice/assistant/session.js";
 import { originGuard } from "./origin-guard.js";
 import { whisper } from "../voice/whisper.js";
 import { getDucker } from "../voice/duck.js";
-import { indexVault } from "../memory/vault-index.js";
-import { createOllamaEmbedder } from "../memory/ollama.js";
-import { memoryConfig } from "../memory/config.js";
 
 // Llaves locales (p. ej. TYPESAFE_API_KEY) en .env, que está en .gitignore.
 try { process.loadEnvFile(path.resolve(import.meta.dirname, "../../.env")); } catch { /* sin .env */ }
@@ -65,6 +64,7 @@ app.route("/api/accounts", accountsRoute);
 app.route("/api/workers", workersRoute);
 app.route("/api/jev", jevRoute);
 app.route("/api/memory", memoryRoute);
+app.route("/api/office", officeRoute);
 app.route("/api/voice/assistant", voiceAssistantRoute);
 app.route("/api/voice", voiceRoute);
 app.route("/api/system", createSystemRoute({ shutdown }));
@@ -94,16 +94,9 @@ const server = serve({ fetch: app.fetch, port: PORT, hostname: "127.0.0.1" }, (i
 });
 
 injectWebSocket(server);
+startOfficeEventTracker();
 
-// Indexa la memoria (Cerebro) en segundo plano; nunca bloquea ni tumba el arranque.
-try {
-  const cfg = memoryConfig();
-  void indexVault({ vaultPath: cfg.vaultPath, embedder: createOllamaEmbedder(cfg), model: cfg.model })
-    .then((r) => log.info({ report: r }, "índice de memoria listo"))
-    .catch((err) => log.warn({ err: String(err?.message ?? err) }, "índice de memoria omitido"));
-} catch (err) {
-  log.warn({ err: String((err as Error)?.message ?? err) }, "índice de memoria omitido");
-}
+// Memoria (Cerebro/Ollama): sin índice al arrancar; solo cuando se pide (useMemory o "reindexar").
 
 // whisper-server (voz, F5) arranca de forma perezosa; se apaga junto con el orquestador.
 // Ducking de audio: restaura al arrancar lo que quedó atenuado por un cierre brusco, y al salir.

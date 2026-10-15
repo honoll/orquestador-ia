@@ -5,13 +5,13 @@ const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
 
 describe("createOllamaEmbedder", () => {
-  it("manda {model,input} a /api/embed y devuelve embeddings", async () => {
+  it("manda {model,input} a /api/embed solo en CPU y sin dejar el modelo cargado", async () => {
     const fetchImpl = vi.fn(async () => json({ embeddings: [[1, 2], [3, 4]] }));
     const emb = createOllamaEmbedder({ url: "http://x:1/", model: "m", fetchImpl: fetchImpl as unknown as typeof fetch });
     expect(await emb(["a", "b"])).toEqual([[1, 2], [3, 4]]);
     const [url, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toBe("http://x:1/api/embed");
-    expect(JSON.parse(init.body as string)).toEqual({ model: "m", input: ["a", "b"], keep_alive: "30m" });
+    expect(JSON.parse(init.body as string)).toEqual({ model: "m", input: ["a", "b"], keep_alive: 0, options: { num_gpu: 0 } });
   });
 
   it("error HTTP, JSON sin embeddings, cantidad distinta, excepcion y timeout -> null", async () => {

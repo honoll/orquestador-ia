@@ -299,11 +299,11 @@ describe("rutas de planes (F2)", () => {
     expect(steps[0]).toMatchObject({ writes: 1, readOnly: 0 });
   });
 
-  it("normal: indexa, recupera memoria, la guarda sin extracto y se la pasa al planner", async () => {
+  it("normal con useMemory: indexa, recupera memoria, la guarda sin extracto y se la pasa al planner", async () => {
     h.generatePlan.mockClear();
     h.retrieveMemory.mockClear();
     h.indexVault.mockClear();
-    const r = await req("/", "POST", { description: "agrega login" });
+    const r = await req("/", "POST", { description: "agrega login", useMemory: true });
     const { id } = (await r.json()) as { id: string };
     await vi.waitFor(async () => expect((await getPlanRow(id)).status).toBe("pending"));
     expect(h.indexVault).toHaveBeenCalledTimes(1);
@@ -329,7 +329,7 @@ describe("rutas de planes (F2)", () => {
       eventsAtIndex = [...h.events];
       return { scanned: 0, updated: 0, removed: 0, chunks: 0, failed: false };
     });
-    const r = await req("/", "POST", { description: "agrega logout" });
+    const r = await req("/", "POST", { description: "agrega logout", useMemory: true });
     const { id } = (await r.json()) as { id: string };
     await vi.waitFor(async () => expect((await getPlanRow(id)).status).toBe("pending"));
     expect(eventsAtIndex.filter((e) => e.type === "plan:memory")).toEqual([

@@ -8,10 +8,14 @@ import { HudBar } from "./components/HudBar";
 import { ProjectPanel } from "./components/ProjectPanel";
 import { ResizableGroup, ResizableHandle, ResizablePanel } from "./components/ResizableDivider";
 import { useWs } from "./context/WebSocketProvider";
+import { useAppState } from "./context/AppStateContext";
+import { OfficeView } from "./components/office/OfficeView";
 
 export default function App() {
   const { connected } = useWs();
   const [rightOpen, setRightOpen] = useState(true);
+  const { view } = useAppState();
+  const office = view === "oficina";
 
   return (
     <div className="flex h-screen w-screen flex-col overflow-hidden bg-surface-0">
@@ -40,15 +44,17 @@ export default function App() {
 
         <ResizableHandle direction="horizontal" />
 
-        {/* Center — Chat (no absolute overlays here) */}
-        <ResizablePanel defaultSize={rightOpen ? 62 : 84} minSize={30}>
-          <main className="flex h-full flex-col min-w-0">
+        {/* Center — Chat (no absolute overlays here); en Oficina, centro + derecha = OfficeView.
+            Chat sigue montado (oculto) para no perder un stream en curso. */}
+        <ResizablePanel defaultSize={rightOpen && !office ? 62 : 84} minSize={30}>
+          <main className={`h-full flex-col min-w-0 ${office ? "hidden" : "flex"}`}>
             <Chat />
           </main>
+          {office && <OfficeView />}
         </ResizablePanel>
 
         {/* Right — Projects (collapsible) */}
-        {rightOpen && (
+        {rightOpen && !office && (
           <>
             <ResizableHandle direction="horizontal" />
             <ResizablePanel defaultSize={22} minSize={12} maxSize={35}>
@@ -61,16 +67,18 @@ export default function App() {
       </ResizableGroup>
 
       {/* Fixed toggle button — bottom-right, never overlaps content */}
-      <button
-        onClick={() => setRightOpen((o) => !o)}
-        title={rightOpen ? "Ocultar proyectos" : "Mostrar proyectos"}
-        className="fixed bottom-4 right-4 z-30 flex items-center gap-1.5 px-2.5 py-1.5 bg-surface-1 border border-edge rounded-lg font-mono text-[10px] text-text-tertiary hover:text-text-primary hover:bg-surface-2 transition-all shadow-sm"
-      >
-        <svg width="10" height="10" viewBox="0 0 12 12" fill="none" className={`transition-transform ${rightOpen ? "" : "rotate-180"}`}>
-          <path d="M8 2L4 6L8 10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-        </svg>
-        proyectos
-      </button>
+      {!office && (
+        <button
+          onClick={() => setRightOpen((o) => !o)}
+          title={rightOpen ? "Ocultar proyectos" : "Mostrar proyectos"}
+          className="fixed bottom-4 right-4 z-30 flex items-center gap-1.5 px-2.5 py-1.5 bg-surface-1 border border-edge rounded-lg font-mono text-[10px] text-text-tertiary hover:text-text-primary hover:bg-surface-2 transition-all shadow-sm"
+        >
+          <svg width="10" height="10" viewBox="0 0 12 12" fill="none" className={`transition-transform ${rightOpen ? "" : "rotate-180"}`}>
+            <path d="M8 2L4 6L8 10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+          proyectos
+        </button>
+      )}
     </div>
   );
 }
