@@ -28,6 +28,14 @@ describe("reglas locales", () => {
     expect(ids("lee C:\\proyectos\\demo\\.orquestador-ia\\data\\x.db")).toEqual(["outside_project"]);
     expect(ids("lee ~/.orquestador-ia/workers/codex/auth")).toEqual(["outside_project"]);
   });
+  it("rutas del proyecto con puntuación pegada o como file:/// no cuentan como fuera; .. que escapa sí", () => {
+    expect(ids("(proyecto C:\\proyectos\\demo).")).toEqual([]);
+    expect(ids("guarda en C:\\proyectos\\demo\\salidas, luego C:\\proyectos\\demo\\x.png;")).toEqual([]);
+    expect(ids("ver file:///C:/proyectos/demo/x.png")).toEqual([]);
+    expect(ids("«C:\\proyectos\\demo\\a.md»")).toEqual([]);
+    expect(ids("escribe C:\\proyectos\\demo\\..\\..\\Windows\\x.dll")).toEqual(["outside_project"]);
+    expect(ids("lee C:\\proyectos\\demo-otro\\a.ts")).toEqual(["outside_project"]);
+  });
   it("rm -r sin -f, git clean, git branch -D y rd /s", () => {
     expect(ids("rm -r build")).toEqual(["destructive"]);
     expect(ids("rm -R build")).toEqual(["destructive"]);
