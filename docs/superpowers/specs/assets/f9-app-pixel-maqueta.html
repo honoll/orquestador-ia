@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="es-MX"><head><meta charset="utf-8"><title>F9 · app completa estilo C</title>
+<link href="https://fonts.googleapis.com/css2?family=Silkscreen:wght@400;700&family=VT323&display=swap" rel="stylesheet">
+<style>
+:root{--s0:#09090b;--s1:#0f0f12;--s2:#16161a;--s3:#1e1e23;--edge:#2a2a33;--edge2:#3a3a45;--t1:#e4e4e7;--t2:#a1a1aa;--t3:#62626d;--acc:#a78bfa;--blue:#60a5fa;--ok:#34d399;--err:#f87171;--warn:#fbbf24}
+*{box-sizing:border-box}
+body{margin:0;background:var(--s0);color:var(--t1);font:20px/1.15 "VT323",monospace}
+.t{font-family:"Silkscreen",monospace;letter-spacing:.06em;font-size:11px}
+code,pre,.code{font-family:"JetBrains Mono",Consolas,monospace;font-size:12.5px;line-height:1.5}
+.px{border:3px solid var(--edge);background:var(--s1);box-shadow:3px 3px 0 #000}
+.btn{display:inline-block;border:3px solid var(--edge2);background:var(--s2);box-shadow:3px 3px 0 #000;padding:2px 10px;font-family:"Silkscreen";font-size:10px;letter-spacing:.06em;cursor:pointer}
+.btn:active{transform:translate(2px,2px);box-shadow:1px 1px 0 #000}
+.btn.pri{background:#2e2560;border-color:var(--acc);color:#fff}.btn.blue{background:#13314f;border-color:var(--blue);color:#fff}
+.grid{background-image:linear-gradient(#ffffff05 2px,transparent 2px),linear-gradient(90deg,#ffffff05 2px,transparent 2px);background-size:24px 24px}
+/* layout */
+.hud{display:flex;align-items:center;gap:14px;padding:6px 12px;border-bottom:3px solid var(--edge);background:#0b0b0e}
+.bar{display:inline-block;width:90px;height:10px;border:2px solid var(--edge2);vertical-align:middle;margin:0 6px;background:#000}.bar i{display:block;height:100%;background:var(--warn)}
+.tabs{margin-left:auto;display:flex;gap:6px}
+.app{display:grid;grid-template-columns:250px 1fr 250px;height:690px}
+.left,.right{padding:10px;overflow:hidden;background:#0b0b0e}.left{border-right:3px solid var(--edge)}.right{border-left:3px solid var(--edge)}
+.lbl{color:var(--t3);margin:12px 0 6px}
+.item{padding:2px 8px;color:var(--t2);border:3px solid transparent}.item.on{color:#fff;border-color:var(--acc);background:#1b1638;box-shadow:3px 3px 0 #000}
+.dot{display:inline-block;width:9px;height:9px;margin-right:6px;background:var(--ok);vertical-align:1px}
+.meter{border:2px solid var(--edge2);height:10px;background:#000;margin:4px 0}.meter i{display:block;height:100%;background:var(--warn)}
+.center{display:flex;flex-direction:column;padding:12px 16px;gap:12px;overflow:hidden}
+.msg{max-width:76%;padding:6px 10px}
+.me{align-self:flex-end;border-color:#4c3d85;background:#1d1733}
+.bot{align-self:flex-start;display:flex;gap:10px;align-items:flex-start}
+.bot .who{color:var(--acc);margin-bottom:2px}
+pre{margin:6px 0 2px;padding:8px 10px;border:3px solid var(--edge);background:#060608;color:#d4d4d8;box-shadow:inset 0 0 0 1px #000}
+.chip{display:inline-block;border:2px solid var(--edge2);padding:0 6px;margin-left:6px;color:var(--warn);font-size:16px}
+.inp{margin-top:auto;display:flex;gap:8px;align-items:stretch}
+.inp .box{flex:1;padding:6px 10px;color:var(--t3)}
+canvas.av{image-rendering:pixelated;width:56px;height:44px;flex:none}
+/* planview mini */
+.plan{padding:8px 10px}
+.steps{display:flex;gap:10px;margin-top:8px}
+.step{flex:1;padding:6px 8px}.step.run{border-color:var(--blue)}.step.ok{border-color:#1f7a5c}.step.wait{border-color:#8a6d1a}
+.step small{color:var(--t3)}
+.badge{font-family:"Silkscreen";font-size:9px;border:2px solid;padding:0 4px}
+.note{padding:10px 14px;color:var(--t2);font-size:18px}
+</style></head><body>
+<div class="hud"><span class="t" style="font-size:13px">ORQUESTADOR</span><span style="color:var(--ok)">● en línea</span>
+<span>fam-1 <span class="bar"><i style="width:57%"></i></span> 57% · 2h 10m</span><span style="color:var(--t2)">sesión 182k tok</span>
+<div class="tabs"><span class="btn pri">CHAT</span><span class="btn">OFICINA</span></div></div>
+<div class="app">
+ <div class="left grid">
+  <div class="t" style="font-size:12px">ADAPTERS</div>
+  <div class="lbl t">CLAUDE</div>
+  <div class="item on"><span class="dot"></span>Opus 5.5</div><div class="item">Sonnet 5.5</div><div class="item">Haiku 4.5</div>
+  <div class="lbl t">AGY</div><div class="item"><span class="dot" style="background:var(--blue)"></span>flash-low</div>
+  <div class="lbl t">CODEX</div><div class="item"><span class="dot"></span>gpt-5.5</div>
+  <div class="lbl t">CUENTAS ANTIGRAVITY</div>
+  <div class="px" style="padding:6px 8px">fam-1 · activa<div class="meter"><i style="width:57%"></i></div><span style="color:var(--t3)">restablece en 2h 10m</span></div>
+  <div style="margin-top:8px"><span class="btn">CAMBIAR CUENTA</span></div>
+  <div class="lbl t">MEMORIA</div><div style="color:var(--t2)">437 notas · bge-m3 ✓</div>
+ </div>
+ <div class="center">
+  <div class="msg px me">revisa el README del orquestador y dime qué le falta</div>
+  <div class="bot"><canvas class="av" data-c="#a78bfa" data-a="sombrero" width="28" height="22"></canvas>
+   <div class="msg px"><div class="who t">OPUS 5.5 <span class="chip">plan</span></div>Le faltan 3 cosas: la instalación de la app de escritorio, el puerto nuevo y la sección de voz. Para arrancar:
+   <pre>powershell -ExecutionPolicy Bypass -File scripts\desktop\install-desktop.ps1</pre></div></div>
+  <div class="plan px"><span class="t">PLAN · REVISAR EL README</span> <span class="badge" style="color:var(--blue);border-color:var(--blue)">EJECUTANDO</span> <span style="color:var(--t3)">· 12.4k / 27k tok</span>
+   <div class="steps">
+    <div class="step px ok"><span class="badge" style="color:var(--ok)">✓</span> s1 · leer README<br><small>agy · 4.1k</small></div>
+    <div class="step px run"><span class="badge" style="color:var(--blue)">▶</span> s2 · comparar con CLAUDE.md<br><small>codex · …</small></div>
+    <div class="step px wait"><span class="badge" style="color:var(--warn)">⏸</span> s3 · proponer cambios<br><small>claude · guardia</small></div>
+   </div></div>
+  <div class="inp"><div class="box px">escribe o usa /plan…</div><span class="btn">🎙</span><span class="btn blue">PLATICAR</span><span class="btn pri">ENVIAR</span></div>
+ </div>
+ <div class="right grid">
+  <div class="t" style="font-size:12px">PROYECTOS</div>
+  <div class="lbl t">ACTIVO</div><div class="item on">orquestador-ia</div><div class="item">EDGE</div>
+  <div class="lbl t">PLANES</div>
+  <div class="item"><span style="color:var(--blue)">▶</span> README · ejecutando</div>
+  <div class="item"><span style="color:var(--warn)">⏸</span> CONTINUAR · pausado</div>
+  <div class="item"><span style="color:var(--err)">✗</span> Frigate · falló</div>
+  <div class="lbl t">PLÁTICAS</div><div class="item">7 oct · probando micrófono</div>
+  <div style="margin-top:10px"><span class="btn">+ NUEVO PROYECTO</span></div>
+ </div>
+</div>
+<p class="note">Estilo C: VT323 en todo el texto, Silkscreen en títulos/etiquetas/botones, bordes de 3 px con sombra dura, esquinas cuadradas, rejilla en los paneles, botones que "se hunden" al presionar, avatar pixel por modelo en el chat. El código (bloque gris) sigue en JetBrains Mono.</p>
+<script>
+function shade(h,f){const n=parseInt(h.slice(1),16);let r=n>>16,g=n>>8&255,b=n&255;const m=v=>Math.max(0,Math.min(255,Math.round(f>1?v+(255-v)*(f-1):v*f)));return`rgb(${m(r)},${m(g)},${m(b)})`}
+document.querySelectorAll("canvas.av").forEach(cv=>{const x=cv.getContext("2d"),p=(a,b,w,h,c)=>{x.fillStyle=c;x.fillRect(a,b,w,h)},c=cv.dataset.c;
+p(1,8,10,8,"#09090b");p(2,9,8,6,"#18181d");p(3,10,5,1,shade(c,1.2));p(3,12,3,1,shade(c,1.2));p(2,16,9,1,"#3a3a44");
+p(14,13,10,4,"#09090b");p(15,13,8,4,shade(c,.62));p(11,15,4,1,shade(c,.62));
+p(13,4,12,10,"#09090b");p(14,5,10,8,c);p(14,5,10,2,shade(c,1.35));p(14,11,10,2,shade(c,.62));p(14,7,6,4,shade(c,.45));p(15,8,1,2,"#fff");p(18,8,1,2,"#fff");
+p(12,3,14,1,"#09090b");p(15,1,8,3,"#7f1d1d");p(13,3,12,1,"#991b1b");p(15,2,8,1,"#b91c1c");p(0,17,28,3,"#26262e");p(4,18,20,1,c)});
+</script></body></html>
