@@ -22,6 +22,8 @@ import accountsRoute from "./routes/accounts.js";
 import workersRoute from "./routes/workers.js";
 import jevRoute from "./routes/jev.js";
 import memoryRoute from "./routes/memory.js";
+import officeRoute from "./routes/office.js";
+import { startOfficeEventTracker } from "./office-state.js";
 import voiceRoute from "./routes/voice.js";
 import voiceAssistantRoute from "./routes/voice-assistant.js";
 import { createSystemRoute } from "./routes/system.js";
@@ -65,6 +67,7 @@ app.route("/api/accounts", accountsRoute);
 app.route("/api/workers", workersRoute);
 app.route("/api/jev", jevRoute);
 app.route("/api/memory", memoryRoute);
+app.route("/api/office", officeRoute);
 app.route("/api/voice/assistant", voiceAssistantRoute);
 app.route("/api/voice", voiceRoute);
 app.route("/api/system", createSystemRoute({ shutdown }));
@@ -94,6 +97,7 @@ const server = serve({ fetch: app.fetch, port: PORT, hostname: "127.0.0.1" }, (i
 });
 
 injectWebSocket(server);
+startOfficeEventTracker();
 
 // Indexa la memoria (Cerebro) en segundo plano; nunca bloquea ni tumba el arranque.
 try {
