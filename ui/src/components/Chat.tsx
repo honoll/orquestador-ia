@@ -181,12 +181,8 @@ export function Chat() {
       queryClient.invalidateQueries({ queryKey: ["tasks"] });
     }
     if (r.notePath) setToast("Nota guardada en Cerebro");
-    // Plan de voz que espera aprobación (sin JEV o crítico): se abre en PlanView para aprobarlo/ejecutarlo.
-    if (r.approvalPlanId) {
-      queryClient.invalidateQueries({ queryKey: ["plans"] });
-      setActivePlanId(r.approvalPlanId);
-    }
-  }, [setConversation, loadConversation, queryClient, setActivePlanId]);
+    // El plan de voz por aprobar lo abre el propio hook (useConversationSession) al cerrar.
+  }, [setConversation, loadConversation, queryClient]);
 
   // Atajos externos (lanzador de escritorio): ?platicar=1 / ?plan=<id> al montar, y ui:intent por WS.
   const applyIntent = useCallback((i: Intent) => {

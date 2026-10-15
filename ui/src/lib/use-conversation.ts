@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useWs } from "../context/WebSocketProvider";
 import { useAppState } from "../context/AppStateContext";
 import { createVad, float32ToWav, type VadHandle } from "./vad";
@@ -7,6 +8,8 @@ import {
   createMaxSpeechTimer,
   createSpeechQueue,
   initialConv,
+  nextApprovalPlan,
+  openApprovalPlan,
   type ConvEvent,
   type ConvState,
 } from "./conversation";
@@ -30,8 +33,6 @@ import { micErrorMessage } from "./voice-utils";
 export interface ConversationResult {
   conversationId: string | null;
   notePath: string | null;
-  /** Último plan de voz que quedó esperando aprobación en pantalla (el chat lo abre en PlanView). */
-  approvalPlanId?: string | null;
 }
 
 export interface Line {
@@ -57,6 +58,8 @@ const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 interface SessionApi {
   interrupt(): void;
   end(): void;
+  /** Termina la plática (o cierra el error) y abre el plan pendiente de aprobación. */
+  approve(): void;
   rebuildVad(): void;
   dismiss(): void;
   teardown(): void;
@@ -75,7 +78,15 @@ export function useConversationSession(opts: {
   onStarted?: () => void;
 }) {
   const { subscribe } = useWs();
-  const { setTalkActive } = useAppState();
+  const { setTalkActive, setActivePlanId, setView } = useAppState();
+  const qc = useQueryClient();
+  // Último plan de voz que espera aprobación (announce con needsApproval); se abre al cerrar.
+  const [approvalPlan, setApprovalPlan] = useState<string | null>(null);
+  const openPlanRef = useRef((id: string | null) => openApprovalPlan(id, {
+    invalidatePlans: () => void qc.invalidateQueries({ queryKey: ["plans"] }),
+    setActivePlanId,
+    setView,
+  }));
   const [conv, setConv] = useState<ConvState>(() => initialConv(Date.now()));
   const [active, setActive] = useState(false);
   const [lines, setLines] = useState<Line[]>([]);
@@ -104,6 +115,7 @@ export function useConversationSession(opts: {
     setConv(conv0);
     setLines([]);
     setNotice(null);
+    setApprovalPlan(null);
     setActive(true);
 
     let closed = false;
@@ -205,7 +217,19 @@ export function useConversationSession(opts: {
       releaseResources();
       api.current = null;
       markDone();
-      optsRef.current.onClose({ conversationId, notePath, approvalPlanId });
+      optsRef.current.onClose({ conversationId, notePath });
+      // En toda salida normal (terminar, inactividad, fin del servidor) se abre el plan por aprobar.
+      setApprovalPlan(null);
+      openPlanRef.current(approvalPlanId);
+    };
+
+    const dismiss = () => {
+      closed = true;
+      api.current = null;
+      markDone();
+      optsRef.current.onClose({ conversationId, notePath: null });
+      setApprovalPlan(null);
+      openPlanRef.current(approvalPlanId);
     };
 
     const fail = (message: string, endRemote: boolean) => {
@@ -359,7 +383,8 @@ export function useConversationSession(opts: {
       }
       if (ev.type === "announce") {
         addLine("asistente", ev.text);
-        if (ev.needsApproval && ev.planId) approvalPlanId = ev.planId;
+        approvalPlanId = nextApprovalPlan(approvalPlanId, ev);
+        setApprovalPlan(approvalPlanId);
         if (convRef.current.phase === "listening") dispatch({ type: "announce" });
         else dispatch({ type: "speakQueued" });
         queue.enqueue(ev.text);
@@ -394,12 +419,9 @@ export function useConversationSession(opts: {
     api.current = {
       interrupt,
       end: () => dispatch({ type: "end" }),
-      dismiss: () => {
-        closed = true;
-        api.current = null;
-        markDone();
-        optsRef.current.onClose({ conversationId, notePath: null, approvalPlanId });
-      },
+      // Tras un error la sesión ya cerró: se descarta el aviso y se abre el plan.
+      approve: () => (convRef.current.phase === "error" ? dismiss() : dispatch({ type: "end" })),
+      dismiss,
       rebuildVad: () => {
         if (!vad || closed || !stream) return;
         const old = vad;
@@ -487,7 +509,9 @@ export function useConversationSession(opts: {
     bargeIn,
     setBargeIn,
     start,
+    approvalPlanId: approvalPlan,
     end: useCallback(() => api.current?.end(), []),
+    approve: useCallback(() => api.current?.approve(), []),
     interrupt: useCallback(() => api.current?.interrupt(), []),
     dismiss: useCallback(() => api.current?.dismiss(), []),
   };

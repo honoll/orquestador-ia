@@ -75,6 +75,15 @@ export function ConversationView({
         {phase === "error" ? (
           <div className="w-full text-center">
             <p role="alert" className="break-words font-mono text-xs text-err">{talk.error}</p>
+            {talk.approvalPlanId && (
+              <button
+                type="button"
+                onClick={talk.approve}
+                className="mt-4 mr-2 min-h-11 rounded-lg border-2 border-[#fbbf24] px-5 font-mono text-xs font-bold tracking-widest text-[#fbbf24] focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+              >
+                ABRIR PLAN PARA APROBAR
+              </button>
+            )}
             <button
               type="button"
               onClick={() => talk.dismiss()}
@@ -88,6 +97,17 @@ export function ConversationView({
             <p className="text-center font-mono text-[11px] text-text-secondary">
               Esc o espacio para interrumpir · se cierra solo tras {idleMin} min sin voz
             </p>
+
+            {talk.approvalPlanId && (
+              <button
+                type="button"
+                onClick={talk.approve}
+                disabled={phase === "ending"}
+                className="min-h-11 w-full rounded-lg border-2 border-[#fbbf24] bg-[#fbbf24]/10 px-4 font-mono text-xs font-bold tracking-widest text-[#fbbf24] hover:bg-[#fbbf24]/20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-40"
+              >
+                ABRIR PLAN PARA APROBAR
+              </button>
+            )}
 
             {notice && (
               <p role="alert" className="w-full break-words text-center font-mono text-[11px] text-err">{notice}</p>

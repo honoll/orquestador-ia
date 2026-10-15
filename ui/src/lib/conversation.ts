@@ -104,6 +104,23 @@ export function convReducer(
   }
 }
 
+/** Plan de voz pendiente de aprobación: un announce con needsApproval + planId reemplaza al anterior. */
+export function nextApprovalPlan(prev: string | null, ev: { planId?: string; needsApproval?: boolean }): string | null {
+  return ev.needsApproval && ev.planId ? ev.planId : prev;
+}
+
+/** Tras cerrar la plática, abre en el chat (PlanView) el plan que espera aprobación, si lo hay. */
+export function openApprovalPlan(
+  planId: string | null,
+  deps: { invalidatePlans(): void; setActivePlanId(id: string): void; setView(v: "chat"): void },
+): boolean {
+  if (!planId) return false;
+  deps.invalidatePlans();
+  deps.setActivePlanId(planId);
+  deps.setView("chat");
+  return true;
+}
+
 /** Tope de una frase del usuario (el servidor rechaza audio de más de 120 s). */
 export const MAX_SPEECH_MS = 60_000;
 

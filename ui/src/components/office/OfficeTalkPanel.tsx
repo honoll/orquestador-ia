@@ -19,7 +19,7 @@ function Mic() {
 /** «Platicar» dentro de la Oficina: gris en reposo, azul con la plática abierta. */
 export function OfficeTalkPanel() {
   const qc = useQueryClient();
-  const { selectedProjectId, setActivePlanId, setView, setConversation } = useAppState();
+  const { selectedProjectId, setConversation } = useAppState();
   const [saved, setSaved] = useState(false);
   const [useMemory, setUseMemory] = useState(false);
   const talk = useConversationSession({
@@ -31,12 +31,6 @@ export function OfficeTalkPanel() {
         void qc.invalidateQueries({ queryKey: ["conversations"] });
       }
       if (r.notePath) setSaved(true);
-      // Plan de voz que espera aprobación: se abre en el chat como lo hace «Platicar».
-      if (r.approvalPlanId) {
-        void qc.invalidateQueries({ queryKey: ["plans"] });
-        setActivePlanId(r.approvalPlanId);
-        setView("chat");
-      }
     },
   });
   useEffect(() => {
@@ -78,6 +72,16 @@ export function OfficeTalkPanel() {
           </ul>
         )}
       </button>
+      {talk.approvalPlanId && (
+        <button
+          type="button"
+          onClick={talk.approve}
+          disabled={phase === "ending"}
+          className="mt-2 w-full border-2 border-[#fbbf24] bg-[#fbbf24]/10 px-2 py-1 text-[11px] font-bold tracking-[.14em] text-[#fbbf24] hover:bg-[#fbbf24]/20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#60a5fa] disabled:opacity-40"
+        >
+          ABRIR PLAN PARA APROBAR
+        </button>
+      )}
       {error && <p role="alert" className="mt-2 break-words text-[11px] text-err">{error}</p>}
       {saved && !active && <p role="status" className="mt-2 text-[11px] text-ok">Nota guardada en Cerebro</p>}
       {!active && (
