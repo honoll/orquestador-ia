@@ -4,6 +4,7 @@ import path from "node:path";
 import os from "node:os";
 import { CLAUDE_ISOLATION_ARGS, READ_ONLY_DISALLOWED_TOOLS } from "../adapters/claude/execute.js";
 import { validateDag } from "./plan-dag.js";
+import { CLAUDE_STEP_TEMPLATE, FLASH_STEP_TEMPLATE } from "./step-prompt-templates.js";
 import { MODEL_CATALOG, PLANNER_MODEL, ROUTABLE_ADAPTERS, plannerAdapters, type AdapterType } from "../config/models.js";
 
 export interface PlanStep {
@@ -32,9 +33,9 @@ interface ClaudeStreamMessage {
 }
 
 const ADAPTER_STRENGTHS: Record<AdapterType, string> = {
-  claude: "architecture decisions, code review, complex reasoning, validation, writing, explanations",
+  claude: "Claude Code itself, billed to the user's own Claude quota: use it only when a step truly needs Claude Code",
   codex: "code generation, debugging, refactoring, direct implementation, file editing",
-  agy: "fast and cheap analysis, reading and summarizing many files, routine implementation; Gemini 3.x and Claude models billed to the Antigravity quota (each call has ~11k tokens of fixed overhead, so prefer few dense steps)",
+  agy: "PRIMARY worker for code and reading; Claude and Gemini models billed to the Antigravity quota (each call has ~11k tokens of fixed overhead, so prefer few dense steps)",
 };
 
 function buildAdaptersSection(): string {
@@ -49,6 +50,18 @@ export function routingSystem(): string {
 
 Available adapters and their strengths:
 ${buildAdaptersSection()}
+
+Model selection (always set "model"):
+- Hard code (architecture, multi-file refactors, tricky bugs) → adapter agy, model claude-opus-4-6-thinking.
+- Normal code (single-file changes, tests, small features) → adapter agy, model claude-sonnet-4-6.
+- Reading, search, summaries, listing → adapter agy, model gemini-3.8-flash-low (gemini-3.8-flash-medium for long documents).
+- Use the "claude" adapter only when the step truly needs Claude Code itself; otherwise prefer agy.
+
+Step prompt templates (fill the <...> parts):
+- Claude-family models (claude-opus-4-6-thinking, claude-sonnet-4-6, adapter claude):
+${CLAUDE_STEP_TEMPLATE}
+- Gemini Flash models:
+${FLASH_STEP_TEMPLATE}
 
 Rules:
 - Break the request into 2-8 concrete steps that form a dependency graph (DAG).
@@ -166,7 +179,8 @@ export function normalizeSteps(raw: unknown[]): PlanStep[] {
       estimatedTokens: Number.isFinite(Number(s.estimatedTokens)) && Number(s.estimatedTokens) > 0 ? Math.round(Number(s.estimatedTokens)) : null,
       description: String(s.description ?? `Paso ${i + 1}`),
       adapter: adapter as AdapterType,
-      model: validModel ? model : cat.defaultModel,
+      // Escritor agy sin modelo válido: código normal (Sonnet), nunca Flash.
+      model: validModel ? model : adapter === "agy" && s.writes !== false ? "claude-sonnet-4-6" : cat.defaultModel,
       reason: String(s.reason ?? ""),
       prompt: String(s.prompt ?? s.description ?? ""),
     };

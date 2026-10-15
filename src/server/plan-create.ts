@@ -80,7 +80,6 @@ export async function createPlan(input: { description: string; projectId?: strin
     const RATE_LIMIT_WAIT_MS = 60_000;
     let generated: GeneratedPlan | null = null;
     let lastErr: any = null;
-    let reviewKey: string | undefined;
 
     const tier = await classifyTier(input.description);
     if (await generationCancelled(planId)) return;
@@ -180,11 +179,7 @@ export async function createPlan(input: { description: string; projectId?: strin
 
     if (await generationCancelled(planId)) return;
 
-    if (tier.tier === "critical") {
-      const withReview = addReviewStep(generated!, input.description);
-      reviewKey = withReview.reviewKey;
-      generated = withReview;
-    }
+    if (tier.tier === "critical") generated = addReviewStep(generated!, input.description);
 
     for (const step of generated!.steps) {
       await db.insert(schema.planSteps).values({
@@ -194,8 +189,8 @@ export async function createPlan(input: { description: string; projectId?: strin
         stepKey: step.key,
         dependsOn: JSON.stringify(step.dependsOn),
         writes: step.writes ? 1 : 0,
-        // Revisión crítica y trivial que solo lee: el adapter corre sin permisos de escritura.
-        readOnly: step.key === reviewKey || (trivial && !step.writes) ? 1 : 0,
+        // Todo lector (writes = 0, incluida la revisión crítica) corre sin permisos de escritura.
+        readOnly: step.writes ? 0 : 1,
         estimatedTokens: step.estimatedTokens,
         description: step.description,
         adapter: step.adapter,

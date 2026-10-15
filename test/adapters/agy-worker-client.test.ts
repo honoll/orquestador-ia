@@ -90,6 +90,11 @@ describe("cliente del trabajador agy", () => {
     expect(seen.find((s) => s.path === "/run")?.body.readOnly).toBe(false);
   });
 
+  it("execute de un paso lector manda readOnly:true al trabajador", async () => {
+    await execute({ runId: "r", prompt: "x", cwd: "C:\\estudio", readOnly: true, agyWorker: { port, keyPath }, onLog: () => {} });
+    expect(seen.find((s) => s.path === "/run")?.body.readOnly).toBe(true);
+  });
+
   it("5xx, 409 y conexión rechazada → WorkerUnavailableError", async () => {
     mode = "500";
     await expect(runOnWorker({ port, keyPath }, body, { onLog: () => {} }).promise).rejects.toBeInstanceOf(WorkerUnavailableError);

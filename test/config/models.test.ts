@@ -23,8 +23,15 @@ describe("catálogo de modelos", () => {
     }
   });
 
-  it("no quedan modelos retirados", () => {
-    const all = Object.values(MODEL_CATALOG).flatMap((c) => c.models.map((m) => m.id));
+  it("agy: exactamente los modelos de `agy models` (2026-10-15)", () => {
+    expect(MODEL_CATALOG.agy.models.map((m) => m.id)).toEqual([
+      "gemini-3.8-flash-high", "gemini-3.8-flash-medium", "gemini-3.8-flash-low",
+      "claude-sonnet-4-6", "claude-opus-4-6-thinking", "gpt-oss-120b-medium",
+    ]);
+  });
+
+  it("no quedan modelos retirados (claude/codex; agy usa sus propios ids)", () => {
+    const all = [MODEL_CATALOG.claude, MODEL_CATALOG.codex].flatMap((c) => c.models.map((m) => m.id));
     for (const old of ["claude-opus-4-7", "claude-opus-4-6", "claude-sonnet-4-6", "claude-haiku-4-6", "claude-sonnet-4-5-20250929", "o3", "gpt-5.4"]) {
       expect(all).not.toContain(old);
     }
