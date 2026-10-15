@@ -13,8 +13,10 @@ export function screenToTile(clientX: number, clientY: number, rect: { left: num
   return [Math.floor(fx * cols), Math.floor(fy * rows)];
 }
 
-export const fitScale = (containerW: number, mapW: number, preferred = 3): number =>
-  Math.max(1, Math.min(preferred, Math.floor(containerW / (mapW * 16))));
+/** Escala que llena el ancho disponible (hasta ×4). Fraccionaria a propósito: con escalas enteras el mapa
+ * quedaba a ×2 con media pantalla vacía; `image-rendering: pixelated` mantiene los bordes nítidos. */
+export const fitScale = (containerW: number, mapW: number, max = 4): number =>
+  Math.max(1, Math.min(max, Math.floor((containerW / (mapW * 16)) * 100) / 100));
 
 export function dirBetween(a: Tile, b: Tile): Dir {
   if (b[1] < a[1]) return "up";

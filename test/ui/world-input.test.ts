@@ -17,11 +17,12 @@ describe("entrada del mundo", () => {
     expect(keyToDir("Enter")).toBeNull();
     expect(DIR_DELTA.up).toEqual([0, -1]);
   });
-  it("fitScale: ×3 si cabe, menos si no, nunca menos de 1", () => {
-    expect(fitScale(2000, 30)).toBe(3);
-    expect(fitScale(1000, 30)).toBe(2);
+  it("fitScale: llena el ancho (fraccionaria, 2 decimales), tope ×4, nunca menos de 1", () => {
+    expect(fitScale(1280, 30)).toBe(2.66);
+    expect(fitScale(960, 30)).toBe(2);
+    expect(fitScale(3000, 30)).toBe(4);
     expect(fitScale(300, 30)).toBe(1);
-    expect(fitScale(2000, 30, 4)).toBe(4);
+    expect(fitScale(3000, 30, 3)).toBe(3);
   });
   it("dirBetween mira hacia la casilla siguiente", () => {
     expect(dirBetween([5, 5], [5, 4])).toBe("up");
