@@ -83,8 +83,12 @@ describe("collectOfficeInput (BD temporal)", () => {
   });
 
   describe("asientos de agy por cuenta", () => {
-    const seat = (account: string, working = false, o = {}) => ({ local: account === "local", account, pool: account, working, activity: working ? `tarea ${account}` : "libre", model: null, ...o });
+    const seat = (account: string, working = false, o = {}) => ({ local: account === "local", account, pool: account, working, activity: working ? `tarea ${account}` : "libre", model: null, role: null as string | null, ...o });
     const stepAgy = (o = {}) => step({ adapter: "agy", ...o });
+    it("el asiento conserva el rol del paso reservado", () => {
+      const a = agent(buildOfficeState(base({ agySeats: [seat("local"), seat("agy2", true, { role: "qa" })], steps: [stepAgy()] })), "agy");
+      expect(a.seats!.map((x) => x.role)).toEqual([null, "qa"]);
+    });
     it("sin trabajo: un asiento por cuenta, todo inactivo", () => {
       const a = agent(buildOfficeState(base({ agySeats: [seat("local"), seat("agy2")] })), "agy");
       expect(a).toMatchObject({ working: false, desks: 2 });

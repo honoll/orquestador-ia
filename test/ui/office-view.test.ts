@@ -9,6 +9,8 @@ describe("readView", () => {
   it("sin parámetro usa lo guardado", () => {
     expect(readView("", "oficina")).toBe("oficina");
     expect(readView("", "chat")).toBe("chat");
+    expect(readView("", "roles")).toBe("roles");
+    expect(readView("?vista=roles", "chat")).toBe("roles");
   });
   it("localStorage inválido o vacío → chat", () => {
     expect(readView("", "basura")).toBe("chat");
@@ -103,4 +105,8 @@ describe("groupByPool / seatLabel", () => {
     expect(pools.map((p) => [p.key, p.accounts.length, p.pct, p.blocked])).toEqual([["local", 1, 12, false], ["p", 2, 40, true], ["agy4", 1, null, false]]);
   });
   it("etiqueta de asiento", () => expect(seatLabel("agy3")).toBe("AGY · agy3"));
+  it("con rol: ROL · cuenta", () => {
+    expect(seatLabel("agy3", "dev")).toBe("DEV · agy3");
+    expect(seatLabel("local", null)).toBe("AGY · local");
+  });
 });

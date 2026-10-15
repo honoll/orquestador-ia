@@ -65,7 +65,7 @@ export class WorkerValidationError extends Error {}
 const reserved = new Set<string>();
 const lastUsed = new Map<string, number>();
 /** Qué paso corre cada cuenta reservada (solo para la Oficina; se borra al soltar). */
-const leaseInfo = new Map<string, { activity: string; model: string | null }>();
+const leaseInfo = new Map<string, { activity: string; model: string | null; role: string | null }>();
 const health = new Map<string, { ok: boolean; at: number }>();
 const busyUntil = new Map<string, number>();
 const waiters = new Set<() => void>();
@@ -298,17 +298,17 @@ export async function parallelLimit(): Promise<number> {
 }
 
 /** El ejecutor anota qué paso corre una cuenta reservada. */
-export function tagLease(accountId: string, activity: string, model: string | null): void {
-  if (reserved.has(accountId)) leaseInfo.set(accountId, { activity, model });
+export function tagLease(accountId: string, activity: string, model: string | null, role: string | null = null): void {
+  if (reserved.has(accountId)) leaseInfo.set(accountId, { activity, model, role });
 }
 
-export interface AgySeat { local: boolean; account: string; pool: string | null; working: boolean; activity: string; model: string | null }
+export interface AgySeat { local: boolean; account: string; pool: string | null; working: boolean; activity: string; model: string | null; role: string | null }
 
 /** Un asiento por cuenta que puede correr pasos (trabajadores habilitados + la local): ocupado si tiene reserva. */
 export async function agySeats(now: number = Date.now()): Promise<AgySeat[]> {
   return (await candidates(now)).map((c) => {
     const working = reserved.has(c.view.id);
     const info = leaseInfo.get(c.view.id);
-    return { local: c.worker === null, account: c.view.label, pool: c.view.pool, working, activity: working ? (info?.activity ?? "trabajando") : "libre", model: working ? (info?.model ?? null) : null };
+    return { local: c.worker === null, account: c.view.label, pool: c.view.pool, working, activity: working ? (info?.activity ?? "trabajando") : "libre", model: working ? (info?.model ?? null) : null, role: working ? (info?.role ?? null) : null };
   });
 }

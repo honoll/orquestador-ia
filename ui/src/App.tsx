@@ -10,12 +10,14 @@ import { ResizableGroup, ResizableHandle, ResizablePanel } from "./components/Re
 import { useWs } from "./context/WebSocketProvider";
 import { useAppState } from "./context/AppStateContext";
 import { OfficeView } from "./components/office/OfficeView";
+import { RolesView } from "./components/RolesView";
 
 export default function App() {
   const { connected } = useWs();
   const [rightOpen, setRightOpen] = useState(true);
   const { view } = useAppState();
-  const office = view === "oficina";
+  // "office" = la vista ocupa centro + derecha (Oficina o Roles); Chat queda montado y oculto.
+  const office = view !== "chat";
 
   return (
     <div className="flex h-screen w-screen flex-col overflow-hidden bg-surface-0">
@@ -50,7 +52,8 @@ export default function App() {
           <main className={`h-full flex-col min-w-0 ${office ? "hidden" : "flex"}`}>
             <Chat />
           </main>
-          {office && <OfficeView />}
+          {view === "oficina" && <OfficeView />}
+          {view === "roles" && <RolesView />}
         </ResizablePanel>
 
         {/* Right — Projects (collapsible) */}
