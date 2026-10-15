@@ -145,7 +145,7 @@ async function runPlanStepInner(options: StepRunOptions): Promise<StepOutcome> {
       const ex = { pools: quotaPools, accounts: downAccounts, localOnly };
       lease = preLease ?? await pickWorker(Date.now(), ex);
       preLease = null;
-      if (lease) tagLease(lease.accountId, step.description, step.model ?? null, step.role ?? null);
+      if (lease) tagLease(lease.accountId, step.description, step.model ?? null, step.role ?? null, { planId: step.planId, stepKey: step.stepKey ?? null });
       if (!lease) {
         if ((await agyAvailability(Date.now(), ex)).usable > 0) return requeue(planId, stepId, tokensUsed, attempt);
         return agyNoAccount({ planId, stepId, lastQuotaLabel, lastError, tokensUsed, localOnly });
