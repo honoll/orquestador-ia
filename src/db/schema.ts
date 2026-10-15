@@ -137,6 +137,18 @@ export const agyAccounts = sqliteTable("agy_accounts", {
   quotaBlockedUntil: text("quota_blocked_until"),
   quotaBlockedAt: text("quota_blocked_at"),
   notes: text("notes"),
+  /** Bolsa de cuota (plan de Google) compartida por sus miembros; null = la cuenta sola. */
+  pool: text("pool"),
+  createdAt: text("created_at").notNull().default(sql`(datetime('now'))`),
+});
+
+/** Trabajador agy de otra cuenta (otro usuario de Windows) en 127.0.0.1:port; la llave vive en key_path. */
+export const agyWorkers = sqliteTable("agy_workers", {
+  id: text("id").primaryKey(),
+  accountId: text("account_id").notNull().unique().references(() => agyAccounts.id),
+  port: integer("port").notNull(),
+  keyPath: text("key_path").notNull(),
+  enabled: integer("enabled").notNull().default(1),
   createdAt: text("created_at").notNull().default(sql`(datetime('now'))`),
 });
 

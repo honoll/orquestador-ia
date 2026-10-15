@@ -52,7 +52,7 @@ app.post("/:id/activate", async (c) => {
 
 app.patch("/:id", async (c) => {
   try {
-    const body = await c.req.json<{ label?: string; manualLimit5h?: number | null; manualLimit7d?: number | null; notes?: string | null }>();
+    const body = await c.req.json<{ label?: string; pool?: string | null; manualLimit5h?: number | null; manualLimit7d?: number | null; notes?: string | null }>();
     return c.json(await updateAccount(c.req.param("id"), body));
   } catch (err) {
     const f = fail(err);

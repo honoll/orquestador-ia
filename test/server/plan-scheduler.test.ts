@@ -140,6 +140,31 @@ describe("planificador", () => {
     await db.update(schema.agyAccounts).set({ quotaBlockedUntil: null }).where(eq(schema.agyAccounts.id, a.id));
   });
 
+  it("cuota por bolsas: con una bolsa libre corre ahí, en paralelo un paso por cuenta; pausa solo con todas bloqueadas", async () => {
+    const { createWorker } = await import("../../src/server/agy-workers.js");
+    const local = (await db.select().from(schema.agyAccounts).where(eq(schema.agyAccounts.active, 1)))[0];
+    const b = await createAccount("Otra bolsa");
+    const c = await createAccount("Tercera");
+    await createWorker({ accountId: b.id, port: 3121, keyPath: "C:/k/b.key" });
+    await createWorker({ accountId: c.id, port: 3122, keyPath: "C:/k/c.key" });
+    const block = (id: string, until: string | null) => db.update(schema.agyAccounts).set({ quotaBlockedUntil: until }).where(eq(schema.agyAccounts.id, id));
+    const later = new Date(Date.now() + 3_600_000).toISOString();
+    await block(local.id, later);
+    const id = await mkPlan([{ key: "s1", adapter: "agy" }, { key: "s2", adapter: "agy" }, { key: "s3", adapter: "agy" }]);
+    await runPlanDag(id, cwd);
+    expect(stepCalls()).toHaveLength(3);
+    expect(h.state.max).toBe(2); // dos cuentas libres → dos a la vez
+    expect(await plan(id)).toMatchObject({ status: "completed" });
+    await block(b.id, later); await block(c.id, later);
+    h.state.calls = [];
+    const id2 = await mkPlan([{ key: "s1", adapter: "agy" }]);
+    await runPlanDag(id2, cwd);
+    expect(h.state.calls).toHaveLength(0);
+    expect(await plan(id2)).toMatchObject({ status: "pending", pauseReason: "quota" });
+    await db.delete(schema.agyWorkers);
+    await block(local.id, null);
+  });
+
   it("plan viejo sin claves corre en orden, uno a la vez", async () => {
     const planId = randomUUID();
     await db.insert(schema.plans).values({ id: planId, description: "viejo", status: "pending" });

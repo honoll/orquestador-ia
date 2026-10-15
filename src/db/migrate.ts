@@ -140,6 +140,16 @@ CREATE TABLE IF NOT EXISTS agy_accounts (
   quota_blocked_until TEXT,
   quota_blocked_at TEXT,
   notes TEXT,
+  pool TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS agy_workers (
+  id TEXT PRIMARY KEY,
+  account_id TEXT NOT NULL UNIQUE REFERENCES agy_accounts(id),
+  port INTEGER NOT NULL,
+  key_path TEXT NOT NULL,
+  enabled INTEGER NOT NULL DEFAULT 1,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -272,6 +282,13 @@ async function migrate() {
 
   try {
     await client.execute("ALTER TABLE agy_accounts ADD COLUMN quota_blocked_at TEXT");
+  } catch {
+    // already exists
+  }
+  try {
+    await client.execute("ALTER TABLE agy_accounts ADD COLUMN pool TEXT");
+    // Solo la primera vez: cada cuenta existente queda como su propia bolsa.
+    await client.execute("UPDATE agy_accounts SET pool = label WHERE pool IS NULL");
   } catch {
     // already exists
   }

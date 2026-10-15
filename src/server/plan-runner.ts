@@ -4,7 +4,9 @@ import { db, schema } from "../db/index.js";
 import { getAdapter } from "../adapters/registry.js";
 import { broadcast } from "./ws.js";
 import { claudeProfileManager } from "../adapters/claude/profile-manager.js";
-import { getActiveAccount, recordAgyCall, NoActiveAccountError } from "./agy-accounts.js";
+import { recordAgyCall, NoActiveAccountError } from "./agy-accounts.js";
+import { acquireAgy, agyAvailability, markWorkerHealth, type AgyLease } from "./agy-workers.js";
+import { WorkerUnavailableError } from "../adapters/agy/worker-client.js";
 import pino from "pino";
 
 const log = pino({ name: "plan-runner" });
@@ -27,6 +29,25 @@ export interface StepRunOptions {
   onKillRegistered?: (kill: () => void) => void;
 }
 
+/** No quedó cuenta de agy para el paso: cancelado, sin cuentas, todas las bolsas sin cuota (pausa) o trabajadores caídos. */
+async function agyNoAccount(o: { planId: string; stepId: string; aborted: boolean; lastQuotaLabel: string | null; lastError: string | null; tokensUsed: number }): Promise<StepOutcome> {
+  const { planId, stepId, tokensUsed } = o;
+  if (o.aborted) return { status: "failed", tokensUsed }; // cancelado mientras esperaba: el planificador lo marca cancelled
+  const avail = await agyAvailability();
+  if (avail.total > 0 && avail.usable === 0) {
+    const msg = `${QUOTA_PAUSE_PREFIX}: todas las bolsas de agy están sin cuota${o.lastQuotaLabel ? ` (última cuenta: "${o.lastQuotaLabel}")` : ""}; vuelve a ejecutar el plan cuando se libere alguna.`;
+    await db.update(schema.planSteps).set({ status: "pending", errorMessage: msg }).where(eq(schema.planSteps.id, stepId));
+    broadcast({ type: "plan:step", planId, stepId, status: "pending", adapter: "agy", error: msg, timestamp: new Date().toISOString() } as any);
+    return { status: "paused_quota", tokensUsed };
+  }
+  const msg = avail.total === 0
+    ? new NoActiveAccountError().message
+    : `Ningún trabajador de agy disponible${o.lastError ? ` (último error: ${o.lastError})` : ""}`;
+  await db.update(schema.planSteps).set({ status: "failed", errorMessage: msg, finishedAt: new Date().toISOString() }).where(eq(schema.planSteps.id, stepId));
+  broadcast({ type: "plan:step", planId, stepId, status: "failed", adapter: "agy", error: msg, timestamp: new Date().toISOString() } as any);
+  return { status: "failed", tokensUsed };
+}
+
 /** Execute a single plan step with retry logic. Solo ejecuta: no toca el estado del plan. */
 export async function runPlanStep(options: StepRunOptions): Promise<StepOutcome> {
   const { planId, stepId, cwd } = options;
@@ -45,13 +66,14 @@ export async function runPlanStep(options: StepRunOptions): Promise<StepOutcome>
 
   broadcast({ type: "plan:step", planId, stepId, status: "running", adapter: step.adapter, timestamp: new Date().toISOString() } as any);
 
-  const agyAccount = step.adapter === "agy" ? await getActiveAccount() : null;
-  if (step.adapter === "agy" && !agyAccount) {
-    const msg = new NoActiveAccountError().message;
-    await db.update(schema.planSteps).set({ status: "failed", errorMessage: msg, finishedAt: new Date().toISOString() }).where(eq(schema.planSteps.id, stepId));
-    broadcast({ type: "plan:step", planId, stepId, status: "failed", adapter: step.adapter, error: msg, timestamp: new Date().toISOString() } as any);
-    return { status: "failed", tokensUsed: 0 };
-  }
+  // agy (F10): cada intento toma una cuenta (local o trabajador). Cuota → se excluye su bolsa; trabajador caído →
+  // se excluye la cuenta; ninguna cuenta ni intento cuenta como reintento.
+  const isAgy = step.adapter === "agy";
+  const quotaPools = new Set<string>();
+  const downAccounts = new Set<string>();
+  const waitAbort = new AbortController();
+  if (isAgy) options.onKillRegistered?.(() => waitAbort.abort());
+  let lastQuotaLabel: string | null = null;
 
   let sessionId = step.sessionId ?? undefined;
   let lastError: string | null = null;
@@ -70,29 +92,40 @@ export async function runPlanStep(options: StepRunOptions): Promise<StepOutcome>
       await new Promise((r) => setTimeout(r, 3000 * attempt));
     }
 
+    let lease: AgyLease | null = null;
+    if (isAgy) {
+      lease = await acquireAgy({ pools: quotaPools, accounts: downAccounts }, waitAbort.signal);
+      if (!lease) return agyNoAccount({ planId, stepId, aborted: waitAbort.signal.aborted, lastQuotaLabel, lastError, tokensUsed });
+    }
+
     const runId = randomUUID();
 
     // Create a task + run record for traceability
     const taskId = randomUUID();
-    await db.insert(schema.tasks).values({
-      id: taskId,
-      title: step.description.slice(0, 80),
-      prompt,
-      adapter: step.adapter,
-      model: step.model ?? null,
-      status: "running",
-    });
-    await db.insert(schema.runs).values({
-      id: runId,
-      taskId,
-      adapter: step.adapter,
-      model: step.model ?? null,
-      status: "running",
-      prompt,
-      cwd,
-    });
-    // Liga el paso a su run desde el arranque: la Oficina excluye estos runs del "chat suelto".
-    await db.update(schema.planSteps).set({ runId }).where(eq(schema.planSteps.id, stepId));
+    try {
+      await db.insert(schema.tasks).values({
+        id: taskId,
+        title: step.description.slice(0, 80),
+        prompt,
+        adapter: step.adapter,
+        model: step.model ?? null,
+        status: "running",
+      });
+      await db.insert(schema.runs).values({
+        id: runId,
+        taskId,
+        adapter: step.adapter,
+        model: step.model ?? null,
+        status: "running",
+        prompt,
+        cwd,
+      });
+      // Liga el paso a su run desde el arranque: la Oficina excluye estos runs del "chat suelto".
+      await db.update(schema.planSteps).set({ runId }).where(eq(schema.planSteps.id, stepId));
+    } catch (err) {
+      lease?.release(); // un error de base no deja la cuenta reservada para siempre
+      throw err;
+    }
 
     try {
       const callStartedAt = Date.now();
@@ -105,6 +138,7 @@ export async function runPlanStep(options: StepRunOptions): Promise<StepOutcome>
         timeoutSec: 1800,
         readOnly: step.readOnly === 1,
         claudeProfileEnv,
+        agyWorker: lease?.worker ? { port: lease.worker.port, keyPath: lease.worker.keyPath } : undefined,
         onLog: (stream, chunk) => {
           broadcast({
             type: "plan:log",
@@ -120,17 +154,22 @@ export async function runPlanStep(options: StepRunOptions): Promise<StepOutcome>
 
       tokensUsed += (result.inputTokens || 0) + (result.outputTokens || 0);
 
-      if (agyAccount) {
-        try { await recordAgyCall(agyAccount.id, result, "plan", Date.now(), callStartedAt); } catch (err) { log.error({ err, stepId }, "No se pudo registrar el consumo de agy"); }
+      if (lease) {
+        if (lease.worker) markWorkerHealth(lease.worker.id, true);
+        try { await recordAgyCall(lease.accountId, result, "plan", Date.now(), callStartedAt); } catch (err) { log.error({ err, stepId }, "No se pudo registrar el consumo de agy"); }
       }
 
-      if (step.adapter === "agy" && result.errorFamily === "quota_exhausted") {
-        const msg = `${QUOTA_PAUSE_PREFIX} en la cuenta "${agyAccount?.label ?? "?"}": cambia de cuenta en el panel y vuelve a ejecutar el plan.`;
+      if (lease && result.errorFamily === "quota_exhausted") {
+        // recordAgyCall ya bloqueó toda la bolsa; el paso se reintenta en otra (sin gastar un reintento).
         await db.update(schema.runs).set({ status: "failed", errorMessage: result.errorMessage, errorFamily: result.errorFamily, result: result.stdout, finishedAt: new Date().toISOString() }).where(eq(schema.runs.id, runId));
         await db.update(schema.tasks).set({ status: "failed", updatedAt: new Date().toISOString() }).where(eq(schema.tasks.id, taskId));
-        await db.update(schema.planSteps).set({ status: "pending", errorMessage: msg, runId }).where(eq(schema.planSteps.id, stepId));
-        broadcast({ type: "plan:step", planId, stepId, status: "pending", adapter: step.adapter, error: msg, timestamp: new Date().toISOString() } as any);
-        return { status: "paused_quota", tokensUsed };
+        quotaPools.add(lease.pool);
+        lastQuotaLabel = lease.label;
+        broadcast({ type: "plan:log", planId, stepId, stream: "stdout", data: `
+[orquestador] sin cuota en la bolsa "${lease.pool}" (${lease.label}); probando otra cuenta...
+`, timestamp: new Date().toISOString() } as any);
+        attempt--;
+        continue;
       }
 
       const succeeded = result.exitCode === 0 && !result.timedOut;
@@ -216,7 +255,21 @@ export async function runPlanStep(options: StepRunOptions): Promise<StepOutcome>
 
     } catch (err: any) {
       lastError = err.message;
+      if (lease && err instanceof WorkerUnavailableError) {
+        // El trabajador no tomó el paso: no es fallo del paso, se prueba otra cuenta.
+        if (lease.worker) markWorkerHealth(lease.worker.id, false);
+        downAccounts.add(lease.accountId);
+        await db.update(schema.runs).set({ status: "failed", errorMessage: err.message, errorFamily: "worker_unavailable", finishedAt: new Date().toISOString() }).where(eq(schema.runs.id, runId));
+        await db.update(schema.tasks).set({ status: "failed", updatedAt: new Date().toISOString() }).where(eq(schema.tasks.id, taskId));
+        broadcast({ type: "plan:log", planId, stepId, stream: "stderr", data: `
+[orquestador] ${err.message}; probando otra cuenta...
+`, timestamp: new Date().toISOString() } as any);
+        attempt--;
+        continue;
+      }
       log.error({ err, stepId, attempt }, "Step execution threw");
+    } finally {
+      lease?.release();
     }
   }
 

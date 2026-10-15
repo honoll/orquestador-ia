@@ -6,7 +6,7 @@ import { db, schema } from "../db/index.js";
 import { broadcast } from "./ws.js";
 import { startWatch, stopWatch } from "./file-watcher.js";
 import { runPlanStep, type StepOutcome } from "./plan-runner.js";
-import { getActiveAccount } from "./agy-accounts.js";
+import { agyAvailability } from "./agy-workers.js";
 import { guardStep } from "./plan-guard.js";
 import { getAdapter } from "../adapters/registry.js";
 import { PLANNER_MODEL } from "../config/models.js";
@@ -84,9 +84,10 @@ async function addUsedTokens(planId: string, tokens: number) {
   emit({ type: "plan:budget", planId, usedTokens: p.usedTokens, budgetTokens: p.budgetTokens });
 }
 
+/** Todas las cuentas de agy (local + trabajadores habilitados) tienen su bolsa sin cuota. */
 async function agyBlockedNow(): Promise<boolean> {
-  const account = await getActiveAccount();
-  return !!account?.quotaBlockedUntil && Date.parse(account.quotaBlockedUntil) > Date.now();
+  const { total, usable } = await agyAvailability();
+  return total > 0 && usable === 0;
 }
 
 /**

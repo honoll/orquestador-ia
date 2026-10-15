@@ -23,6 +23,7 @@ export interface AdapterExecutionContext {
   env?: Record<string, string>;
   readOnly?: boolean; // agy y claude: sin --dangerously-skip-permissions (headless auto-deniega tools con permiso); codex: --sandbox read-only
   claudeProfileEnv?: Record<string, string>; // env overrides for multi-account (e.g. ANTHROPIC_API_KEY)
+  agyWorker?: { port: number; keyPath: string }; // agy: correr en el trabajador de otra cuenta en vez de local (F10)
   onLog: (stream: "stdout" | "stderr", chunk: string) => void;
   onKill?: (kill: () => void) => void;
 }

@@ -1,7 +1,8 @@
 import { Hono } from "hono";
 import { eq, desc, asc, and, inArray } from "drizzle-orm";
 import { db, schema } from "../../db/index.js";
-import { extendBudget, MAX_PARALLEL_LIMIT, toDagSteps, pickRunnable } from "../plan-dag.js";
+import { extendBudget, toDagSteps, pickRunnable } from "../plan-dag.js";
+import { parallelLimit } from "../agy-workers.js";
 import { ROUTABLE_ADAPTERS } from "../../config/models.js";
 import { runPlanDag, cancelPlanRun, isPlanRunning, retrySynthesis } from "../plan-scheduler.js";
 import { broadcast } from "../ws.js";
@@ -49,7 +50,7 @@ app.get("/:id", async (c) => {
   const steps = await db.select().from(schema.planSteps)
     .where(eq(schema.planSteps.planId, id))
     .orderBy(asc(schema.planSteps.stepIndex));
-  return c.json({ ...plan, steps });
+  return c.json({ ...plan, steps, maxParallelLimit: await parallelLimit() });
 });
 
 // Create plan — immediately returns plan ID, generates steps in background with streaming
@@ -76,8 +77,9 @@ app.patch("/:id/settings", async (c) => {
   }
   if (body.maxParallel !== undefined) {
     const m = body.maxParallel;
-    if (!(Number.isInteger(m) && (m as number) >= 1 && (m as number) <= MAX_PARALLEL_LIMIT)) {
-      return c.json({ error: `maxParallel debe ser un entero entre 1 y ${MAX_PARALLEL_LIMIT}` }, 400);
+    const limit = await parallelLimit();
+    if (!(Number.isInteger(m) && (m as number) >= 1 && (m as number) <= limit)) {
+      return c.json({ error: `maxParallel debe ser un entero entre 1 y ${limit}` }, 400);
     }
     set.maxParallel = m;
   }
