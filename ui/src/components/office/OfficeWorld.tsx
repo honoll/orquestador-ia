@@ -248,8 +248,10 @@ function World({ state, onNear, onAdvance, children, atlas }: Props & { atlas: M
   const map = floorOf(piso);
   return (
     <div ref={wrapRef} className="w-full overflow-hidden" onKeyDown={onKeyDown}>
+      {/* Centrado: los pisos del escenario propio son más angostos que la columna. */}
+      <div className="mx-auto" style={{ width: cols * 16 * scale }}>
       <p className="mb-1 font-pixel text-[11px] text-text-secondary">{map.nombre}</p>
-      <div className="relative" style={{ width: cols * 16 * scale }}>
+      <div className="relative">
         <canvas
           ref={canvasRef}
           tabIndex={0}
@@ -280,6 +282,7 @@ function World({ state, onNear, onAdvance, children, atlas }: Props & { atlas: M
             <button className="px-2 py-1 text-left text-text-secondary hover:bg-white/10 focus-visible:bg-white/10" onClick={() => choose(0)}>salir</button>
           </div>
         )}
+      </div>
       </div>
     </div>
   );
