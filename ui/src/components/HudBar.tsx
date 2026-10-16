@@ -41,13 +41,13 @@ export function HudBar() {
           )}
         </>
       ) : (
-        <span className="text-text-secondary">sin cuenta activa — agrégala en el panel de cuentas</span>
+        <span className="text-text-secondary">sin cuenta activa — agrégala en AJUSTES → Cuentas de Antigravity</span>
       )}
       <span className="ml-auto text-text-secondary" title="Tokens de todos los adapters desde que arrancó el servidor">
         sesión: {formatTokens(session?.tokens ?? 0)} tok
       </span>
       <div role="group" aria-label="Vista" className="flex shrink-0 gap-1.5">
-        {(["chat", "oficina", "equipo", "roles"] as View[]).map((v) => (
+        {(["chat", "oficina", "equipo", "roles", "ajustes"] as View[]).map((v) => (
           <button
             key={v}
             type="button"
@@ -57,7 +57,7 @@ export function HudBar() {
             title={viewLocked(v, view, talkActive) ? "Termina la plática para cambiar de vista" : undefined}
             className={`px-btn ${view === v ? "px-btn-pri" : ""}`}
           >
-            {v === "chat" ? "CHAT" : v === "oficina" ? "OFICINA" : v === "equipo" ? "EQUIPO" : "ROLES"}
+            {v === "chat" ? "CHAT" : v === "oficina" ? "OFICINA" : v === "equipo" ? "EQUIPO" : v === "roles" ? "ROLES" : "AJUSTES"}
           </button>
         ))}
       </div>

@@ -18,6 +18,9 @@ interface AppState {
   setConversation: (id: string | null) => void;
   setActivePlanId: (id: string | null) => void;
   newChat: () => void;
+  /** F15: la barra pide a la vista Equipo abrir esta meta y tarea. */
+  equipoFocus: { metaId: string; tareaId: string } | null;
+  setEquipoFocus: (f: { metaId: string; tareaId: string } | null) => void;
 }
 
 const AppStateContext = createContext<AppState>({
@@ -36,6 +39,8 @@ const AppStateContext = createContext<AppState>({
   setConversation: () => {},
   setActivePlanId: () => {},
   newChat: () => {},
+  equipoFocus: null,
+  setEquipoFocus: () => {},
 });
 
 export function useAppState() {
@@ -55,6 +60,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   });
 
   const [talkActive, setTalkActive] = useState(false);
+  const [equipoFocus, setEquipoFocus] = useState<{ metaId: string; tareaId: string } | null>(null);
   const setView = useCallback((v: View) => {
     setViewState(v);
     try { localStorage.setItem(VIEW_KEY, v); } catch { /* almacenamiento bloqueado */ }
@@ -107,6 +113,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         setConversation,
         setActivePlanId,
         newChat,
+        equipoFocus,
+        setEquipoFocus,
       }}
     >
       {children}

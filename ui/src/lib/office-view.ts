@@ -9,10 +9,10 @@ export function appendLog<T>(log: T[], entry: T, max: number = LOG_MAX): T[] {
   return [entry, ...log].slice(0, max);
 }
 
-export type View = "chat" | "oficina" | "roles" | "equipo";
+export type View = "chat" | "oficina" | "roles" | "equipo" | "ajustes";
 export const VIEW_KEY = "orquestador.vista";
 
-const VIEWS: readonly string[] = ["chat", "oficina", "roles", "equipo"];
+const VIEWS: readonly string[] = ["chat", "oficina", "roles", "equipo", "ajustes"];
 const isView = (v: string | null): v is View => v !== null && VIEWS.includes(v);
 
 /** `?vista=` manda; si no, lo guardado; cualquier otra cosa → "chat". */

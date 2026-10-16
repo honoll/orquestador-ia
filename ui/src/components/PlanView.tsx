@@ -1333,7 +1333,7 @@ function PauseBanner({ plan, onContinue }: { plan: Plan; onContinue: () => void 
   if (plan.status !== "pending" || !plan.pauseReason || plan.pauseReason === "guard") return null;
   const text = plan.pauseReason === "budget"
     ? `Plan pausado por presupuesto: llevas ${formatTokens(plan.usedTokens)} de ${formatTokens(plan.budgetTokens ?? 0)} tokens.`
-    : "Plan pausado por cuota de Antigravity. Cambia de cuenta en el panel de cuentas y continúa.";
+    : "Plan pausado por cuota de Antigravity. Cambia de cuenta en AJUSTES → Cuentas de Antigravity y continúa.";
   return (
     <div role="status" className={`${WARN_FRAME} flex flex-wrap items-center gap-3`}>
       <span><span aria-hidden="true" className="text-warn">⏸ </span>{text}</span>

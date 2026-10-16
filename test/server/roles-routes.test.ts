@@ -73,7 +73,7 @@ describe("/api/roles", () => {
     expect(res.status).toBe(201);
     expect(fs.readFileSync(path.join(dir, "disenador.md"), "utf8")).toBe(asId(devMd, "disenador"));
     expect((await send("/", "POST", { markdown: devMd })).status).toBe(409);
-    for (const id of ["_originales", "a", "Mayus", "x".repeat(33), "../fuera"]) {
+    for (const id of ["_originales", "otros", "a", "Mayus", "x".repeat(33), "../fuera"]) {
       expect((await send("/", "POST", { markdown: asId(devMd, id) })).status).toBe(400);
     }
     expect((await send("/", "POST", { markdown: asId(devMd, "otro").replace("## Identidad", "## Nada") })).status).toBe(400);
