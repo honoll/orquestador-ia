@@ -2,7 +2,7 @@
 
 ## F14 — Equipo multiagente (estilo Paperclip) · completada 2026-10-16
 
-**Rama:** `f14-equipo` (encima de `main`), merge solo cuando Alejandro lo diga. Detalle técnico en `CLAUDE.md`, sección "Team mode (F14)".
+**Integrada a `main`** el 2026-10-16 (merge dea372d; rama `f14-equipo` borrada). Detalle técnico en `CLAUDE.md`, sección "Team mode (F14)".
 
 - Una **meta** la atiende un equipo que trabaja a la vez: el Jefe (claude) la parte, delega tareas a los roles de F11 por una API local y escribe la respuesta final; los roles (agy) también pueden delegar o comentar. Convive con los planes por pasos (no se tocaron); las metas no salen en `GET /api/plans` y sus rutas dan 409
 - Cada tarea tiene bandeja, hilo de comentarios y turnos; "esperando hijas" se deduce de las hijas que espera. Un comentario despierta a su dueño; `@rol` en el texto hace una consulta a ese rol
@@ -17,7 +17,7 @@ Siguiente: **F15 (barra lateral)**.
 
 Pendientes (tuyos):
 - Reiniciar las 3 tareas programadas de los trabajadores agy (`schtasks /End` + `/Run`, como administrador) para que tomen el `worker.mjs` nuevo; listo cuando `/health` de cada uno responde `version: "2"`. Sin eso, los agentes en agy2–agy4 no tienen `ORQ_*` (no delegan, no comentan, no retoman sesión) aunque sí trabajan
-- Aprobar el merge de `f14-equipo` a `main`; después del merge, `npm run build:ui` y reiniciar la app de escritorio
+- Reiniciar la app de escritorio para ver la vista Equipo (`ui/dist` ya se recompiló tras el merge)
 - Probar a mano pausa, cancelar, guardia y `@consulta` desde la vista Equipo
 - Menores diferidos (lista completa en `CLAUDE.md`): la columna de tokens por tarea solo muestra el último turno; falso aviso de "archivos fuera de su carpeta" cuando otro agente escribe a la vez; DEV no va a Codex en modo equipo; la Oficina muestra al Jefe como "claude" y el `PlanView` abierto desde ahí sobre una meta solo muestra datos (sus botones dan 409); un único error de consola del navegador ("An unknown error occurred when fetching the script") sin relación aparente con la vista, no investigado; flakes de tiempos que rotan bajo carga (`agy-worker-client`, `process-runner-kill`, `plan-runner-roles`)
 
