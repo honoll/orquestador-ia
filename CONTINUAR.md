@@ -1,5 +1,25 @@
 # Orquestador-IA — Continuación y Estado
 
+## F13 — Escenario propio (mapas de Esmeralda) · completada 2026-10-15
+
+**Rama:** `f13-escenario-gen3` (encima de `main`), merge solo cuando Alejandro lo diga. Detalle técnico en `CLAUDE.md`, sección "Custom scenery (F13)".
+
+- El mundo de la Oficina ahora puede dibujar sus pisos con mapas gen3 de Pokémon Esmeralda en vez de las filas ASCII de F12; las colisiones, los puestos y los fijos salen del propio mapa
+- El escenario vive en `C:\tools\escenario` (fuera de git, solo uso local): `escenario.json`, un JSON por mapa y los PNG `-abajo` / `-arriba` (la capa de arriba tapa a los personajes)
+- 6 pisos: 1 Devon 1F (recepción: biblio, recepción, guardia; el jugador nace en la salida), 2 Devon 2F (desarrollo: DEV e IMAGEN), 3 Devon 3F (dirección: jefe, claude y codex), 4 Laboratorio de Birch (QA e investigación), 5 Escuela (lectura y redacción), 6 Centro Pokémon (descanso)
+- El elevador lista los pisos del escenario (teclas 1–6 o clic); cada piso trae su propio ancho de lienzo
+- `npm run check:escenario [carpeta]` valida la carpeta y muestra la cuadrícula de cada piso; si algo falla se descarta todo el escenario con un aviso en consola
+- Sin escenario (o con uno inválido) vuelven los 3 pisos de F12
+- Verificado en vivo (servidor de prueba :3111, la app de :3110 no se tocó): los 6 pisos cargan, el piso 1 se ve como Devon 1F, el jugador rodea el mostrador, el menú del elevador lleva a cada piso, los fijos están en su lugar, los agy en reposo deambulan en el Centro Pokémon, consola sin avisos `escenario:`, y con una carpeta vacía vuelve F12. 1031 tests
+- No se vio: agy2 caminando de descanso a la zona lector (el paso duró segundos), reduced motion y el mundo a ×1
+
+Siguiente: integrar a `main` cuando lo apruebes; para verlo en la app de escritorio hay que reiniciarla después del merge.
+
+Pendientes (tuyos):
+- Probar el mundo a mano (caminar por los 6 pisos, elevador, cuadro de texto)
+- Decidir si sigue el plan `31a0e2f1` (f11-demo), pausado por presupuesto antes de la síntesis (25.5k > 19.5k), o borrarlo
+- Menores diferidos: `check:escenario` no comprueba que existan los PNG de los atlas; una advertencia de consola por cada casilla inalcanzable puede inundar la consola; la carga del escenario no tiene tiempo límite ("cargando escenario…" para siempre si el backend se cuelga)
+
 ## Skins personales de la Oficina · 2026-10-15
 
 - 14 skins en `C:	ools\sprites` (`sprites.json` + PNG `gen3`): jugador, jefe, guardia, recepcion, biblio, claude, codex, agy y los 6 roles. Sin cambios de código; las sirve `/api/office/sprites`
