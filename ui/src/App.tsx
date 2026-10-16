@@ -1,8 +1,5 @@
 import { useState } from "react";
-import { AccountsPanel } from "./components/AccountsPanel";
-import { WorkerIsolationNotice } from "./components/WorkerIsolationNotice";
-import { MemoryStatus } from "./components/MemoryStatus";
-import { AdapterPanel } from "./components/AdapterPanel";
+import { TeamSidebar } from "./components/sidebar/TeamSidebar";
 import { Chat } from "./components/Chat";
 import { HudBar } from "./components/HudBar";
 import { ProjectPanel } from "./components/ProjectPanel";
@@ -22,15 +19,12 @@ export default function App() {
   return (
     <div className="flex h-screen w-screen flex-col overflow-hidden bg-surface-0">
       <HudBar />
-      {/* Left — Adapters */}
+      {/* Left — Equipo y cuentas (F15) */}
       <ResizableGroup direction="horizontal" className="min-h-0 flex-1 overflow-hidden">
         <ResizablePanel defaultSize={16} minSize={10} maxSize={30}>
           <aside className="px-grid border-r-[3px] border-edge flex h-full flex-col bg-surface-1">
             <div className="flex-1 overflow-y-auto overflow-x-hidden pt-3">
-              <AdapterPanel />
-              <AccountsPanel />
-              <WorkerIsolationNotice />
-              <MemoryStatus />
+              <TeamSidebar />
             </div>
           </aside>
         </ResizablePanel>

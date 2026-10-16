@@ -21,7 +21,7 @@ async function api<T>(url: string, body?: unknown): Promise<T> {
 export function EquipoView() {
   const qc = useQueryClient();
   const { subscribe } = useWs();
-  const { selectedProjectId, setProject } = useAppState();
+  const { selectedProjectId, setProject, equipoFocus, setEquipoFocus } = useAppState();
   const proyectos = useQuery({ queryKey: ["projects"], queryFn: () => api<{ id: string; name: string }[]>("/api/projects") });
   const metas = useQuery({ queryKey: ["equipo"], queryFn: () => api<MetaView[]>("/api/equipo/metas") });
   const [metaId, setMetaId] = useState<string | null>(null);
@@ -32,6 +32,15 @@ export function EquipoView() {
   const [comentario, setComentario] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  // F15: la barra lateral pide abrir una meta y tarea concretas.
+  useEffect(() => {
+    if (!equipoFocus) return;
+    setMetaId(equipoFocus.metaId);
+    setTareaId(equipoFocus.tareaId);
+    setError(null);
+    setEquipoFocus(null);
+  }, [equipoFocus, setEquipoFocus]);
 
   useEffect(() => subscribe((ev) => {
     if (!refreshesEquipo(ev.type)) return;
