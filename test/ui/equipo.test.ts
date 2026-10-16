@@ -23,6 +23,11 @@ describe("vista equipo (lógica)", () => {
     expect(readView("?vista=equipo", null)).toBe("equipo");
     expect(readView("", "equipo")).toBe("equipo");
   });
+
+  it("la vista 'ajustes' se puede pedir por ?vista= y guardar", () => {
+    expect(readView("?vista=ajustes", null)).toBe("ajustes");
+    expect(readView("", "ajustes")).toBe("ajustes");
+  });
 });
 
 describe("estados de meta", () => {

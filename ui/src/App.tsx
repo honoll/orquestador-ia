@@ -11,6 +11,7 @@ import { useAppState } from "./context/AppStateContext";
 import { OfficeView } from "./components/office/OfficeView";
 import { RolesView } from "./components/RolesView";
 import { EquipoView } from "./components/equipo/EquipoView";
+import { AjustesView } from "./components/AjustesView";
 
 export default function App() {
   const [rightOpen, setRightOpen] = useState(true);
@@ -45,6 +46,7 @@ export default function App() {
           {view === "oficina" && <OfficeView />}
           {view === "roles" && <RolesView />}
           {view === "equipo" && <EquipoView />}
+          {view === "ajustes" && <AjustesView />}
         </ResizablePanel>
 
         {/* Right — Projects (collapsible) */}
