@@ -411,10 +411,14 @@ export function Chat() {
   // /equipo: meta para el equipo multiagente (F14); se sigue en la vista Equipo.
   async function handleEquipoCommand(pedido: string) {
     setInput("");
+    if (!selectedProjectId) {
+      setMessages((prev) => [...prev, { role: "user", content: `/equipo ${pedido}` }, { role: "assistant", content: "Elige primero un proyecto en el panel de proyectos (a la derecha): el equipo trabaja dentro de su carpeta.", status: "failed" }]);
+      return;
+    }
     try {
       const r = await fetch("/api/equipo/metas", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pedido, projectId: selectedProjectId || undefined }),
+        body: JSON.stringify({ pedido, projectId: selectedProjectId }),
       });
       if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? `Error ${r.status}`);
       setView("equipo");

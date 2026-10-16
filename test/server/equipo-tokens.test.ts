@@ -27,6 +27,13 @@ describe("tokens de turno", () => {
     expect(await verifyRunToken(t, 1_000 + TOKEN_TTL_MS)).toBeNull();
   });
 
+  it("una caducidad ilegible (NaN) se trata como vencida", async () => {
+    const t = await issueRunToken({ planId: "pn", stepId: "sn" });
+    const { eq } = await import("drizzle-orm");
+    await db.update(schema.teamRunTokens).set({ expiresAt: "no-es-fecha" }).where(eq(schema.teamRunTokens.planId, "pn"));
+    expect(await verifyRunToken(t)).toBeNull();
+  });
+
   it("revocar uno o todos los de una meta", async () => {
     const a = await issueRunToken({ planId: "m1", stepId: "s1" });
     const b = await issueRunToken({ planId: "m1", stepId: "s2" });

@@ -129,6 +129,7 @@ export async function cancelTeam(planId: string): Promise<void> {
 export async function approveTaskGuard(planId: string, stepId: string): Promise<boolean> {
   const s = await getStep(stepId);
   if (!s || s.planId !== planId || !s.guardFlags) return false;
+  if ((await getPlan(planId)).pauseReason !== "guard") return false;
   await setStep(stepId, { guardApproved: 1 });
   await continueTeam(planId);
   return true;
@@ -141,8 +142,9 @@ export async function startGoal(input: { pedido: unknown; projectId?: string | n
 }
 
 export async function humanComment(planId: string, stepId: string, texto: unknown): Promise<{ id: string }> {
-  const [meta] = await db.select({ mode: P.mode }).from(P).where(eq(P.id, planId));
+  const [meta] = await db.select({ mode: P.mode, status: P.status }).from(P).where(eq(P.id, planId));
   if (meta?.mode !== "equipo") throw new TeamError(404, "La meta no existe");
+  if ((GOAL_DONE as readonly string[]).includes(meta.status)) throw new TeamError(409, "La meta ya terminó: no admite comentarios");
   const r = await addComment(planId, stepId, HUMANO, texto);
   const p = await getPlan(planId);
   if (!p.pauseReason && !["completed", "failed", "cancelled"].includes(p.status)) kickTeam(planId);
@@ -178,7 +180,8 @@ function roleBlockFor(step: StepRow): { nombre: string; body: string; escribe: b
     : { nombre: step.role ?? "agente", body: 'Termina con una sola línea de estado: <<<ESTADO terminado>>>, <<<ESTADO bloqueado {"detalle":"…"}>>> o <<<ESTADO necesita {"detalle":"…"}>>>.', escribe: step.readOnly !== 1 };
 }
 
-async function promptFor(pedido: string, step: StepRow, w: WakeupRow, resume: boolean): Promise<string> {
+/** Prompt del turno y los textos de otros que lleva (hijas y comentarios), para la guardia. */
+async function promptFor(pedido: string, step: StepRow, w: WakeupRow, resume: boolean): Promise<{ prompt: string; deps: string[] }> {
   const payload = parsePayload(w.payload);
   const role = roleBlockFor(step);
   const kids = await childrenOf(step.id);
@@ -187,11 +190,12 @@ async function promptFor(pedido: string, step: StepRow, w: WakeupRow, resume: bo
   const rows = resume ? await commentsByIds(payload.commentIds) : await commentsFor(step.id, COMENTARIOS_EN_PROMPT);
   const comentarios = await Promise.all(rows.map(async (c) => ({ autor: await authorLabel(c.author), texto: c.body })));
   const ancestros = resume ? [] : (await ancestorsOf(step)).map((a) => ({ rol: a.role ?? "?", titulo: a.description, resultado: a.result }));
-  return buildTurnPrompt({
+  const prompt = buildTurnPrompt({
     pedido, tarea: { titulo: step.description, instrucciones: step.prompt }, roleBlock: role, escribe: role.escribe,
     catalogo: step.role === JEFE_ROL ? roleCatalog() : undefined, ancestros, hijas, comentarios,
     motivos: payload.reasons, resume,
   }, loadEquipoGuide());
+  return { prompt, deps: [...hijas.map((h) => h.resumen), ...comentarios.map((c) => c.texto)] };
 }
 
 type Start = { kind: "started"; promise: Promise<void> } | { kind: "skip" } | { kind: "wait" } | { kind: "pause" };
@@ -229,12 +233,19 @@ async function startTurn(run: TeamRun, planId: string, pedido: string, w: Wakeup
   }
 
   let prompt: string;
+  let promptFull: string | undefined;
   let token: string;
   try {
+    const turn = await promptFor(pedido, step, w, resume);
+    prompt = turn.prompt;
+    // Turno retomado: si runPlanStep acaba sin sesión (otra cuenta, sesión desconocida), el agente recibe el completo.
+    const full = resume ? await promptFor(pedido, step, w, false) : null;
+    promptFull = full?.prompt;
     // Guardia (ya con cuenta: mientras espera cuenta no se consulta a JEV en cada vuelta): solo tareas que
-    // escriben y no aprobadas; evalúa sus instrucciones originales.
+    // escriben y no aprobadas; evalúa sus instrucciones originales y lo que otros inyectan (hijas, comentarios).
     if (step.writes === 1 && step.guardApproved !== 1) {
-      const guard = await guardStep({ prompt: step.prompt, deps: [], projectPath: cwd });
+      const deps = [...new Set([...turn.deps, ...(full?.deps ?? [])])].map((result, i) => ({ key: `contexto ${i + 1}`, result }));
+      const guard = await guardStep({ prompt: step.prompt, deps, projectPath: cwd });
       if (guard.flagged) {
         agyLease?.release();
         await setStep(step.id, { guardFlags: JSON.stringify(guard.flags) });
@@ -246,7 +257,6 @@ async function startTurn(run: TeamRun, planId: string, pedido: string, w: Wakeup
       if (step.guardFlags) await setStep(step.id, { guardFlags: null });
     }
     if (!resume && step.sessionId) await setStep(step.id, { sessionId: null });
-    prompt = await promptFor(pedido, step, w, resume);
     token = await issueRunToken({ planId, stepId: step.id });
     // En equipo la aprobación de la guardia queda en la tarea: sus instrucciones no cambian entre turnos.
     await setStep(step.id, {
@@ -261,7 +271,7 @@ async function startTurn(run: TeamRun, planId: string, pedido: string, w: Wakeup
 
   const kills: (() => void)[] = [];
   const promise = runPlanStep({
-    planId, stepId: step.id, cwd, promptOverride: prompt, agyLease,
+    planId, stepId: step.id, cwd, promptOverride: prompt, promptFull, agyLease,
     extraEnv: { ORQ_API: orqApi(), ORQ_TAREA: step.id, ORQ_TOKEN: token },
     onKillRegistered: (k) => { kills.push(k); run.kills.add(k); if (run.cancelled) { try { k(); } catch { /* ya terminó */ } } },
   })

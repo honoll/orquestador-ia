@@ -19,7 +19,7 @@ export async function issueRunToken(scope: TokenScope, now: number = Date.now())
 export async function verifyRunToken(token: string | undefined, now: number = Date.now()): Promise<TokenScope | null> {
   if (!token || !/^[0-9a-f]{64}$/.test(token)) return null;
   const [row] = await db.select().from(schema.teamRunTokens).where(eq(schema.teamRunTokens.tokenHash, hash(token)));
-  if (!row || Date.parse(row.expiresAt) <= now) return null;
+  if (!row || !(Date.parse(row.expiresAt) > now)) return null; // NaN también vence (falla cerrada)
   return { planId: row.planId, stepId: row.stepId };
 }
 

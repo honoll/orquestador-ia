@@ -21,7 +21,8 @@ async function api<T>(url: string, body?: unknown): Promise<T> {
 export function EquipoView() {
   const qc = useQueryClient();
   const { subscribe } = useWs();
-  const { selectedProjectId } = useAppState();
+  const { selectedProjectId, setProject } = useAppState();
+  const proyectos = useQuery({ queryKey: ["projects"], queryFn: () => api<{ id: string; name: string }[]>("/api/projects") });
   const metas = useQuery({ queryKey: ["equipo"], queryFn: () => api<MetaView[]>("/api/equipo/metas") });
   const [metaId, setMetaId] = useState<string | null>(null);
   const actual = metaId ?? metas.data?.[0]?.id ?? null;
@@ -65,7 +66,13 @@ export function EquipoView() {
       <aside className="px-panel flex min-h-0 flex-col gap-2 bg-surface-1 p-2">
         <p className="font-pixel text-[11px] text-text-secondary">NUEVA META</p>
         <textarea className="px-input h-24 resize-none" value={pedido} onChange={(e) => setPedido(e.target.value)} placeholder="¿Qué quieres que haga el equipo?" aria-label="Pedido de la nueva meta" />
-        <button className="px-btn px-btn-pri" disabled={busy || !pedido.trim()} onClick={crear}>LANZAR</button>
+        {/* Sin proyecto la meta escribiría en la carpeta del orquestador: el servidor la rechaza y aquí no se lanza. */}
+        <select className="px-input" value={selectedProjectId ?? ""} onChange={(e) => setProject(e.target.value || null)} aria-label="Proyecto de la nueva meta">
+          <option value="">— elige un proyecto —</option>
+          {(proyectos.data ?? []).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+        </select>
+        {!selectedProjectId && <p className="text-text-secondary">Elige aquí el proyecto donde trabajará el equipo.</p>}
+        <button className="px-btn px-btn-pri" disabled={busy || !pedido.trim() || !selectedProjectId} onClick={crear}>LANZAR</button>
         <p className="mt-2 font-pixel text-[11px] text-text-secondary">METAS</p>
         <ul className="min-h-0 flex-1 overflow-y-auto">
           {(metas.data ?? []).map((m) => (
@@ -92,7 +99,7 @@ export function EquipoView() {
               <span className="text-text-secondary">{metaLabel(meta.estado)}{meta.pausa ? ` · ${PAUSA[meta.pausa] ?? meta.pausa}` : ""}</span>
               <span className="text-text-secondary">{formatTokens(meta.usados)}{meta.presupuesto ? ` / ${formatTokens(meta.presupuesto)}` : ""} tok</span>
               {activa && !meta.pausa && <button className="px-btn" disabled={busy} onClick={run(() => api(`/api/equipo/metas/${meta.id}/pausar`, {}))}>PAUSAR</button>}
-              {activa && meta.pausa && <button className="px-btn px-btn-blue" disabled={busy} onClick={run(() => api(`/api/equipo/metas/${meta.id}/continuar`, {}))}>CONTINUAR</button>}
+              {activa && (meta.pausa || meta.estado === "pending") && <button className="px-btn px-btn-blue" disabled={busy} onClick={run(() => api(`/api/equipo/metas/${meta.id}/continuar`, {}))}>CONTINUAR</button>}
               {activa && <button className="px-btn" disabled={busy} onClick={run(() => api(`/api/equipo/metas/${meta.id}/cancelar`, {}))}>CANCELAR</button>}
             </header>
 

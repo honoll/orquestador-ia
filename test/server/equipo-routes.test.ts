@@ -19,12 +19,21 @@ const post = (p: string, body: unknown = {}) => app.request(p, { method: "POST",
 
 describe("API humana del equipo", () => {
   it("POST / valida y arranca la meta", async () => {
+    await db.insert(schema.projects).values({ id: "proy-equipo", name: "p", path: "C:/estudio/p" });
     sched.startGoal.mockResolvedValueOnce({ planId: "nuevo" });
-    const r = await post("/", { pedido: "Haz algo" });
+    const r = await post("/", { pedido: "Haz algo", projectId: "proy-equipo" });
     expect(r.status).toBe(201);
     expect(await r.json()).toEqual({ id: "nuevo" });
-    expect(sched.startGoal).toHaveBeenCalledWith({ pedido: "Haz algo", projectId: null });
-    expect((await post("/", { pedido: 5 })).status).toBe(400);
+    expect(sched.startGoal).toHaveBeenCalledWith({ pedido: "Haz algo", projectId: "proy-equipo" });
+    expect((await post("/", { pedido: 5, projectId: "proy-equipo" })).status).toBe(400);
+  });
+
+  it("POST / exige un proyecto existente (sin él la meta escribiría en el repo del orquestador)", async () => {
+    sched.startGoal.mockClear();
+    expect((await post("/", { pedido: "Haz algo" })).status).toBe(400);
+    expect((await post("/", { pedido: "Haz algo", projectId: null })).status).toBe(400);
+    expect((await post("/", { pedido: "Haz algo", projectId: "no-existe" })).status).toBe(400);
+    expect(sched.startGoal).not.toHaveBeenCalled();
   });
 
   it("GET /:id arma meta, árbol con estados y comentarios; GET / lista solo metas", async () => {

@@ -46,8 +46,11 @@ export function createEquipoRoute() {
     try {
       const b = await json(c);
       if (typeof b.pedido !== "string") throw new TeamError(400, '"pedido" debe ser texto');
-      const projectId = typeof b.projectId === "string" && b.projectId ? b.projectId : null;
-      const { planId } = await startGoal({ pedido: b.pedido, projectId });
+      // Sin proyecto la meta correría con escritura en la carpeta del orquestador (planCwd cae a process.cwd()).
+      if (typeof b.projectId !== "string" || !b.projectId) throw new TeamError(400, '"projectId" es obligatorio: elige un proyecto');
+      const [project] = await db.select().from(schema.projects).where(eq(schema.projects.id, b.projectId));
+      if (!project?.path) throw new TeamError(400, "El proyecto no existe o no tiene carpeta");
+      const { planId } = await startGoal({ pedido: b.pedido, projectId: project.id });
       return c.json({ id: planId }, 201);
     } catch (err) { return fail(c, err); }
   });

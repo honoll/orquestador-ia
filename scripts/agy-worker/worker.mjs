@@ -17,7 +17,7 @@ import {
   withoutSecrets,
 } from "./worker-core.mjs";
 
-export const WORKER_VERSION = "1";
+export const WORKER_VERSION = "2";
 const MAX_BODY = 1024 * 1024;
 export const WORKERS_DIR = "C:\\ProgramData\\orquestador-ia\\workers";
 

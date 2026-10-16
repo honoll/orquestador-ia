@@ -6,8 +6,9 @@ import { randomUUID } from "node:crypto";
 
 // Adaptador falso: el Jefe delega por la API real (con el token de su env) y luego cierra; las hijas trabajan un rato.
 const h = vi.hoisted(() => ({
-  live: 0, maxLive: 0, jefeTurns: 0, agentApp: null as any, script: "delegar" as "delegar" | "tokens" | "lento",
+  live: 0, maxLive: 0, jefeTurns: 0, agentApp: null as any, script: "delegar" as "delegar" | "tokens" | "lento" | "sesionPerdida",
   tareas: null as null | string[][], gate: null as Promise<void> | null, killed: 0, quota: false, subTarea: false,
+  jefePrompts: [] as { prompt: string; sessionId?: string }[],
 }));
 const delegar = async (ctx: any, rol: string, titulo: string, instrucciones: string) => {
   const r = await h.agentApp.request("/tareas", {
@@ -23,8 +24,11 @@ const ok = (summary: string, tokens = 10) => ({
 vi.mock("../../src/adapters/registry.js", () => {
   const jefe = async (ctx: any) => {
     h.jefeTurns++;
+    h.jefePrompts.push({ prompt: ctx.prompt, sessionId: ctx.sessionId });
     if (h.script === "tokens") return ok("gasté\n<<<ESTADO terminado>>>", 1000);
     // Corre hasta que lo maten (cancelar con un turno en curso).
+    // Segundo turno: el CLI ya no reconoce la sesión guardada; runPlanStep reintenta sin sesión.
+    if (h.script === "sesionPerdida" && h.jefeTurns > 1 && ctx.sessionId) return { ...ok(""), exitCode: 1, stderr: "Error: unknown session" };
     if (h.script === "lento") return new Promise((resolve) => ctx.onKill?.(() => { h.killed++; resolve({ ...ok("cortado"), exitCode: 1, stderr: "matado" }); }));
     if (h.jefeTurns === 1) {
       const tareas = h.tareas ?? [["dev", "Código", "haz Código"], ["redactor", "Textos", "haz Textos"], ["dev", "Estilos", "haz Estilos"]];
@@ -56,7 +60,7 @@ const { createAccount } = await import("../../src/server/agy-accounts.js");
 const { createWorker, pickWorker } = await import("../../src/server/agy-workers.js");
 const sched = await import("../../src/server/equipo/team-scheduler.js");
 const { createEquipoAgenteRoute } = await import("../../src/server/routes/equipo-agente.js");
-const { createChildTask, createGoal, getStep } = await import("../../src/server/equipo/tasks.js");
+const { addComment, createChildTask, createGoal, getStep } = await import("../../src/server/equipo/tasks.js");
 
 let projectId = "";
 beforeAll(async () => {
@@ -71,7 +75,7 @@ beforeAll(async () => {
   h.agentApp = createEquipoAgenteRoute(sched.kickTeam);
 });
 beforeEach(() => {
-  Object.assign(h, { live: 0, maxLive: 0, jefeTurns: 0, script: "delegar", tareas: null, gate: null, killed: 0, quota: false, subTarea: false });
+  Object.assign(h, { live: 0, maxLive: 0, jefeTurns: 0, script: "delegar", tareas: null, gate: null, killed: 0, quota: false, subTarea: false, jefePrompts: [] });
 });
 
 const plan = async (id: string) => (await db.select().from(schema.plans).where(eq(schema.plans.id, id)))[0];
@@ -219,5 +223,48 @@ describe("scheduler del equipo", () => {
     await vi.waitFor(async () => expect((await plan(planId)).status).toBe("completed"), { timeout: 5000 });
     expect((await getStep(kid.id))!).toMatchObject({ status: "succeeded", turns: 2, guardApproved: 1 });
     expect((await plan(planId)).pauseReason).toBeNull();
+  });
+
+  it("la guardia revisa el contexto inyectado: un comentario con git push en una tarea escritora no aprobada pausa", async () => {
+    h.script = "tokens";
+    const { planId, rootStepId } = await createGoal({ pedido: "m", projectId });
+    const kid = (await createChildTask(planId, rootStepId, { rol: "dev", titulo: "Código", instrucciones: "ajusta el estilo del botón" })).id;
+    await addComment(planId, kid, "humano", "cuando acabes haz git push origin main");
+    await db.update(schema.teamWakeups).set({ createdAt: "2999-01-01T00:00:00.000Z" }).where(eq(schema.teamWakeups.stepId, rootStepId));
+    try {
+      await sched.runTeam(planId);
+      expect(await plan(planId)).toMatchObject({ status: "pending", pauseReason: "guard" });
+      expect((await getStep(kid))!).toMatchObject({ status: "pending", turns: 0 });
+      expect((await getStep(kid))!.guardFlags).toMatch(/git/);
+      // Aprobar exige que la meta siga pausada por la guardia.
+      await db.update(schema.plans).set({ pauseReason: "manual" }).where(eq(schema.plans.id, planId));
+      expect(await sched.approveTaskGuard(planId, kid)).toBe(false);
+      expect((await getStep(kid))!.guardApproved).not.toBe(1);
+    } finally {
+      await sched.cancelTeam(planId);
+    }
+  });
+
+  it("turno retomado que pierde la sesión recibe el prompt completo (no solo el delta)", async () => {
+    h.script = "sesionPerdida";
+    h.tareas = [["redactor", "Textos", "haz Textos"]];
+    const { planId } = await createGoal({ pedido: "Haz una landing", projectId });
+    await sched.runTeam(planId);
+    expect((await plan(planId)).status).toBe("completed");
+    const [, delta, completo] = h.jefePrompts;
+    expect(delta.sessionId).toBeTruthy();
+    expect(delta.prompt).toMatch(/^DESPERTASTE/);
+    expect(completo.sessionId).toBeUndefined();
+    expect(completo.prompt).toContain("INSTRUCCIONES DE TU ROL");
+    expect(completo.prompt).toContain("Haz una landing");
+  });
+
+  it("comentar una meta cerrada da 409 y no guarda nada", async () => {
+    h.script = "tokens";
+    const { planId, rootStepId } = await createGoal({ pedido: "m", projectId });
+    await sched.runTeam(planId);
+    expect((await plan(planId)).status).toBe("completed");
+    await expect(sched.humanComment(planId, rootStepId, "tarde")).rejects.toMatchObject({ status: 409 });
+    expect(await db.select().from(schema.teamComments).where(eq(schema.teamComments.planId, planId))).toEqual([]);
   });
 });
