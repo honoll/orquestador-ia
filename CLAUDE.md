@@ -519,7 +519,6 @@ Introduced in F14 (2026-10-16, branch `f14-equipo`, on top of `main`). A **goal*
 - Tasks/API: `budgetTokens: null` does not mean "no limit"; `createGoal` has no transaction; a second `onTaskTerminal` for a failed awaited child duplicates the comment; the mention regex misses `(@qa)` and `,@qa`; a `no-explicit-any` warning in `broadcast`; the detail endpoint has N+1 queries and reads all comments before clipping; tests lack regressions for plan steps in guard/DELETE and for deleting comments/tokens/steps; some 400/403/413 paths do not assert that no kick happened or that the charset is on errors; a failure after a mutation leaves the change without a kick.
 - UI: no invalidation throttle (F8 uses 300 ms); `treeRows` omits cycles; an empty alert if `error` is `""`.
 - Missing: no automated migration test over an old database (checked by hand against a copy of the real one); "one queued wakeup per task" is not enforced by the schema (the serialized queue guarantees it); `team_wakeups`/`team_comments` have no retention.
-- Tests: timing flakes rotate under load and pass alone (`agy-worker-client` kill, `process-runner-kill`, `plan-runner-roles` outputs); pre-existing, not from F14.
 
 ## Team sidebar (F15)
 
@@ -549,7 +548,7 @@ Introduced in F15 (2026-10-16, branch `f15-barra-equipo`, on top of `main`; merg
 - Sidebar: `setItem` runs inside the state updater; the role row has no `min-w-0` (the indicator is clipped at minimum width); `AdapterUsage` is always mounted (shows `NaN%` if codex is missing).
 - AJUSTES / layout: duplicated titles and double rule (`Seccion` + each panel's own title); `Seccion` styling differs from the `Panel` of `WorkersPanel`; the HUD with 5 buttons can get tight at 1000 px; an error after good data is not shown.
 - Accepted deviation: no fixed fallback line in CODEX (it would be redundant/false); the fallback text shows only when there is no data.
-- Tests: `plan-schema-upgrade` failed once under load (passes 5/5 alone), a timing flake; the known rotating ones (`agy-worker-client` kill, `process-runner-kill`, `plan-runner-roles` outputs) are pre-existing.
+- Tests: the timing flakes (`agy-worker-client` kill/timeout, `process-runner-kill`, `plan-runner-roles` outputs, `plan-schema-upgrade`) were fixed on 2026-10-16 (branch `estabilizar-pruebas-tiempo`): condition waits (`vi.waitFor`) instead of fixed 50 ms sleeps, 30 s timeouts for git/migration tests, the kill bound measured from `kill()` at 15 s; full suite 5/5 green.
 
 ## Antigravity Accounts
 

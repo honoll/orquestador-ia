@@ -39,5 +39,5 @@ describe("actualización de una base anterior a F2", () => {
     const accounts = await db.select().from(schema.agyAccounts);
     expect(accounts.filter((a) => a.active === 1).map((a) => a.id)).toEqual(["a"]);
     await expect(db.insert(schema.agyAccounts).values({ id: "z", label: "Z", active: 1 })).rejects.toThrow();
-  });
+  }, 30_000); // importar la base y migrar tarda más de 5 s con la suite completa
 });

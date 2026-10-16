@@ -138,7 +138,7 @@ describe("runPlanStep: carpeta de salidas del rol imagen (F11)", () => {
     expect(fs.readFileSync(path.join(cwd, ".gitignore"), "utf8")).toContain(".orquestador/");
     expect(out.status).toBe("succeeded");
     expect(step.statusDetail).toContain("colado.js");
-  });
+  }, 30_000); // git init + fotos de git status: lento con la suite completa
 
   it.skipIf(!gitOk)("el aviso también sale si el paso queda bloqueado, sin estado final o falla", async () => {
     const b = await imagenStep('<<<ESTADO bloqueado {"detalle":"sin motor"}>>>');
@@ -153,7 +153,7 @@ describe("runPlanStep: carpeta de salidas del rol imagen (F11)", () => {
     const f = await imagenStep("", { exitCode: 2, errorMessage: "boom" });
     expect(f.out.status).toBe("failed");
     expect(f.step.statusDetail).toContain("colado.js");
-  });
+  }, 30_000); // tres pasos, cada uno con git init + fotos de git status
 
   it("roles que no escriben salidas no crean carpeta", async () => {
     reply('<<<ESTADO terminado {"detalle":"ok"}>>>');

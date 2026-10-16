@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from "vitest";
 import http from "node:http";
 import fs from "node:fs";
 import os from "node:os";
@@ -66,6 +66,14 @@ beforeEach(() => { mode = "ok"; seen.length = 0; });
 
 const body = { prompt: "di hola", cwd: "C:\\estudio\\x", model: "gemini-3.8-flash-low", readOnly: true, timeoutSec: 60 };
 
+// En modo "hang" el trabajador manda cabeceras y una línea: cuando llega al cliente ya tiene el id de corrida.
+function hangingRun() {
+  let gotLine = false;
+  const h = runOnWorker({ port, keyPath }, body, { onLog: () => { gotLine = true; } });
+  return { ...h, started: () => vi.waitFor(() => expect(gotLine).toBe(true), { timeout: 3000 }) };
+}
+const sawCancel = () => vi.waitFor(() => expect(seen.some((s) => s.path === "/cancel")).toBe(true), { timeout: 3000 });
+
 describe("cliente del trabajador agy", () => {
   it("health con la llave", async () => {
     expect(await workerHealth({ port, keyPath })).toEqual({ ok: true, account: "agy9", version: "1", busy: false });
@@ -120,13 +128,12 @@ describe("cliente del trabajador agy", () => {
 
   it("kill llama /cancel y termina el run", async () => {
     mode = "hang";
-    const h = runOnWorker({ port, keyPath }, body, { onLog: () => {} });
-    await new Promise((r) => setTimeout(r, 50));
+    const h = hangingRun();
+    await h.started();
     h.kill();
     const out = await h.promise;
     expect(out.exitCode).toBeNull();
-    await new Promise((r) => setTimeout(r, 50));
-    expect(seen.some((s) => s.path === "/cancel")).toBe(true);
+    await sawCancel();
   });
 
   it("kill después de terminar no llama /cancel (no puede parar otro paso del trabajador)", async () => {
@@ -139,11 +146,11 @@ describe("cliente del trabajador agy", () => {
 
   it("kill manda a /cancel el id de corrida que dio el trabajador", async () => {
     mode = "hang";
-    const h = runOnWorker({ port, keyPath }, body, { onLog: () => {} });
-    await new Promise((r) => setTimeout(r, 50));
+    const h = hangingRun();
+    await h.started();
     h.kill();
     await h.promise;
-    await new Promise((r) => setTimeout(r, 50));
+    await sawCancel();
     expect(seen.find((s) => s.path === "/cancel")?.body).toEqual({ runId: "run-123" });
   });
 
@@ -158,11 +165,11 @@ describe("cliente del trabajador agy", () => {
 
   it("tope de tiempo del cliente: cancela y marca timedOut", async () => {
     mode = "hang";
-    const out = await runOnWorker({ port, keyPath }, { ...body, timeoutSec: 0.05 }, { onLog: () => {}, graceSec: 0 }).promise;
+    // 1 s: con la suite completa las cabeceras pueden tardar más de 50 ms, y sin id de corrida no hay /cancel.
+    const out = await runOnWorker({ port, keyPath }, { ...body, timeoutSec: 1 }, { onLog: () => {}, graceSec: 0 }).promise;
     expect(out.timedOut).toBe(true);
     expect(parse(out).errorFamily).toBe("timeout");
-    await new Promise((r) => setTimeout(r, 50));
-    expect(seen.some((s) => s.path === "/cancel")).toBe(true);
+    await sawCancel();
   });
 
   it("conexión cortada a media respuesta → falla (no 'no disponible')", async () => {
