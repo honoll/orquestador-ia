@@ -24,3 +24,12 @@ describe("vista equipo (lógica)", () => {
     expect(readView("", "equipo")).toBe("equipo");
   });
 });
+
+describe("estados de meta", () => {
+  it("etiquetas en español; un estado desconocido se muestra tal cual", async () => {
+    const { metaLabel } = await import("../../ui/src/lib/equipo");
+    expect(["generating", "pending", "running", "completed", "failed", "cancelled"].map(metaLabel)).toEqual(
+      ["generando", "en espera", "trabajando", "completada", "falló", "cancelada"]);
+    expect(metaLabel("otro")).toBe("otro");
+  });
+});

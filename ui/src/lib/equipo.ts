@@ -40,3 +40,8 @@ export function treeRows(tareas: TareaView[]): { tarea: TareaView; nivel: number
 }
 
 export const refreshesEquipo = (type: string): boolean => type.startsWith("team:") || type === "plan:step";
+
+export const ESTADO_META: Record<string, string> = {
+  generating: "generando", pending: "en espera", running: "trabajando", completed: "completada", failed: "falló", cancelled: "cancelada",
+};
+export const metaLabel = (estado: string): string => ESTADO_META[estado] ?? estado;
