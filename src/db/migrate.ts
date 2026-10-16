@@ -80,6 +80,7 @@ CREATE TABLE IF NOT EXISTS plans (
   synthesis TEXT,
   synthesis_status TEXT,
   synthesis_error TEXT,
+  mode TEXT NOT NULL DEFAULT 'pasos',
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -111,7 +112,13 @@ CREATE TABLE IF NOT EXISTS plan_steps (
   guard_flags TEXT,
   guard_approved INTEGER NOT NULL DEFAULT 0,
   role TEXT,
-  status_detail TEXT
+  status_detail TEXT,
+  parent_step_id TEXT,
+  depth INTEGER,
+  blocked_by TEXT,
+  turns INTEGER NOT NULL DEFAULT 0,
+  account_id TEXT,
+  created_by_step_id TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project_id);
@@ -131,6 +138,38 @@ CREATE TABLE IF NOT EXISTS plan_file_changes (
 );
 
 CREATE INDEX IF NOT EXISTS idx_plan_file_changes_plan ON plan_file_changes(plan_id);
+
+CREATE TABLE IF NOT EXISTS team_comments (
+  id TEXT PRIMARY KEY,
+  plan_id TEXT NOT NULL REFERENCES plans(id),
+  step_id TEXT NOT NULL,
+  author TEXT NOT NULL,
+  body TEXT NOT NULL,
+  created_by_run_id TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS team_wakeups (
+  id TEXT PRIMARY KEY,
+  plan_id TEXT NOT NULL REFERENCES plans(id),
+  step_id TEXT NOT NULL,
+  reason TEXT NOT NULL,
+  payload TEXT NOT NULL DEFAULT '{}',
+  status TEXT NOT NULL DEFAULT 'en_cola',
+  created_at TEXT NOT NULL,
+  taken_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS team_run_tokens (
+  token_hash TEXT PRIMARY KEY,
+  plan_id TEXT NOT NULL,
+  step_id TEXT NOT NULL,
+  expires_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_team_comments_step ON team_comments(step_id);
+CREATE INDEX IF NOT EXISTS idx_team_wakeups_plan ON team_wakeups(plan_id, status);
+CREATE INDEX IF NOT EXISTS idx_plan_steps_parent ON plan_steps(parent_step_id);
 
 CREATE TABLE IF NOT EXISTS agy_accounts (
   id TEXT PRIMARY KEY,
@@ -319,6 +358,13 @@ async function migrate() {
     "ALTER TABLE plan_steps ADD COLUMN guard_approved INTEGER NOT NULL DEFAULT 0",
     "ALTER TABLE plan_steps ADD COLUMN role TEXT",
     "ALTER TABLE plan_steps ADD COLUMN status_detail TEXT",
+    "ALTER TABLE plans ADD COLUMN mode TEXT NOT NULL DEFAULT 'pasos'",
+    "ALTER TABLE plan_steps ADD COLUMN parent_step_id TEXT",
+    "ALTER TABLE plan_steps ADD COLUMN depth INTEGER",
+    "ALTER TABLE plan_steps ADD COLUMN blocked_by TEXT",
+    "ALTER TABLE plan_steps ADD COLUMN turns INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE plan_steps ADD COLUMN account_id TEXT",
+    "ALTER TABLE plan_steps ADD COLUMN created_by_step_id TEXT",
   ]) {
     try { await client.execute(stmt); } catch { /* column already exists */ }
   }

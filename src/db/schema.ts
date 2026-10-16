@@ -39,8 +39,10 @@ export const plans = sqliteTable("plans", {
   budgetTokens: integer("budget_tokens"),
   usedTokens: integer("used_tokens").notNull().default(0),
   maxParallel: integer("max_parallel").notNull().default(3),
+  // F14: "pasos" (planes de F2/F10/F11) o "equipo" (metas multiagente).
+  mode: text("mode", { enum: ["pasos", "equipo"] }).notNull().default("pasos"),
   // Por qué está pausado el plan: cuota agotada o presupuesto de tokens.
-  pauseReason: text("pause_reason", { enum: ["quota", "budget", "guard"] }),
+  pauseReason: text("pause_reason", { enum: ["quota", "budget", "guard", "manual"] }),
   // Nivel de rigor del plan (clasificado por JEV o por el respaldo local) y de dónde salió.
   tier: text("tier", { enum: ["trivial", "normal", "critical"] }),
   tierConfidence: real("tier_confidence"),
@@ -93,6 +95,14 @@ export const planSteps = sqliteTable("plan_steps", {
   role: text("role"),
   // F11: detalle del estado final del agente (o "sin estado final").
   statusDetail: text("status_detail"),
+  // F14 (modo equipo): árbol de tareas, hijas que espera, turnos y cuenta del último turno.
+  parentStepId: text("parent_step_id"),
+  depth: integer("depth"),
+  // JSON: ids de las hijas que la tarea espera antes de seguir.
+  blockedBy: text("blocked_by"),
+  turns: integer("turns").notNull().default(0),
+  accountId: text("account_id"),
+  createdByStepId: text("created_by_step_id"),
 });
 
 export const runs = sqliteTable("runs", {
@@ -189,4 +199,35 @@ export const vaultChunks = sqliteTable("vault_chunks", {
   chunkIndex: integer("chunk_index").notNull(),
   text: text("text").notNull(),
   embedding: text("embedding").notNull(),
+});
+
+// F14: hilo de comentarios por tarea del modo equipo. author = "humano" o el id de la tarea que comenta.
+export const teamComments = sqliteTable("team_comments", {
+  id: text("id").primaryKey(),
+  planId: text("plan_id").notNull().references(() => plans.id),
+  stepId: text("step_id").notNull(),
+  author: text("author").notNull(),
+  body: text("body").notNull(),
+  createdByRunId: text("created_by_run_id"),
+  createdAt: text("created_at").notNull().default(sql`(datetime('now'))`),
+});
+
+// F14: cola de despertares (un solo despertar en cola por tarea: los nuevos se fusionan).
+export const teamWakeups = sqliteTable("team_wakeups", {
+  id: text("id").primaryKey(),
+  planId: text("plan_id").notNull().references(() => plans.id),
+  stepId: text("step_id").notNull(),
+  reason: text("reason", { enum: ["asignada", "comentario", "hijas_terminadas", "consulta", "continuar"] }).notNull(),
+  payload: text("payload").notNull().default("{}"),
+  status: text("status", { enum: ["en_cola", "tomado", "hecho", "cancelado"] }).notNull().default("en_cola"),
+  createdAt: text("created_at").notNull(),
+  takenAt: text("taken_at"),
+});
+
+// F14: tokens de turno (solo el sha256; el token en claro nunca se guarda).
+export const teamRunTokens = sqliteTable("team_run_tokens", {
+  tokenHash: text("token_hash").primaryKey(),
+  planId: text("plan_id").notNull(),
+  stepId: text("step_id").notNull(),
+  expiresAt: text("expires_at").notNull(),
 });
