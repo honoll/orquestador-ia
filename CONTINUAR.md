@@ -1,5 +1,11 @@
 # Orquestador-IA — Continuación y Estado
 
+## Skins personales de la Oficina · 2026-10-15
+
+- 14 skins en `C:	ools\sprites` (`sprites.json` + PNG `gen3`): jugador, jefe, guardia, recepcion, biblio, claude, codex, agy y los 6 roles. Sin cambios de código; las sirve `/api/office/sprites`
+- Salen de `OneDrive\Desktop\sprites-libre-uso`, que trae un LICENSE CC0 pero son personajes de Pokémon Esmeralda (Game Freak/Nintendo): **solo uso local, nunca al repo** ni a `ui/public/oficina/sprites`
+- Verificado en vivo: jugador, jefe, guardia, recepción, biblio y agy (sin rol) se ven y caminan con los cuadros correctos. Los de dev/qa/imagen/investigador/lector/redactor, claude y codex salen cuando corre un paso con ese rol (falta verlos)
+
 ## F9 — Toda la app en estilo pixel · completada 2026-10-15
 
 **Rama:** `f9-app-pixel` (encima de `f12-oficina-jugable`). Orden de merge: F7 → F8 → F10 → F11 → F12 → F9, solo cuando Alejandro lo diga. Detalle técnico en `CLAUDE.md`, sección "Pixel UI (F9)".
