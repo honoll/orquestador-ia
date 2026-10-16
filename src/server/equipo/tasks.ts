@@ -164,7 +164,7 @@ export function childSummary(step: StepRow): string {
   return `${step.status}${detalle}: ${clip(step.result ?? step.errorMessage ?? "(sin resultado)", RESUMEN_HIJA_MAX)}`;
 }
 
-export function estadoTarea(step: StepRow, hijas: StepRow[]): "en_cola" | "corriendo" | "esperando" | "hecha" | "fallida" | "cancelada" {
+export function estadoTarea(step: Pick<StepRow, "status" | "blockedBy">, hijas: Pick<StepRow, "id" | "status">[]): "en_cola" | "corriendo" | "esperando" | "hecha" | "fallida" | "cancelada" {
   if (step.status === "running") return "corriendo";
   if (step.status === "succeeded") return "hecha";
   if (step.status === "failed") return "fallida";

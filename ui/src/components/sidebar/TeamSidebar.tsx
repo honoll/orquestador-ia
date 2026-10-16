@@ -45,6 +45,7 @@ function EquipoSection() {
   });
 
   const abrir = (t: BandejaTarea) => {
+    if (talkActive) return; // un plan de pasos reemplazaría el árbol de Chat y cortaría la plática
     const d = destino(t);
     if (viewLocked(d.view, view, talkActive)) return;
     if (d.view === "equipo") setEquipoFocus({ metaId: d.metaId, tareaId: d.tareaId });
@@ -55,7 +56,10 @@ function EquipoSection() {
   return (
     <section aria-label="Equipo">
       <p className="mb-1 font-pixel text-[11px] text-text-secondary">EQUIPO</p>
-      {bandejas.isError && <p role="alert" className="mb-1 text-err">sin conexión — mostrando la última foto</p>}
+      {bandejas.isPending && <p className="mb-1 text-text-tertiary">cargando…</p>}
+      {bandejas.isError && (
+        <p role="alert" className="mb-1 text-err">{bandejas.data ? "sin conexión — mostrando la última foto" : "sin conexión con el servidor"}</p>
+      )}
       <ul>
         {(bandejas.data ?? []).map((b) => {
           const ind = indicador(b);
@@ -83,7 +87,7 @@ function EquipoSection() {
                       <ul>
                         {b[g].map((t) => (
                           <li key={t.id}>
-                            <button className="w-full truncate py-0.5 text-left hover:bg-white/10" title={`${t.titulo} — ${t.meta}`} onClick={() => abrir(t)}>
+                            <button className="w-full truncate py-0.5 text-left hover:bg-white/10 disabled:opacity-50" disabled={talkActive} title={talkActive ? "Termina la plática para abrir tareas" : `${t.titulo} — ${t.meta}`} onClick={() => abrir(t)}>
                               {t.titulo}<span className="text-text-tertiary"> · {t.cuenta ?? "—"}</span>
                             </button>
                           </li>
@@ -114,8 +118,8 @@ function CuentasSection() {
       <ul>
         {pools.map((p) => (
           <li key={p.key} className="flex items-center justify-between gap-2">
-            <span className="truncate">{p.accounts.some((a) => a.active) ? "● " : ""}{p.accounts.map((a) => a.label).join(", ")}</span>
-            <span className={p.blocked ? "text-err" : "text-text-secondary"}>{p.blocked ? "⛔" : p.pct !== null ? `${p.pct}%` : "—"}</span>
+            <span className="truncate">{p.accounts.some((a) => a.active) && <><span aria-hidden="true">● </span><span className="sr-only">cuenta local </span></>}{p.accounts.map((a) => a.label).join(", ")}</span>
+            <span className={p.blocked ? "text-err" : "text-text-secondary"}>{p.blocked ? <><span aria-hidden="true">⛔</span><span className="sr-only">bloqueada</span></> : p.pct !== null ? `${p.pct}%` : "—"}</span>
           </li>
         ))}
         {pools.length === 0 && <li className="text-text-tertiary">sin cuentas de agy</li>}

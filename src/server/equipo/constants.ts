@@ -13,6 +13,8 @@ export const CUERPO_MAX = 16 * 1024;
 export const ESPERA_CUENTA_MS = 5 * 60 * 1000; // cuánto se espera la cuenta del turno anterior para retomar su sesión
 export const COMENTARIOS_EN_PROMPT = 20;
 export const JEFE_ROL = "jefe";
+/** Fila de la barra para trabajo sin rol: ningún rol puede llamarse así. */
+export const OTROS = "otros";
 export const HUMANO = "humano";
 
 /** URL de la API para los agentes (misma máquina: los trabajadores agy llegan por loopback). */

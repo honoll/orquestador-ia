@@ -64,6 +64,14 @@ describe("bandejas por rol", () => {
     expect(inv.total.enCola).toBe(25);
   });
 
+  it("recorta la meta a 120 caracteres + elipsis", async () => {
+    const { planId, rootStepId } = await createGoal({ pedido: "x".repeat(500) });
+    await createChildTask(planId, rootStepId, { rol: "redactor", titulo: "Larga", instrucciones: "i" });
+    const t = (await buildBandejas()).flatMap((b) => b.enCola).find((x) => x.titulo === "Larga")!;
+    expect(t.meta.length).toBeLessThanOrEqual(121);
+    expect(t.meta.endsWith("…")).toBe(true);
+  });
+
   it("la ruta devuelve el arreglo", async () => {
     const r = await createBandejasRoute().request("/");
     expect(r.status).toBe(200);

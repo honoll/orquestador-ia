@@ -7,7 +7,7 @@
 - La barra izquierda ya no es el panel de administración: muestra el **equipo en vivo** (JEFE, los 6 roles y, si hace falta, OTROS) y las **cuentas en compacto**
 - Cada rol tiene un indicador: `trabajando ×N`, `en cola N`, `esperando hijas` o `libre`, y bajo el que trabaja la línea `cuenta · título`. Un clic en el rol despliega su bandeja (TRABAJANDO / EN COLA / ESPERANDO HIJAS, con "y N más" pasado de 20); lo desplegado se recuerda al recargar
 - Un clic en una tarea de equipo abre la vista Equipo con esa meta y esa tarea elegidas; una de un plan por pasos abre ese plan en el Chat. Con una plática (Platicar) abierta no se cambia de vista
-- Se refresca con los eventos `plan:*` y `team:*` (freno de 300 ms) y cada 30 s; si falla el servidor deja la última foto con aviso "sin conexión"
+- Se refresca con los eventos `plan:*` y `team:*` (freno de 300 ms) y cada 30 s; muestra "cargando…" al inicio; si falla el servidor deja la última foto con aviso "sin conexión" (o "sin conexión con el servidor" si aún no había datos). Los eventos de streaming (`plan:log`, `plan:generating`) no la refrescan. Con una plática abierta las tareas de la barra quedan deshabilitadas
 - Datos nuevos: `GET /api/equipo/bandejas` (sin cambios de base de datos)
 - CUENTAS compacto: bolsas de agy con su % (● la local, ⛔ si está bloqueada) y el uso de Claude y Codex
 - Botón **AJUSTES** (y pestaña del HUD): cuentas de agy, trabajadores ("probar"), segunda cuenta de Claude, Codex y memoria; todo lo que antes estaba en la barra. `AdapterPanel` desapareció; el modelo se elige solo en los selectores del chat
@@ -19,7 +19,7 @@ Siguiente: integrar a `main` cuando lo apruebes (después: `npm run build:ui` y 
 Pendientes (tuyos):
 - Probar a mano lo "no visto" de arriba
 - Los pendientes de F14 siguen en pie (reiniciar las tareas programadas de los trabajadores agy hasta que `/health` diga `version: "2"`, probar pausa, cancelar, guardia y `@consulta`)
-- Menores diferidos (lista completa en `CLAUDE.md`): el endpoint carga más columnas de las necesarias y repite la meta completa en cada tarea; títulos duplicados en AJUSTES; en la primera carga fallida la barra dice "sin conexión — mostrando la última foto" sobre una lista vacía (engañoso, no hay foto) y no tiene estado de carga ni vacío; `⛔`/`●` sin texto accesible; el HUD con 5 botones puede apretarse a 1000 px; un flake de tiempo (`plan-schema-upgrade`) falló una vez bajo carga y pasa solo
+- Menores diferidos (lista completa en `CLAUDE.md`): títulos duplicados en AJUSTES; el HUD con 5 botones puede apretarse a 1000 px; un flake de tiempo (`plan-schema-upgrade`) falló una vez bajo carga y pasa solo
 
 ## F14 — Equipo multiagente (estilo Paperclip) · completada 2026-10-16
 

@@ -41,7 +41,7 @@ export function HudBar() {
           )}
         </>
       ) : (
-        <span className="text-text-secondary">sin cuenta activa — agrégala en el panel de cuentas</span>
+        <span className="text-text-secondary">sin cuenta activa — agrégala en AJUSTES → Cuentas de Antigravity</span>
       )}
       <span className="ml-auto text-text-secondary" title="Tokens de todos los adapters desde que arrancó el servidor">
         sesión: {formatTokens(session?.tokens ?? 0)} tok

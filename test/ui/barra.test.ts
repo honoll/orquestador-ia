@@ -38,5 +38,7 @@ describe("barra de equipo (lógica)", () => {
     expect(refrescaBarra("team:task")).toBe(true);
     expect(refrescaBarra("plan:step")).toBe(true);
     expect(refrescaBarra("voice:assistant:delta")).toBe(false);
+    expect(refrescaBarra("plan:done")).toBe(true);
+    for (const stream of ["plan:log", "plan:synthesis:log", "plan:generating"]) expect(refrescaBarra(stream)).toBe(false);
   });
 });

@@ -37,4 +37,6 @@ export const alternar = (abiertos: string[], rol: string): string[] =>
   abiertos.includes(rol) ? abiertos.filter((r) => r !== rol) : [...abiertos, rol];
 
 export const colorRol = (rol: string): string => (rol === "jefe" ? ROLES.jefe.color : roleColor(rol));
-export const refrescaBarra = (type: string): boolean => type.startsWith("plan:") || type.startsWith("team:");
+// Sin los plan:* de streaming (log, generating): llegan varias veces por segundo y la barra no cambia con ellos.
+export const refrescaBarra = (type: string): boolean =>
+  (type.startsWith("plan:") && !/(:log|generating)$/.test(type)) || type.startsWith("team:");

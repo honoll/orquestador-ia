@@ -2,10 +2,10 @@ import { and, eq, inArray, isNotNull, or } from "drizzle-orm";
 import { db, schema } from "../../db/index.js";
 import { loadRoles } from "../roles.js";
 import { estadoTarea, type StepRow } from "./tasks.js";
-import { JEFE_ROL } from "./constants.js";
+import { JEFE_ROL, OTROS } from "./constants.js";
 
 export const MAX_POR_GRUPO = 20;
-export const OTROS = "otros";
+export const META_MAX = 120;
 
 export interface BandejaTarea {
   id: string; planId: string; modo: "pasos" | "equipo"; titulo: string; meta: string; cuenta: string | null; desde: string | null;
@@ -22,7 +22,15 @@ const vacia = (rol: string, nombre: string): Bandeja => ({ rol, nombre, trabajan
 // Más recientes primero; las que no han arrancado (sin `desde`) al final.
 const recientes = (a: BandejaTarea, b: BandejaTarea) => (b.desde ?? "").localeCompare(a.desde ?? "");
 
-function grupoDe(step: StepRow, hijas: StepRow[] | null): Grupo {
+const corta = (t: string) => (t.length > META_MAX ? `${t.slice(0, META_MAX)}…` : t);
+// Solo las columnas que usa la barra: nada de prompt ni result.
+const COLS = {
+  id: S.id, planId: S.planId, parentStepId: S.parentStepId, status: S.status, role: S.role, description: S.description,
+  adapter: S.adapter, accountId: S.accountId, startedAt: S.startedAt, blockedBy: S.blockedBy,
+};
+type Paso = Pick<StepRow, "id" | "status" | "blockedBy">;
+
+function grupoDe(step: Paso, hijas: Paso[] | null): Grupo {
   if (step.status === "running") return "trabajando";
   return hijas && estadoTarea(step, hijas) === "esperando" ? "esperando" : "enCola";
 }
@@ -39,8 +47,8 @@ export async function buildBandejas(): Promise<Bandeja[]> {
   ));
   if (planes.length) {
     const planPorId = new Map(planes.map((p) => [p.id, p]));
-    const pasos = await db.select().from(S).where(inArray(S.planId, [...planPorId.keys()]));
-    const hijasDe = new Map<string, StepRow[]>();
+    const pasos = await db.select(COLS).from(S).where(inArray(S.planId, [...planPorId.keys()]));
+    const hijasDe = new Map<string, Paso[]>();
     for (const s of pasos) if (s.parentStepId) hijasDe.set(s.parentStepId, [...(hijasDe.get(s.parentStepId) ?? []), s]);
     const cuentas = [...new Set(pasos.map((s) => s.accountId).filter((x): x is string => !!x))];
     const etiqueta = new Map(
@@ -54,7 +62,7 @@ export async function buildBandejas(): Promise<Bandeja[]> {
       const b = (s.role ? porRol.get(s.role) : undefined) ?? otros;
       b.total[grupo]++;
       b[grupo].push({
-        id: s.id, planId: s.planId, modo: plan.mode, titulo: s.description, meta: plan.description,
+        id: s.id, planId: s.planId, modo: plan.mode, titulo: s.description, meta: corta(plan.description),
         cuenta: s.adapter === "agy" ? (s.accountId ? etiqueta.get(s.accountId) ?? null : null) : s.adapter,
         desde: s.startedAt ?? null,
       });

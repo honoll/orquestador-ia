@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import { Hono, type Context } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { parseRole, ROLES_DIR } from "../roles.js";
+import { OTROS } from "../equipo/constants.js";
 import { parseFrontmatter } from "../../memory/markdown.js";
 
 // Solo ids de rol: nunca "_originales", README, "..", separadores ni mayúsculas.
@@ -80,6 +81,7 @@ export function createRolesRoute(dir: string = ROLES_DIR) {
     if (typeof id !== "string" || !ROLE_ID.test(id)) {
       return c.json({ error: "El id del frontmatter debe tener 2–32 caracteres: minúsculas, números y guiones" }, 400);
     }
+    if (id === OTROS) return c.json({ error: `"${OTROS}" está reservado para la barra de equipo` }, 400);
     if (fs.existsSync(file(id))) return c.json({ error: `Ya existe el rol "${id}"` }, 409);
     try { parseRole(md, id); } catch (err) { return c.json(fail(err), 400); }
     if (!createAtomic(file(id), md)) return c.json({ error: `Ya existe el rol "${id}"` }, 409);
