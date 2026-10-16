@@ -119,4 +119,45 @@ describe("árbol de tareas", () => {
     expect(t.roleCatalog()).toMatch(/- dev:/);
     expect(t.roleCatalog()).not.toMatch(/- jefe:/);
   });
+
+  it("delegaciones en paralelo con esperar: no se pierde ningún id y stepIndex/stepKey no se repiten", async () => {
+    const { planId, rootStepId } = await t.createGoal({ pedido: "m" });
+    const ids = (await Promise.all([1, 2, 3].map((i) => t.createChildTask(planId, rootStepId, { rol: "lector", titulo: `p${i}`, instrucciones: "i", esperar: true })))).map((r) => r.id);
+    expect(t.parseIds((await t.getStep(rootStepId))!.blockedBy).sort()).toEqual([...ids].sort());
+    const kids = await Promise.all(ids.map((id) => t.getStep(id)));
+    expect(new Set(kids.map((k) => k!.stepIndex)).size).toBe(3);
+    expect(new Set(kids.map((k) => k!.stepKey)).size).toBe(3);
+  });
+
+  it("onTaskTerminal concurrente: un solo despertar hijas_terminadas y blocked_by vacío", async () => {
+    const { planId, rootStepId } = await t.createGoal({ pedido: "m" });
+    await db.update(schema.teamWakeups).set({ status: "hecho" }).where(eq(schema.teamWakeups.stepId, rootStepId));
+    const a = (await t.createChildTask(planId, rootStepId, { rol: "dev", titulo: "a", instrucciones: "i", esperar: true })).id;
+    const b = (await t.createChildTask(planId, rootStepId, { rol: "dev", titulo: "b", instrucciones: "i", esperar: true })).id;
+    await db.update(schema.planSteps).set({ status: "succeeded", result: "ok" }).where(eq(schema.planSteps.id, a));
+    await db.update(schema.planSteps).set({ status: "succeeded", result: "ok" }).where(eq(schema.planSteps.id, b));
+    await Promise.all([t.onTaskTerminal(planId, a), t.onTaskTerminal(planId, b), t.onTaskTerminal(planId, a)]);
+    const rows = await db.select().from(schema.teamWakeups).where(and(eq(schema.teamWakeups.stepId, rootStepId), eq(schema.teamWakeups.status, "en_cola")));
+    expect(rows).toHaveLength(1);
+    expect(rows[0].reason).toBe("hijas_terminadas");
+    expect(t.parseIds((await t.getStep(rootStepId))!.blockedBy)).toEqual([]);
+  });
+
+  it("menciones: título largo se recorta; en el tope de profundidad el comentario se guarda sin consulta; emails no mencionan", async () => {
+    const { planId, rootStepId } = await t.createGoal({ pedido: "p".repeat(200) });
+    const a = (await t.createChildTask(planId, rootStepId, { rol: "dev", titulo: "a", instrucciones: "i" })).id;
+    const largo = await t.addComment(planId, a, rootStepId, "revisa esto @qa");
+    expect(largo.id).toBeTruthy();
+    const [consulta] = await t.childrenOf(a);
+    expect(consulta).toMatchObject({ role: "qa", reason: "consulta" });
+    expect(consulta.description.length).toBeLessThanOrEqual(120);
+
+    let parent = rootStepId;
+    for (let d = 1; d <= MAX_PROFUNDIDAD; d++) parent = (await t.createChildTask(planId, parent, { rol: "dev", titulo: `n${d}`, instrucciones: "i" })).id;
+    expect((await t.addComment(planId, parent, "humano", "¿y esto? @qa")).id).toBeTruthy();
+    expect(await t.childrenOf(parent)).toHaveLength(0);
+
+    await t.addComment(planId, a, "humano", "escríbeme a a@dev.com o ve a /ruta/@qa/x");
+    expect(await t.childrenOf(a)).toHaveLength(1);
+  });
 });

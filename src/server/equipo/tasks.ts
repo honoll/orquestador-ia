@@ -17,6 +17,15 @@ export type StepRow = typeof schema.planSteps.$inferSelect;
 export const TERMINAL: ReadonlySet<string> = new Set(["succeeded", "failed", "cancelled", "skipped"]);
 
 const S = schema.planSteps;
+
+// Las mutaciones del árbol (conteo de tareas, blocked_by) pasan en fila: delegaciones paralelas no se pisan.
+// Nada que reentre a esta cadena (createChildTask, addComment…) debe llamarse desde dentro de `serial`.
+let chain: Promise<unknown> = Promise.resolve();
+function serial<T>(fn: () => Promise<T>): Promise<T> {
+  const p = chain.then(fn, fn);
+  chain = p.catch(() => undefined);
+  return p;
+}
 const now = () => new Date().toISOString();
 const emit = (e: Record<string, unknown>) => broadcast({ ...e, timestamp: now() } as any);
 const text = (v: unknown, max: number, campo: string): string => {
@@ -86,21 +95,24 @@ export async function createChildTask(
   const titulo = text(input.titulo, TITULO_MAX, "titulo");
   const instrucciones = text(input.instrucciones, INSTRUCCIONES_MAX, "instrucciones");
   if (input.esperar !== undefined && typeof input.esperar !== "boolean") throw new TeamError(400, `"esperar" debe ser true o false`);
-  const parent = await getStep(parentStepId);
-  if (!parent || parent.planId !== planId) throw new TeamError(404, "La tarea padre no existe");
-  const depth = (parent.depth ?? 0) + 1;
-  if (depth > MAX_PROFUNDIDAD) throw new TeamError(409, `Tope de profundidad (${MAX_PROFUNDIDAD}): resuélvelo tú o coméntalo a tu tarea padre`);
-  const count = (await db.select({ id: S.id }).from(S).where(eq(S.planId, planId))).length;
-  if (count >= MAX_TAREAS) throw new TeamError(409, `Tope de ${MAX_TAREAS} tareas por meta: termina con lo que hay`);
-  const id = randomUUID();
-  await db.insert(S).values({
-    id, planId, stepIndex: count, stepKey: `t${count + 1}`, description: titulo, prompt: instrucciones,
-    adapter: "agy", model: role.modelo, role: role.id, writes: role.escribe === false ? 0 : 1, readOnly: role.escribe === false ? 1 : 0,
-    parentStepId, depth, createdByStepId: parentStepId, reason: opts.consulta ? "consulta" : null, status: "pending", blockedBy: "[]",
+  const id = await serial(async () => {
+    const parent = await getStep(parentStepId);
+    if (!parent || parent.planId !== planId) throw new TeamError(404, "La tarea padre no existe");
+    const depth = (parent.depth ?? 0) + 1;
+    if (depth > MAX_PROFUNDIDAD) throw new TeamError(409, `Tope de profundidad (${MAX_PROFUNDIDAD}): resuélvelo tú o coméntalo a tu tarea padre`);
+    const count = (await db.select({ id: S.id }).from(S).where(eq(S.planId, planId))).length;
+    if (count >= MAX_TAREAS) throw new TeamError(409, `Tope de ${MAX_TAREAS} tareas por meta: termina con lo que hay`);
+    const newId = randomUUID();
+    await db.insert(S).values({
+      id: newId, planId, stepIndex: count, stepKey: `t${count + 1}`, description: titulo, prompt: instrucciones,
+      adapter: "agy", model: role.modelo, role: role.id, writes: role.escribe === false ? 0 : 1, readOnly: role.escribe === false ? 1 : 0,
+      parentStepId, depth, createdByStepId: parentStepId, reason: opts.consulta ? "consulta" : null, status: "pending", blockedBy: "[]",
+    });
+    if (input.esperar === true) {
+      await db.update(S).set({ blockedBy: JSON.stringify([...parseIds(parent.blockedBy), newId]) }).where(eq(S.id, parentStepId));
+    }
+    return newId;
   });
-  if (input.esperar === true) {
-    await db.update(S).set({ blockedBy: JSON.stringify([...parseIds(parent.blockedBy), id]) }).where(eq(S.id, parentStepId));
-  }
   await enqueueWakeup(planId, id, opts.consulta ? "consulta" : "asignada");
   emit({ type: "team:task", planId, stepId: id, status: "pending" });
   return { id };
@@ -117,9 +129,13 @@ export async function addComment(planId: string, stepId: string, author: string,
   emit({ type: "team:comment", planId, stepId, commentId: id });
   if (opts.menciones !== false) {
     const ids = new Set(loadRoles().map((r) => r.id));
-    for (const rol of new Set([...body.matchAll(/@([a-z][a-z0-9-]*)/g)].map((m) => m[1]))) {
+    for (const rol of new Set([...body.matchAll(/(?:^|\s)@([a-z][a-z0-9-]*)/g)].map((m) => m[1]))) {
       if (rol === JEFE_ROL || !ids.has(rol)) continue;
-      await createChildTask(planId, stepId, { rol, titulo: `Consulta de ${await authorLabel(author)}`, instrucciones: body }, { consulta: true });
+      try {
+        await createChildTask(planId, stepId, { rol, titulo: `Consulta de ${await authorLabel(author)}`.slice(0, TITULO_MAX), instrucciones: body }, { consulta: true });
+      } catch (e) {
+        if (!(e instanceof TeamError)) throw e; // tope de profundidad/tareas: el comentario ya quedó, solo se omite la consulta
+      }
     }
   }
   return { id };
@@ -170,14 +186,18 @@ export async function onTaskTerminal(planId: string, stepId: string): Promise<vo
     await addComment(planId, parent.id, step.id, `Respuesta de ${step.role} a la consulta: ${childSummary(step)}`, { menciones: false });
     return;
   }
-  const espera = parseIds(parent.blockedBy);
-  if (espera.includes(step.id)) {
+  // Decide dentro de la cadena (lee/escribe blocked_by del padre); despertar y comentarios, ya fuera de ella.
+  const despertar = await serial(async () => {
+    const espera = parseIds((await getStep(parent.id))?.blockedBy ?? null);
+    if (!espera.includes(step.id)) return null;
     const hijas = await childrenOf(parent.id);
-    const pendientes = espera.filter((id) => !TERMINAL.has(hijas.find((h) => h.id === id)?.status ?? "cancelled"));
-    if (pendientes.length === 0) {
-      await db.update(S).set({ blockedBy: "[]" }).where(eq(S.id, parent.id));
-      await enqueueWakeup(planId, parent.id, "hijas_terminadas", { childIds: espera });
-    }
+    const terminada = (id: string) => TERMINAL.has(hijas.find((h) => h.id === id)?.status ?? "cancelled");
+    if (!espera.every(terminada)) return [];
+    await db.update(S).set({ blockedBy: JSON.stringify(espera.filter((id) => !terminada(id))) }).where(eq(S.id, parent.id));
+    return espera;
+  });
+  if (despertar !== null) { // null = no la esperaba; [] = la esperaba pero aún quedan hijas pendientes
+    if (despertar.length) await enqueueWakeup(planId, parent.id, "hijas_terminadas", { childIds: despertar });
     return;
   }
   if (step.status === "failed") {
