@@ -128,3 +128,21 @@ describe("trabajador agy", () => {
     expect((await fetch(`${base}/otra`, { headers: auth })).status).toBe(404);
   });
 });
+
+describe("trabajador agy: spawn que lanza síncrono", () => {
+  it("responde worker:done -1 y libera el trabajador", async () => {
+    const bad = createWorker({ account: "malo", key: KEY, root, agyPath: "agy\0.exe" });
+    await new Promise<void>((r) => bad.listen(0, "127.0.0.1", r));
+    const url = `http://127.0.0.1:${(bad.address() as AddressInfo).port}`;
+    try {
+      for (let i = 0; i < 2; i++) { // la 2ª no puede dar 409: la 1ª soltó el trabajador
+        const res = await fetch(`${url}/run`, { method: "POST", headers: { ...auth, "Content-Type": "application/json" }, body: JSON.stringify({ prompt: "x", cwd: root }) });
+        expect(res.status).toBe(200);
+        const evs = (await res.text()).split("\n").filter(Boolean).map((l) => JSON.parse(l));
+        expect(evs.at(-1)).toEqual({ event: "worker:done", exitCode: -1, timedOut: false });
+      }
+    } finally {
+      await new Promise<void>((r) => bad.close(() => r()));
+    }
+  });
+});

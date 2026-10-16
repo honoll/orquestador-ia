@@ -124,6 +124,8 @@ async function runPlanStepInner(options: StepRunOptions): Promise<StepOutcome> {
   const localOnly = isAgy && !cwdAllowsWorkers(cwd);
 
   let sessionId = step.sessionId ?? undefined;
+  // F14: cuenta dueña de la sesión guardada (antes de que este run escriba la cuenta de sus intentos).
+  const sessionAccount = step.accountId;
   let lastError: string | null = null;
   let tokensUsed = 0;
   // For Claude steps: track which profile we're using across retries (only if API keys configured)
@@ -148,8 +150,6 @@ async function runPlanStepInner(options: StepRunOptions): Promise<StepOutcome> {
       lease = preLease ?? await pickWorker(Date.now(), ex);
       preLease = null;
       if (lease) tagLease(lease.accountId, step.description, step.model ?? null, step.role ?? null, { planId: step.planId, stepKey: step.stepKey ?? null });
-      // F14: cuenta del intento, para retomar la sesión de la tarea en la misma cuenta.
-      if (lease) await db.update(schema.planSteps).set({ accountId: lease.accountId }).where(eq(schema.planSteps.id, stepId));
       if (!lease) {
         if ((await agyAvailability(Date.now(), ex)).usable > 0) return requeue(planId, stepId, tokensUsed, attempt);
         return agyNoAccount({ planId, stepId, lastQuotaLabel, lastError, tokensUsed, localOnly });
@@ -161,7 +161,11 @@ async function runPlanStepInner(options: StepRunOptions): Promise<StepOutcome> {
 
     // Create a task + run record for traceability
     const taskId = randomUUID();
+    // La sesión solo se retoma en la cuenta que la creó (otra cuenta = otro perfil de Windows).
+    const attemptSession = lease && sessionId && !(lease.accountId === sessionAccount || (sessionAccount == null && !lease.worker)) ? undefined : sessionId;
     try {
+      // F14: cuenta del intento; si la sesión guardada no es de esa cuenta se descarta para no desparejar cuenta y sesión.
+      if (lease) await db.update(schema.planSteps).set({ accountId: lease.accountId, ...(attemptSession === sessionId ? {} : { sessionId: null }) }).where(eq(schema.planSteps.id, stepId));
       await db.insert(schema.tasks).values({
         id: taskId,
         title: step.description.slice(0, 80),
@@ -195,7 +199,7 @@ async function runPlanStepInner(options: StepRunOptions): Promise<StepOutcome> {
         prompt,
         model: step.model ?? undefined,
         cwd,
-        sessionId,
+        sessionId: attemptSession,
         timeoutSec: 1800,
         readOnly: step.readOnly === 1,
         env: options.extraEnv,
@@ -313,7 +317,7 @@ async function runPlanStepInner(options: StepRunOptions): Promise<StepOutcome> {
       lastError = result.errorMessage ?? `Exit code ${result.exitCode}`;
 
       // Unknown session: retry without --resume
-      if (isUnknownSession && sessionId) {
+      if (isUnknownSession && attemptSession) {
         log.warn({ stepId, attempt }, "Unknown session, retrying without --resume");
         sessionId = undefined;
         attempt--;

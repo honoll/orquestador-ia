@@ -3,8 +3,10 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
+import type { AdapterExecutionContext } from "../../src/lib/types.js";
+import type { WorkerRunBody } from "../../src/adapters/agy/worker-client.js";
 
-const h = vi.hoisted(() => ({ execute: vi.fn(async (_ctx: any) => ({
+const h = vi.hoisted(() => ({ execute: vi.fn(async (_ctx: AdapterExecutionContext) => ({
   exitCode: 0, signal: null, timedOut: false, stdout: "", stderr: "", summary: "ok", sessionId: "ses-1", model: null,
   costUsd: 0, inputTokens: 1, outputTokens: 1, errorMessage: null, errorFamily: null, retryNotBefore: null,
 })) }));
@@ -12,7 +14,7 @@ vi.mock("../../src/adapters/registry.js", () => ({
   getAdapter: (t: string) => (t === "agy" ? { meta: { type: "agy" }, detect: async () => ({ available: true, resolvedPath: "x" }), execute: h.execute } : undefined),
   adapters: {},
 }));
-const runOnWorker = vi.hoisted(() => vi.fn((_t: any, _body: any) => ({ promise: Promise.resolve({ exitCode: 0, signal: null, timedOut: false, stdout: "", stderr: "" }), kill: () => {} })));
+const runOnWorker = vi.hoisted(() => vi.fn((_t: unknown, _body: WorkerRunBody) => ({ promise: Promise.resolve({ exitCode: 0, signal: null, timedOut: false, stdout: "", stderr: "" }), kill: () => {} })));
 
 const { migrationDone } = await import("../../src/db/migrate.js");
 const { db, schema } = await import("../../src/db/index.js");
@@ -32,9 +34,41 @@ describe("plomería del turno", () => {
     const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "plom-"));
     const out = await runPlanStep({ planId, stepId, cwd, extraEnv: { ORQ_API: "http://127.0.0.1:1", ORQ_TAREA: stepId, ORQ_TOKEN: "t" } });
     expect(out.status).toBe("succeeded");
-    expect(h.execute.mock.calls[0][0].env).toEqual({ ORQ_API: "http://127.0.0.1:1", ORQ_TAREA: stepId, ORQ_TOKEN: "t" });
+    expect(h.execute.mock.calls.at(-1)![0].env).toEqual({ ORQ_API: "http://127.0.0.1:1", ORQ_TAREA: stepId, ORQ_TOKEN: "t" });
     const [row] = await db.select().from(schema.planSteps).where(eq(schema.planSteps.id, stepId));
     expect(row.accountId).toBe(localId);
+  });
+
+  it("sin extraEnv el adaptador recibe env undefined", async () => {
+    const planId = randomUUID(), stepId = randomUUID();
+    await db.insert(schema.plans).values({ id: planId, description: "p", status: "running" });
+    await db.insert(schema.planSteps).values({ id: stepId, planId, stepIndex: 0, description: "d", adapter: "agy", prompt: "x", status: "pending" });
+    await runPlanStep({ planId, stepId, cwd: fs.mkdtempSync(path.join(os.tmpdir(), "plom-")) });
+    expect(h.execute.mock.calls.at(-1)![0].env).toBeUndefined();
+  });
+
+  it("la sesión guardada solo se pasa si el intento corre en la cuenta que la creó", async () => {
+    const other = await createAccount("Dueña de sesión");
+    const mk = async (accountId: string | null) => {
+      const planId = randomUUID(), stepId = randomUUID();
+      await db.insert(schema.plans).values({ id: planId, description: "p", status: "running" });
+      await db.insert(schema.planSteps).values({ id: stepId, planId, stepIndex: 0, description: "d", adapter: "agy", prompt: "x", status: "pending", sessionId: "ses-vieja", accountId });
+      return { planId, stepId, cwd: fs.mkdtempSync(path.join(os.tmpdir(), "plom-")) };
+    };
+    // Cuenta A (other) tiene la sesión, pero el intento cae en la local (B): sin sessionId.
+    const dist = await mk(other.id);
+    await runPlanStep({ ...dist, agyLease: (await pickWorker(Date.now(), { only: localId }))! });
+    expect(h.execute.mock.calls.at(-1)![0].sessionId).toBeUndefined();
+    const [row] = await db.select().from(schema.planSteps).where(eq(schema.planSteps.id, dist.stepId));
+    expect(row.accountId).toBe(localId);
+    // Misma cuenta: la recibe.
+    const same = await mk(localId);
+    await runPlanStep({ ...same, agyLease: (await pickWorker(Date.now(), { only: localId }))! });
+    expect(h.execute.mock.calls.at(-1)![0].sessionId).toBe("ses-vieja");
+    // Fila vieja sin cuenta, en la cuenta local: se comporta como antes.
+    const old = await mk(null);
+    await runPlanStep({ ...old, agyLease: (await pickWorker(Date.now(), { only: localId }))! });
+    expect(h.execute.mock.calls.at(-1)![0].sessionId).toBe("ses-vieja");
   });
 
   it("pickWorker con only reserva solo esa cuenta (o null si está ocupada)", async () => {

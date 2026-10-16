@@ -70,6 +70,7 @@ describe("args de agy", () => {
       );
     }
     expect(buildAgyArgs(undefined, undefined, {})).toEqual(srcBuildAgyArgs(undefined, undefined, {}));
+    expect(buildAgyArgs("m", "conv-1", { readOnly: false })).toEqual(srcBuildAgyArgs("m", "conv-1", { readOnly: false }));
     expect(buildAgyArgs("m", undefined, { readOnly: true })).not.toContain("--dangerously-skip-permissions");
   });
   it("stdin idéntico a buildAgyStdin", () => {
@@ -107,6 +108,11 @@ describe("parseRunBody", () => {
     expect(parseRunBody({ ...base, env: [] })).toBeNull();
     expect(parseRunBody({ ...base, sessionId: "" })).toBeNull();
     expect(parseRunBody({ ...base, sessionId: 5 })).toBeNull();
+    expect(parseRunBody({ ...base, sessionId: "a b" })).toBeNull();
+    expect(parseRunBody({ ...base, sessionId: "x".repeat(201) })).toBeNull();
+    expect(parseRunBody({ ...base, env: { ORQ_TOKEN: "a\0b" } })).toBeNull();
+    expect(parseRunBody({ ...base, env: { ORQ_TOKEN: "a\nb" } })).toBeNull();
+    expect(parseRunBody({ ...base, env: { ORQ_TOKEN: "x".repeat(200) } })).not.toBeNull();
   });
 });
 
