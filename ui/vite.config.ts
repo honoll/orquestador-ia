@@ -62,6 +62,7 @@ export default defineConfig({
     proxy: {
       "/api": "http://127.0.0.1:3110",
       "/sprites": "http://127.0.0.1:3110",
+      "/escenario": "http://127.0.0.1:3110",
       "/ws": {
         target: "ws://127.0.0.1:3110",
         ws: true,

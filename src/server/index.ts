@@ -26,6 +26,7 @@ import memoryRoute from "./routes/memory.js";
 import officeRoute from "./routes/office.js";
 import rolesRoute from "./routes/roles.js";
 import { createSpritesRoute, createOfficeSpritesRoute } from "./routes/sprites.js";
+import { createOfficeEscenarioRoute, createEscenarioFilesRoute } from "./routes/escenario.js";
 import { startOfficeEventTracker } from "./office-state.js";
 import voiceRoute from "./routes/voice.js";
 import voiceAssistantRoute from "./routes/voice-assistant.js";
@@ -69,6 +70,7 @@ app.route("/api/workers", workersRoute);
 app.route("/api/jev", jevRoute);
 app.route("/api/memory", memoryRoute);
 app.route("/api/office/sprites", createOfficeSpritesRoute());
+app.route("/api/office/escenario", createOfficeEscenarioRoute());
 app.route("/api/office", officeRoute);
 app.route("/api/roles", rolesRoute);
 app.route("/api/voice/assistant", voiceAssistantRoute);
@@ -91,6 +93,8 @@ app.get(
 
 // Skins del usuario fuera del repo (OFFICE_SPRITES_DIR); antes del serveStatic de ui/dist.
 app.route("/sprites", createSpritesRoute());
+// Escenario del usuario fuera del repo (OFFICE_ESCENARIO_DIR): solo sus atlas PNG.
+app.route("/escenario", createEscenarioFilesRoute());
 
 const uiDistPath = path.resolve(import.meta.dirname, "../../ui/dist");
 if (fs.existsSync(uiDistPath)) {

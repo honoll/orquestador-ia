@@ -2,8 +2,9 @@ import { describe, it, expect, beforeEach } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { validateEscenario, readEscenario } from "../../src/server/escenario.js";
+import { validateEscenario, readEscenario, type Escenario } from "../../src/server/escenario.js";
 import { ESCENARIO, MAPA } from "../fixtures/escenario-sintetico.js";
+import { createOfficeEscenarioRoute, createEscenarioFilesRoute } from "../../src/server/routes/escenario.js";
 
 const leer = (m: unknown = MAPA) => () => structuredClone(m);
 const conPiso = (cambio: Record<string, unknown>) => ({ pisos: [{ ...structuredClone(ESCENARIO.pisos[0]), ...cambio }] });
@@ -98,5 +99,23 @@ describe("readEscenario", () => {
     expect(readEscenario(dir).warnings).toEqual(["prueba.json: pesa más de 256 KB"]);
     fs.writeFileSync(path.join(dir, "escenario.json"), "{roto");
     expect(readEscenario(dir).warnings).toEqual(["escenario.json: no es JSON"]);
+  });
+});
+
+describe("rutas del escenario", () => {
+  it("/api/office/escenario lee la carpeta; /escenario solo sirve PNG de adentro con nosniff y CSP", async () => {
+    expect(await (await createOfficeEscenarioRoute(dir).request("/")).json()).toEqual({ pisos: [], warnings: [] });
+    fs.writeFileSync(path.join(dir, "escenario.json"), JSON.stringify(ESCENARIO));
+    fs.writeFileSync(path.join(dir, "prueba.json"), JSON.stringify(MAPA));
+    fs.writeFileSync(path.join(dir, "gTileset_Prueba-abajo.png"), Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+    const body = (await (await createOfficeEscenarioRoute(dir).request("/")).json()) as Escenario;
+    expect(body.warnings).toEqual([]);
+    expect(body.pisos[0].atlas).toBe("gTileset_Prueba");
+    const r = await createEscenarioFilesRoute(dir).request("/gTileset_Prueba-abajo.png");
+    expect(r.status).toBe(200);
+    expect(r.headers.get("content-type")).toBe("image/png");
+    expect(r.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(r.headers.get("content-security-policy")).toBe("sandbox");
+    for (const bad of ["/prueba.json", "/escenario.json", "/..%2Fx.png", "/falta.png"]) expect((await createEscenarioFilesRoute(dir).request(bad)).status, bad).toBe(404);
   });
 });
