@@ -1,5 +1,26 @@
 # Orquestador-IA — Continuación y Estado
 
+## F15 — Barra lateral de equipo · completada 2026-10-16
+
+**Rama:** `f15-barra-equipo` (encima de `main`), merge solo cuando Alejandro lo diga. Detalle técnico en `CLAUDE.md`, sección "Team sidebar (F15)".
+
+- La barra izquierda ya no es el panel de administración: muestra el **equipo en vivo** (JEFE, los 6 roles y, si hace falta, OTROS) y las **cuentas en compacto**
+- Cada rol tiene un indicador: `trabajando ×N`, `en cola N`, `esperando hijas` o `libre`, y bajo el que trabaja la línea `cuenta · título`. Un clic en el rol despliega su bandeja (TRABAJANDO / EN COLA / ESPERANDO HIJAS, con "y N más" pasado de 20); lo desplegado se recuerda al recargar
+- Un clic en una tarea de equipo abre la vista Equipo con esa meta y esa tarea elegidas; una de un plan por pasos abre ese plan en el Chat. Con una plática (Platicar) abierta no se cambia de vista
+- Se refresca con los eventos `plan:*` y `team:*` (freno de 300 ms) y cada 30 s; si falla el servidor deja la última foto con aviso "sin conexión"
+- Datos nuevos: `GET /api/equipo/bandejas` (sin cambios de base de datos)
+- CUENTAS compacto: bolsas de agy con su % (● la local, ⛔ si está bloqueada) y el uso de Claude y Codex
+- Botón **AJUSTES** (y pestaña del HUD): cuentas de agy, trabajadores ("probar"), segunda cuenta de Claude, Codex y memoria; todo lo que antes estaba en la barra. `AdapterPanel` desapareció; el modelo se elige solo en los selectores del chat
+- Verificado en vivo (servidor de prueba :3111, proyecto `f11-demo`; la app de :3110 no se tocó): con la meta "lee README.md y resúmelo en 5 viñetas" el Jefe y LECTOR pasaron a "trabajando ×1" con su cuenta y al terminar todos volvieron a "libre"; la bandeja se desplegó y se recordó al recargar; el clic en la tarea del Jefe cambió a esa meta en la vista Equipo; CUENTAS y AJUSTES mostraron todo lo esperado; `GET /api/equipo/bandejas` respondió en ~4 ms
+- No se vio: la barra con "en cola N" / "esperando hijas" en un rol que no sea el Jefe; "y N más" con más de 20; el aviso "sin conexión"; el clic en un paso de un plan por pasos
+
+Siguiente: integrar a `main` cuando lo apruebes (después: `npm run build:ui` y reiniciar la app de escritorio para ver la barra nueva).
+
+Pendientes (tuyos):
+- Probar a mano lo "no visto" de arriba
+- Los pendientes de F14 siguen en pie (reiniciar las tareas programadas de los trabajadores agy hasta que `/health` diga `version: "2"`, probar pausa, cancelar, guardia y `@consulta`)
+- Menores diferidos (lista completa en `CLAUDE.md`): el endpoint carga más columnas de las necesarias y repite la meta completa en cada tarea; títulos duplicados en AJUSTES; la barra no tiene estado de carga ni aviso en la primera carga fallida; `⛔`/`●` sin texto accesible; el HUD con 5 botones puede apretarse a 1000 px; un flake de tiempo (`plan-schema-upgrade`) falló una vez bajo carga y pasa solo
+
 ## F14 — Equipo multiagente (estilo Paperclip) · completada 2026-10-16
 
 **Integrada a `main`** el 2026-10-16 (merge dea372d; rama `f14-equipo` borrada). Detalle técnico en `CLAUDE.md`, sección "Team mode (F14)".

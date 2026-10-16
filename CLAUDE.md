@@ -163,7 +163,7 @@ Tables: `projects`, `tasks`, `runs`, `plans`, `plan_steps`, `agy_accounts`, `agy
 
 - `AppStateContext` — selected adapter, model, project, and active `conversationId`
 - `WebSocketProvider` — single WS connection, event routing, log accumulation
-- 3-column layout: `AdapterPanel` | `Chat` | `ProjectPanel`
+- 3-column layout: `TeamSidebar` | `Chat` | `ProjectPanel` (F15; the center swaps to `OfficeView`/`RolesView`/`EquipoView`/`AjustesView` by `view`)
 - `PlanView` renders inside `Chat` when a plan is active
 
 ## Obsidian memory (F3b)
@@ -520,6 +520,36 @@ Introduced in F14 (2026-10-16, branch `f14-equipo`, on top of `main`). A **goal*
 - UI: no invalidation throttle (F8 uses 300 ms); `treeRows` omits cycles; an empty alert if `error` is `""`.
 - Missing: no automated migration test over an old database (checked by hand against a copy of the real one); "one queued wakeup per task" is not enforced by the schema (the serialized queue guarantees it); `team_wakeups`/`team_comments` have no retention.
 - Tests: timing flakes rotate under load and pass alone (`agy-worker-client` kill, `process-runner-kill`, `plan-runner-roles` outputs); pre-existing, not from F14.
+
+## Team sidebar (F15)
+
+Introduced in F15 (2026-10-16, branch `f15-barra-equipo`, on top of `main`; merge only when Alejandro says so). The left column is no longer the old `AdapterPanel` (admin of accounts, workers, Claude profiles, memory): it now shows the **team live** (each role with its inbox) and the **accounts in compact form**; the administration moved to an **AJUSTES** view. Plan: `docs/superpowers/plans/2026-10-16-f15-barra-equipo.md` (design: `…-design.md` next to it). No schema change.
+
+**Endpoint (`src/server/equipo/bandejas.ts`, `src/server/routes/bandejas.ts`, mounted at `/api/equipo/bandejas`):** `GET /` returns one row per role for the sidebar (read for the UI, no token): `{rol, nombre, trabajando[], enCola[], esperando[], total:{trabajando,enCola,esperando}}`. Rows are `jefe` + the F11 roles (`loadRoles`), plus an `otros` row only when it has something. Rules:
+- **Active work:** team goals (`plans.mode = equipo`) that are `pending` or `running`, and step plans (`mode = pasos`) that are `running` or carry a `pause_reason`. Only steps/tasks that are `pending` or `running` count.
+- **Groups:** `running` → `trabajando`; a `pending` team task that waits on children (`estadoTarea` = `esperando`) → `esperando`; any other `pending` → `enCola` (a step of a step plan is never `esperando`).
+- **Cap and total:** each group lists at most 20 tasks (`MAX_POR_GRUPO`), most recent `startedAt` first (not-started ones last); `total` keeps the real count so the UI can say "y N más".
+- **`otros`:** work whose role is missing or no longer exists.
+- **Account (`cuenta`):** for agy steps the label of `account_id` (`null` if none yet); for claude/codex the adapter name. Each task carries `id`, `planId`, `modo`, `titulo` (step description), `meta` (plan description), `cuenta` and `desde` (`startedAt`).
+
+**Sidebar (`ui/src/components/sidebar/TeamSidebar.tsx`, pure logic in `ui/src/lib/barra.ts`):**
+- **EQUIPO:** one button row per role with a color square (`colorRol`), the name and an **indicator** (`indicador`): `trabajando ×N` (blue), else `en cola N`, else `esperando hijas` (both in warn color; this is the state of a role whose only work is waiting on its children, e.g. the Boss after delegating), else `libre`. Under a working role, a line `cuenta · título` of its first running task. Clicking the row folds/unfolds its **queue** (groups TRABAJANDO / EN COLA / ESPERANDO HIJAS, "· y N más" when the total exceeds the 20 shown, "sin tareas" when idle). The unfolded roles persist in `localStorage["orquestador.barra.abiertos"]` (reads and writes are try/catch-guarded).
+- **Click on a task** (`destino`): a team task sets `equipoFocus` `{metaId, tareaId}` (in `AppStateContext`) and switches to the `equipo` view, where `EquipoView` consumes it once (selects that goal and task, clears its error and resets `equipoFocus` to `null`); a step of a step plan sets `activePlanId` and switches to `chat`. `viewLocked` blocks the switch while a Platicar (talk) session is active, same as the HUD tabs.
+- **Refresh:** `useQuery(["bandejas"])` every 30 s plus WS events `plan:*` and `team:*` (`refrescaBarra`) with a **300 ms throttle** (the first event arms a timer; the rest within the window are dropped, so a burst does not freeze the bar). On a failed fetch it keeps the last data and shows "sin conexión — mostrando la última foto".
+- **CUENTAS (compact):** agy accounts grouped by pool (`groupByPool`): `●` marks the local (active) one, then the short-window `%` of the pool, `—` when it has no known cap, or `⛔` when blocked by quota; below, the usage meters of Claude and Codex (`AdapterUsage`) and an **AJUSTES** button (disabled by `viewLocked`).
+
+**AJUSTES view (`ui/src/components/AjustesView.tsx`, a new `ajustes` value of `View`; also a HUD tab and `?vista=ajustes`):** two-column grid (container query) with what used to live in the sidebar, reused as is: CUENTAS DE ANTIGRAVITY (`AccountsPanel`: list, switch, delete, caps), TRABAJADORES DE AGY (`WorkersPanel`: "probar" per worker), CLAUDE (`ClaudeProfiles`: second account, plus the caveman status line), CODEX (`WorkerIsolationNotice`; says why it is empty when the status has not loaded) and MEMORIA (`MemoryStatus`: notes, reindex).
+
+**`AdapterPanel` retired:** the component is deleted; its pieces became standalone components, `AdapterUsage` (`adapter` prop: usage meter of claude/codex) and `ClaudeProfiles` (second Claude account). Model selection now lives **only in the chat selectors** (the sidebar has no model picker anymore).
+
+**Live results (2026-10-16, test server `:3111` with a fresh `build:ui`, project `C:\estudio\f11-demo`; the `:3110` app was not touched):** goal "read README.md and summarize it in 5 bullets; LECTOR reads it and REDACTOR polishes it" (completed, 35.4k tokens, 3 Boss turns). `GET /api/equipo/bandejas` answered in about 4 ms; with no active work it returned the 7 rows (jefe + 6 roles) with `total` 0 and no `otros`. The bar showed JEFE "trabajando ×1" (`claude · Lee README…`) and LECTOR "trabajando ×1" (`agy2 · Leer README…`), the rest "libre"; LECTOR went back to "libre" when it finished, the Boss went on, and when the goal closed all were "libre". Clicking LECTOR unfolded its inbox ("sin tareas": it had already finished); clicking JEFE unfolded TRABAJANDO with its task. With another goal selected in the Equipo view, clicking the Boss's task from the bar switched to the README goal with that task selected (`equipoFocus`). After a reload the unfolded inboxes (JEFE, LECTOR) stayed open. CUENTAS showed the 4 accounts (`agy-verificacion-f6` marked `●` as the local one, agy2, agy3, agy4) with "—" (no known cap), Claude at 14 % of 5 h and Codex at 0 %. AJUSTES showed CUENTAS DE ANTIGRAVITY (change / use / delete / caps), TRABAJADORES DE AGY ("probar" agy2 → ok, agy3 ok, agy4 unknown until tried), CLAUDE ("+ segunda cuenta"), CODEX ("codex: aislado ✓ · claude: aislado ✓ · agy: sin globales ✓") and MEMORIA (441 notes, reindex). The WebSocket connected (direct check on the page: "open"). The console had hundreds of WS reconnect errors from when `:3111` was off between tests (the tab kept retrying) plus the same F14 "An unknown error occurred when fetching the script"; nothing new from the bar. **Not seen:** the bar with "en cola N" / "esperando hijas" on a role other than the Boss; "y N más" with more than 20; the "sin conexión" notice; a click on a step of a step plan (opens that plan in Chat).
+
+**Known deferred:**
+- Endpoint: it loads all columns of the steps (prompt/result) and repeats the whole goal description on every task (candidate for a final wave: select columns, clip `meta` to 120); "most recent first" means nothing for pending tasks (no `startedAt`); the account of a task that is not running is the one of its previous turn; a 500 has no `{error}` body; test gaps (manual pause, finished children, codex).
+- Sidebar: the "última foto" notice does not appear on the first failed load (there is no snapshot) and there is no loading/empty state; a click while Platicar is active does nothing and says nothing; `setItem` runs inside the state updater; `⛔`/`●` have no accessible text; the role row has no `min-w-0` (the indicator is clipped at minimum width); `AdapterUsage` is always mounted (shows `NaN%` if codex is missing).
+- AJUSTES / layout: duplicated titles and double rule (`Seccion` + each panel's own title); `Seccion` styling differs from the `Panel` of `WorkersPanel`; the HUD with 5 buttons can get tight at 1000 px; an error after good data is not shown.
+- Accepted deviation: no fixed fallback line in CODEX (it would be redundant/false); the fallback text shows only when there is no data.
+- Tests: `plan-schema-upgrade` failed once under load (passes 5/5 alone), a timing flake; the known rotating ones (`agy-worker-client` kill, `process-runner-kill`, `plan-runner-roles` outputs) are pre-existing.
 
 ## Antigravity Accounts
 
