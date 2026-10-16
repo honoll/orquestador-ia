@@ -2,8 +2,11 @@
 import { shade, type Rect } from "../../lib/office";
 import { gen3Frame, type SpriteSpec } from "../sprites/skins";
 import type { Dir } from "../sprites/creatures";
+import { metatile } from "./gen3";
 import { isSolid } from "./path";
 import type { FloorMap } from "./types";
+
+export interface Atlas { abajo: HTMLImageElement; arriba: HTMLImageElement }
 
 const T = 16;
 type Ctx = CanvasRenderingContext2D;
@@ -36,9 +39,21 @@ function tile(c: Ctx, map: FloorMap, ch: string, X: number, Y: number, t: number
   }
 }
 
+/** Una capa del atlas gen3 (16 metatiles por fila) sobre todo el piso. */
+function drawLayer(c: Ctx, map: FloorMap, img: HTMLImageElement) {
+  const g = map.gen3!;
+  g.bloques.forEach((b, i) => {
+    const mt = metatile(b);
+    c.drawImage(img, (mt % 16) * T, Math.floor(mt / 16) * T, T, T, (i % g.ancho) * T, Math.floor(i / g.ancho) * T, T, T);
+  });
+}
+
 /** Piso, muebles bajos y bordes de zona (las etiquetas van en DOM). `t` en ticks de 60 Hz (fijo con reduced motion: el foco no parpadea). */
-export function drawFloor(c: Ctx, map: FloorMap, t: number) {
-  map.filas.forEach((fila, Y) => { for (let X = 0; X < fila.length; X++) tile(c, map, fila[X], X, Y, t); });
+export function drawFloor(c: Ctx, map: FloorMap, t: number, atlas?: Atlas) {
+  if (map.gen3 && atlas) {
+    r(c, 0, 0, map.gen3.ancho * T, map.filas.length * T, map.fondo);
+    drawLayer(c, map, atlas.abajo);
+  } else map.filas.forEach((fila, Y) => { for (let X = 0; X < fila.length; X++) tile(c, map, fila[X], X, Y, t); });
   for (const z of map.zonas) {
     c.strokeStyle = `${z.color}40`;
     c.strokeRect(z.x * T + 0.5, z.y * T + 0.5, z.w * T - 1, z.h * T - 1);
@@ -49,7 +64,8 @@ export function drawFloor(c: Ctx, map: FloorMap, t: number) {
  * Capa de arriba: la parte alta de paredes, libreros y plantas sobresale 8 px hacia la casilla de atrás y tapa a quien esté ahí.
  * 8 y no 4: las criaturas se dibujan 4 px arriba de su casilla, así que con 4 su borde de abajo quedaba justo donde empezaba.
  */
-export function drawUpper(c: Ctx, map: FloorMap) {
+export function drawUpper(c: Ctx, map: FloorMap, atlas?: Atlas) {
+  if (map.gen3 && atlas) { drawLayer(c, map, atlas.arriba); return; } // la capa "arriba" ya es lo que tapa a los personajes
   map.filas.forEach((fila, Y) => {
     for (let X = 0; X < fila.length; X++) {
       const ch = fila[X];
