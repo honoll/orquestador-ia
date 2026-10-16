@@ -42,7 +42,7 @@ POST $ORQ_API/api/equipo/comentarios {tareaId?,texto} (comentar). Encabezado: Au
 /** Guía del protocolo: roles/_equipo.md (editable), si no el original, si no la mínima. */
 export function loadEquipoGuide(dir: string = ROLES_DIR): string {
   for (const f of [path.join(dir, "_equipo.md"), path.join(dir, "_originales", "_equipo.md")]) {
-    try { return fs.readFileSync(f, "utf8"); } catch { /* siguiente */ }
+    try { const txt = fs.readFileSync(f, "utf8"); if (txt.trim()) return txt; } catch { /* siguiente */ }
   }
   return GUIA_MINIMA;
 }
