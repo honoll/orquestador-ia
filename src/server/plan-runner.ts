@@ -40,6 +40,8 @@ export interface StepRunOptions {
   agyLease?: AgyLease;
   /** Reintentos ya gastados en un lanzamiento anterior que terminó requeued. */
   startAttempt?: number;
+  /** F14 (modo equipo): variables extra para el proceso del agente (ORQ_API, ORQ_TAREA, ORQ_TOKEN). */
+  extraEnv?: Record<string, string>;
 }
 
 /** No quedó cuenta de agy para el paso: cancelado, sin cuentas, todas las bolsas sin cuota (pausa) o trabajadores caídos. */
@@ -146,6 +148,8 @@ async function runPlanStepInner(options: StepRunOptions): Promise<StepOutcome> {
       lease = preLease ?? await pickWorker(Date.now(), ex);
       preLease = null;
       if (lease) tagLease(lease.accountId, step.description, step.model ?? null, step.role ?? null, { planId: step.planId, stepKey: step.stepKey ?? null });
+      // F14: cuenta del intento, para retomar la sesión de la tarea en la misma cuenta.
+      if (lease) await db.update(schema.planSteps).set({ accountId: lease.accountId }).where(eq(schema.planSteps.id, stepId));
       if (!lease) {
         if ((await agyAvailability(Date.now(), ex)).usable > 0) return requeue(planId, stepId, tokensUsed, attempt);
         return agyNoAccount({ planId, stepId, lastQuotaLabel, lastError, tokensUsed, localOnly });
@@ -194,6 +198,7 @@ async function runPlanStepInner(options: StepRunOptions): Promise<StepOutcome> {
         sessionId,
         timeoutSec: 1800,
         readOnly: step.readOnly === 1,
+        env: options.extraEnv,
         claudeProfileEnv,
         agyWorker: lease?.worker ? { port: lease.worker.port, keyPath: lease.worker.keyPath } : undefined,
         onLog: (stream, chunk) => {

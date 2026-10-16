@@ -17,6 +17,8 @@ export interface WorkerRunBody {
   model?: string;
   readOnly: boolean;
   timeoutSec: number;
+  env?: Record<string, string>;
+  sessionId?: string;
 }
 
 export interface WorkerHealth {

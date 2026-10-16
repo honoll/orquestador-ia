@@ -52,15 +52,23 @@ export function resolveCwd(cwd, root) {
   return null;
 }
 
-/** Valida el cuerpo de POST /run. readOnly por defecto true (lo seguro). */
+const RUN_ENV_KEYS = new Set(["ORQ_API", "ORQ_TAREA", "ORQ_TOKEN"]);
+const MAX_ENV_VALUE = 200;
+
+/** Valida el cuerpo de POST /run. readOnly por defecto true (lo seguro). env solo trae las variables del modo equipo. */
 export function parseRunBody(b) {
   if (!b || typeof b !== "object") return null;
-  const { prompt, cwd, model, readOnly = true, timeoutSec = MAX_TIMEOUT_SEC } = b;
+  const { prompt, cwd, model, readOnly = true, timeoutSec = MAX_TIMEOUT_SEC, env, sessionId } = b;
   if (typeof prompt !== "string" || !prompt || typeof cwd !== "string") return null;
   if (model !== undefined && typeof model !== "string") return null;
   if (typeof readOnly !== "boolean") return null;
   if (!Number.isInteger(timeoutSec) || timeoutSec < 1 || timeoutSec > MAX_TIMEOUT_SEC) return null;
-  return { prompt, cwd, model: model || undefined, readOnly, timeoutSec };
+  if (sessionId !== undefined && (typeof sessionId !== "string" || !sessionId || sessionId.length > MAX_ENV_VALUE)) return null;
+  if (env !== undefined) {
+    if (!env || typeof env !== "object" || Array.isArray(env)) return null;
+    for (const [k, v] of Object.entries(env)) if (!RUN_ENV_KEYS.has(k) || typeof v !== "string" || v.length > MAX_ENV_VALUE) return null;
+  }
+  return { prompt, cwd, model: model || undefined, readOnly, timeoutSec, ...(env ? { env } : {}), ...(sessionId ? { sessionId } : {}) };
 }
 
 export function createBusy() {

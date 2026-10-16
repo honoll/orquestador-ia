@@ -96,6 +96,18 @@ describe("parseRunBody", () => {
     expect(parseRunBody({ prompt: "h", cwd: "c", readOnly: "no" })).toBeNull();
     expect(parseRunBody(null)).toBeNull();
   });
+
+  it("parseRunBody acepta env ORQ_* y sessionId; rechaza otras claves o valores largos", () => {
+    const base = { prompt: "p", cwd: "C:/estudio/x" };
+    expect(parseRunBody({ ...base, env: { ORQ_API: "a", ORQ_TAREA: "b", ORQ_TOKEN: "c" }, sessionId: "s1" }))
+      .toMatchObject({ env: { ORQ_API: "a", ORQ_TAREA: "b", ORQ_TOKEN: "c" }, sessionId: "s1" });
+    expect(parseRunBody(base)).not.toHaveProperty("env");
+    expect(parseRunBody({ ...base, env: { PATH: "x" } })).toBeNull();
+    expect(parseRunBody({ ...base, env: { ORQ_TOKEN: "x".repeat(201) } })).toBeNull();
+    expect(parseRunBody({ ...base, env: [] })).toBeNull();
+    expect(parseRunBody({ ...base, sessionId: "" })).toBeNull();
+    expect(parseRunBody({ ...base, sessionId: 5 })).toBeNull();
+  });
 });
 
 describe("createBusy", () => {

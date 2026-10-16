@@ -83,11 +83,11 @@ export function createWorker({ account, key, root = "C:\\estudio", agyPath = "C:
     let timedOut = false;
     let finished = false;
 
-    const child = spawn(agyPath, [...agyPrefixArgs, ...buildAgyArgs(body.model, undefined, { readOnly: body.readOnly })], {
+    const child = spawn(agyPath, [...agyPrefixArgs, ...buildAgyArgs(body.model, body.sessionId, { readOnly: body.readOnly })], {
       cwd,
       shell: false,
       windowsHide: true,
-      env: withoutSecrets(process.env),
+      env: { ...withoutSecrets(process.env), ...(body.env ?? {}) },
       stdio: ["pipe", "pipe", "pipe"],
     });
     current = { child, runId };
