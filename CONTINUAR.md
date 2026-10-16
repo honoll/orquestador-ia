@@ -16,10 +16,10 @@
 Siguiente: **F15 (barra lateral)**.
 
 Pendientes (tuyos):
-- Reiniciar las 3 tareas programadas de los trabajadores agy (`schtasks /End` + `/Run`, como administrador) para que tomen el `worker.mjs` nuevo; sin eso, los agentes en agy2–agy4 no tienen `ORQ_*` (no delegan, no comentan, no retoman sesión) aunque sí trabajan
+- Reiniciar las 3 tareas programadas de los trabajadores agy (`schtasks /End` + `/Run`, como administrador) para que tomen el `worker.mjs` nuevo; listo cuando `/health` de cada uno responde `version: "2"`. Sin eso, los agentes en agy2–agy4 no tienen `ORQ_*` (no delegan, no comentan, no retoman sesión) aunque sí trabajan
 - Aprobar el merge de `f14-equipo` a `main`; después del merge, `npm run build:ui` y reiniciar la app de escritorio
 - Probar a mano pausa, cancelar, guardia y `@consulta` desde la vista Equipo
-- Menores diferidos (lista completa en `CLAUDE.md`): la columna de tokens por tarea solo muestra el último turno; falso aviso de "archivos fuera de su carpeta" cuando otro agente escribe a la vez; DEV no va a Codex en modo equipo; la Oficina muestra al Jefe como "claude" y el `PlanView` abierto desde ahí sobre una meta solo muestra datos (sus botones dan 409); proyecto inexistente al lanzar una meta da 500 en vez de 400; un único error de consola del navegador ("An unknown error occurred when fetching the script") sin relación aparente con la vista, no investigado; flakes de tiempos que rotan bajo carga (`agy-worker-client`, `process-runner-kill`, `plan-runner-roles`)
+- Menores diferidos (lista completa en `CLAUDE.md`): la columna de tokens por tarea solo muestra el último turno; falso aviso de "archivos fuera de su carpeta" cuando otro agente escribe a la vez; DEV no va a Codex en modo equipo; la Oficina muestra al Jefe como "claude" y el `PlanView` abierto desde ahí sobre una meta solo muestra datos (sus botones dan 409); un único error de consola del navegador ("An unknown error occurred when fetching the script") sin relación aparente con la vista, no investigado; flakes de tiempos que rotan bajo carga (`agy-worker-client`, `process-runner-kill`, `plan-runner-roles`)
 
 ## F13 — Escenario propio (mapas de Esmeralda) · completada 2026-10-15
 
