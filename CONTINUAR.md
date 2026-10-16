@@ -2,7 +2,7 @@
 
 ## F15 — Barra lateral de equipo · completada 2026-10-16
 
-**Rama:** `f15-barra-equipo` (encima de `main`), merge solo cuando Alejandro lo diga. Detalle técnico en `CLAUDE.md`, sección "Team sidebar (F15)".
+**Integrada a `main`** el 2026-10-16 (merge e2cf8a8; rama `f15-barra-equipo` borrada; `ui/dist` ya recompilado). Detalle técnico en `CLAUDE.md`, sección "Team sidebar (F15)".
 
 - La barra izquierda ya no es el panel de administración: muestra el **equipo en vivo** (JEFE, los 6 roles y, si hace falta, OTROS) y las **cuentas en compacto**
 - Cada rol tiene un indicador: `trabajando ×N`, `en cola N`, `esperando hijas` o `libre`, y bajo el que trabaja la línea `cuenta · título`. Un clic en el rol despliega su bandeja (TRABAJANDO / EN COLA / ESPERANDO HIJAS, con "y N más" pasado de 20); lo desplegado se recuerda al recargar
@@ -14,7 +14,7 @@
 - Verificado en vivo (servidor de prueba :3111, proyecto `f11-demo`; la app de :3110 no se tocó): con la meta "lee README.md y resúmelo en 5 viñetas" el Jefe y LECTOR pasaron a "trabajando ×1" con su cuenta y al terminar todos volvieron a "libre"; la bandeja se desplegó y se recordó al recargar; el clic en la tarea del Jefe cambió a esa meta en la vista Equipo; CUENTAS y AJUSTES mostraron todo lo esperado; `GET /api/equipo/bandejas` respondió en ~4 ms
 - No se vio: el estado "esperando hijas" del Jefe (la corrida fue rápida; solo se registró "trabajando ×1"); la barra con "en cola N" / "esperando hijas" en un rol que no sea el Jefe; "y N más" con más de 20; el aviso "sin conexión"; el clic en un paso de un plan por pasos
 
-Siguiente: integrar a `main` cuando lo apruebes (después: `npm run build:ui` y reiniciar la app de escritorio para ver la barra nueva).
+Siguiente: reiniciar la app de escritorio para ver la barra nueva (`ui/dist` ya está recompilado).
 
 Pendientes (tuyos):
 - Probar a mano lo "no visto" de arriba
