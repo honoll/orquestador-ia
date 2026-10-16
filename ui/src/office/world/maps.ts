@@ -1,7 +1,7 @@
 // Datos validados: todo asiento se alcanza desde el elevador (test/ui/world-path.test.ts).
 import type { FloorMap } from "./types";
 
-export const FLOORS: readonly FloorMap[] = [
+export let FLOORS: readonly FloorMap[] = [
   {
     piso: 1, nombre: "PISO 1 · DIRECCIÓN Y RECEPCIÓN", fondo: "#1b1b22", elevador: [15, 1], llegada: [15, 2], salida: [8, 13],
     filas: [
@@ -80,3 +80,6 @@ export const FLOORS: readonly FloorMap[] = [
 ];
 
 export const floorOf = (piso: number): FloorMap => FLOORS[piso - 1];
+
+/** Reemplaza los pisos (escenario propio, F13) antes de montar el mundo; los módulos leen FLOORS en cada uso. */
+export function setFloors(f: readonly FloorMap[]): void { FLOORS = f; }
