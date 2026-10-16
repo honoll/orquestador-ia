@@ -186,20 +186,20 @@ export async function onTaskTerminal(planId: string, stepId: string): Promise<vo
     await addComment(planId, parent.id, step.id, `Respuesta de ${step.role} a la consulta: ${childSummary(step)}`, { menciones: false });
     return;
   }
-  // Decide dentro de la cadena (lee/escribe blocked_by del padre); despertar y comentarios, ya fuera de ella.
-  const despertar = await serial(async () => {
+  // Decide dentro de la cadena (lee/escribe blocked_by del padre); los comentarios, ya fuera de ella.
+  const esperaba = await serial(async () => {
     const espera = parseIds((await getStep(parent.id))?.blockedBy ?? null);
-    if (!espera.includes(step.id)) return null;
+    if (!espera.includes(step.id)) return false;
     const hijas = await childrenOf(parent.id);
     const terminada = (id: string) => TERMINAL.has(hijas.find((h) => h.id === id)?.status ?? "cancelled");
-    if (!espera.every(terminada)) return [];
+    if (!espera.every(terminada)) return true;
+    // Despertar ANTES de vaciar blocked_by: el scheduler ve siempre uno de los dos y no da al padre por terminado.
+    // enqueueWakeup usa la cadena de wakeups.ts (otra), no reentra en esta.
+    await enqueueWakeup(planId, parent.id, "hijas_terminadas", { childIds: espera });
     await db.update(S).set({ blockedBy: JSON.stringify(espera.filter((id) => !terminada(id))) }).where(eq(S.id, parent.id));
-    return espera;
+    return true;
   });
-  if (despertar !== null) { // null = no la esperaba; [] = la esperaba pero aún quedan hijas pendientes
-    if (despertar.length) await enqueueWakeup(planId, parent.id, "hijas_terminadas", { childIds: despertar });
-    return;
-  }
+  if (esperaba) return;
   if (step.status === "failed") {
     await addComment(planId, parent.id, step.id, `La tarea "${step.description}" (${step.role}) falló: ${step.statusDetail ?? step.errorMessage ?? "sin detalle"}`, { menciones: false });
   }

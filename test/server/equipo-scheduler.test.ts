@@ -5,7 +5,17 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 
 // Adaptador falso: el Jefe delega por la API real (con el token de su env) y luego cierra; las hijas trabajan un rato.
-const h = vi.hoisted(() => ({ live: 0, maxLive: 0, jefeTurns: 0, agentApp: null as any, script: "delegar" as "delegar" | "tokens" }));
+const h = vi.hoisted(() => ({
+  live: 0, maxLive: 0, jefeTurns: 0, agentApp: null as any, script: "delegar" as "delegar" | "tokens" | "lento",
+  tareas: null as null | string[][], gate: null as Promise<void> | null, killed: 0, quota: false, subTarea: false,
+}));
+const delegar = async (ctx: any, rol: string, titulo: string, instrucciones: string) => {
+  const r = await h.agentApp.request("/tareas", {
+    method: "POST", headers: { Authorization: `Bearer ${ctx.env.ORQ_TOKEN}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ rol, titulo, instrucciones, esperar: true }),
+  });
+  if (r.status !== 201) throw new Error(`delegar falló ${r.status}`);
+};
 const ok = (summary: string, tokens = 10) => ({
   exitCode: 0, signal: null, timedOut: false, stdout: summary, stderr: "", summary, sessionId: `ses-${Math.random()}`, model: null,
   costUsd: 0, inputTokens: tokens, outputTokens: 0, errorMessage: null, errorFamily: null, retryNotBefore: null,
@@ -14,21 +24,24 @@ vi.mock("../../src/adapters/registry.js", () => {
   const jefe = async (ctx: any) => {
     h.jefeTurns++;
     if (h.script === "tokens") return ok("gasté\n<<<ESTADO terminado>>>", 1000);
+    // Corre hasta que lo maten (cancelar con un turno en curso).
+    if (h.script === "lento") return new Promise((resolve) => ctx.onKill?.(() => { h.killed++; resolve({ ...ok("cortado"), exitCode: 1, stderr: "matado" }); }));
     if (h.jefeTurns === 1) {
-      for (const [rol, titulo] of [["dev", "Código"], ["redactor", "Textos"], ["dev", "Estilos"]]) {
-        const r = await h.agentApp.request("/tareas", {
-          method: "POST", headers: { Authorization: `Bearer ${ctx.env.ORQ_TOKEN}`, "Content-Type": "application/json" },
-          body: JSON.stringify({ rol, titulo, instrucciones: `haz ${titulo}`, esperar: true }),
-        });
-        if (r.status !== 201) throw new Error(`delegar falló ${r.status}`);
-      }
-      return ok("Repartí 3 tareas.\n<<<ESTADO terminado>>>");
+      const tareas = h.tareas ?? [["dev", "Código", "haz Código"], ["redactor", "Textos", "haz Textos"], ["dev", "Estilos", "haz Estilos"]];
+      for (const [rol, titulo, instrucciones] of tareas) await delegar(ctx, rol, titulo, instrucciones);
+      return ok(`Repartí ${tareas.length} tareas.\n<<<ESTADO terminado>>>`);
     }
     return ok(`Respuesta final con ${ctx.prompt.includes("terminaron las tareas que esperabas") ? "resúmenes" : "nada"}\n<<<ESTADO terminado>>>`);
   };
-  const agy = async (_ctx: any) => {
+  const agy = async (ctx: any) => {
+    if (h.quota) return { ...ok(""), exitCode: 1, errorFamily: "quota_exhausted", errorMessage: "quota exhausted" };
+    // Primer turno de la tarea que hace push: delega y espera una subtarea (así tiene un segundo turno).
+    if (h.subTarea && ctx.prompt.includes("git push origin main")) {
+      await delegar(ctx, "redactor", "Nota", "escribe una nota");
+      return ok("delegué\n<<<ESTADO terminado>>>");
+    }
     h.live++; h.maxLive = Math.max(h.maxLive, h.live);
-    await new Promise((r) => setTimeout(r, 40));
+    await (h.gate ?? new Promise((r) => setTimeout(r, 40)));
     h.live--;
     return ok("hecho\n<<<ESTADO terminado>>>");
   };
@@ -57,7 +70,9 @@ beforeAll(async () => {
   await db.insert(schema.projects).values({ id: projectId, name: "demo", path: fs.mkdtempSync(path.join(os.tmpdir(), "equipo-")) });
   h.agentApp = createEquipoAgenteRoute(sched.kickTeam);
 });
-beforeEach(() => { h.live = 0; h.maxLive = 0; h.jefeTurns = 0; h.script = "delegar"; });
+beforeEach(() => {
+  Object.assign(h, { live: 0, maxLive: 0, jefeTurns: 0, script: "delegar", tareas: null, gate: null, killed: 0, quota: false, subTarea: false });
+});
 
 const plan = async (id: string) => (await db.select().from(schema.plans).where(eq(schema.plans.id, id)))[0];
 
@@ -74,6 +89,8 @@ describe("scheduler del equipo", () => {
     expect(kids.map((k) => k.status)).toEqual(["succeeded", "succeeded", "succeeded"]);
     expect((await getStep(rootStepId))!.turns).toBe(2);
     expect(await db.select().from(schema.teamRunTokens).where(eq(schema.teamRunTokens.planId, planId))).toEqual([]);
+    const wk = await db.select().from(schema.teamWakeups).where(eq(schema.teamWakeups.planId, planId));
+    expect(wk.filter((w) => w.status === "en_cola" || w.status === "tomado")).toEqual([]);
   });
 
   it("presupuesto agotado pausa la meta; continuar sube el tope y la termina", async () => {
@@ -129,5 +146,64 @@ describe("scheduler del equipo", () => {
     } finally { for (const l of leases) l.release(); }
     expect((await plan(planId)).status).toBe("completed");
     expect(h.jefeTurns).toBe(1);
+  });
+
+  it("cancelar con un turno en curso lo mata, deja la tarea cancelada y la meta cancelada", async () => {
+    h.script = "lento";
+    const { planId, rootStepId } = await createGoal({ pedido: "m", projectId });
+    const done = sched.runTeam(planId);
+    await vi.waitFor(() => expect(h.jefeTurns).toBe(1));
+    await sched.cancelTeam(planId);
+    await done;
+    expect(h.killed).toBe(1);
+    expect((await getStep(rootStepId))!.status).toBe("cancelled");
+    expect(await plan(planId)).toMatchObject({ status: "cancelled", pauseReason: null });
+  });
+
+  it("pausar y continuar mientras un turno sigue en curso no deja la meta colgada", async () => {
+    h.tareas = [["dev", "Código", "haz Código"]];
+    let open!: () => void;
+    h.gate = new Promise<void>((r) => { open = r; });
+    const { planId, rootStepId } = await createGoal({ pedido: "m", projectId });
+    const done = sched.runTeam(planId);
+    await vi.waitFor(async () => { expect(h.live).toBe(1); expect((await getStep(rootStepId))!.status).toBe("pending"); });
+    await sched.pauseTeam(planId, "manual");
+    await new Promise((r) => setTimeout(r, 50)); // el bucle sale y se queda drenando el turno de la hija
+    await sched.continueTeam(planId);
+    open();
+    await done;
+    await vi.waitFor(async () => expect((await plan(planId)).status).toBe("completed"), { timeout: 5000 });
+    expect(h.jefeTurns).toBe(2);
+  });
+
+  it("sin cuota en ninguna bolsa el turno se devuelve (no gasta turno) y la meta pausa por cuota", async () => {
+    h.quota = true;
+    const { planId, rootStepId } = await createGoal({ pedido: "m", projectId });
+    await db.update(schema.planSteps).set({ adapter: "agy" }).where(eq(schema.planSteps.id, rootStepId));
+    try {
+      await sched.runTeam(planId);
+      expect(await plan(planId)).toMatchObject({ status: "pending", pauseReason: "quota" });
+      expect((await getStep(rootStepId))!).toMatchObject({ status: "pending", turns: 0 });
+      const wk = await db.select().from(schema.teamWakeups).where(eq(schema.teamWakeups.planId, planId));
+      expect(wk.map((w) => w.status)).toEqual(["en_cola"]);
+    } finally {
+      await db.update(schema.agyAccounts).set({ quotaBlockedUntil: null, quotaBlockedAt: null, calibratedLimit5h: null });
+      await sched.cancelTeam(planId);
+    }
+  });
+
+  it("la guardia (sin JEV) pausa la tarea con git push; aprobada corre y no vuelve a pausar en su siguiente turno", async () => {
+    h.tareas = [["dev", "Publicar", "haz el cambio y luego git push origin main"]];
+    h.subTarea = true;
+    const { planId, rootStepId } = await createGoal({ pedido: "m", projectId });
+    await sched.runTeam(planId);
+    expect(await plan(planId)).toMatchObject({ status: "pending", pauseReason: "guard" });
+    const [kid] = await db.select().from(schema.planSteps).where(eq(schema.planSteps.parentStepId, rootStepId));
+    expect(kid).toMatchObject({ status: "pending", turns: 0 });
+    expect(kid.guardFlags).toMatch(/git/);
+    expect(await sched.approveTaskGuard(planId, kid.id)).toBe(true);
+    await vi.waitFor(async () => expect((await plan(planId)).status).toBe("completed"), { timeout: 5000 });
+    expect((await getStep(kid.id))!).toMatchObject({ status: "succeeded", turns: 2, guardApproved: 1 });
+    expect((await plan(planId)).pauseReason).toBeNull();
   });
 });
