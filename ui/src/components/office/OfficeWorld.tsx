@@ -1,14 +1,15 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
 import type { OfficeState } from "../../lib/office-state";
-import { floorOf } from "../../office/world/maps";
+import { FLOORS, floorOf } from "../../office/world/maps";
 import { findPath, isNear, isSolid, key, zoneAt } from "../../office/world/path";
 import { placeAgents, planRoute, type Leg, type Place, type WorldAgent } from "../../office/world/placement";
 import { dirBetween, DIR_DELTA, fitScale, keyToDir, moverPos, newMover, screenToTile, tickMover, type Mover } from "../../office/world/input";
-import { drawBubble, drawCreature, drawFloor, drawSkin, drawUpper } from "../../office/world/render";
+import { drawBubble, drawCreature, drawFloor, drawSkin, drawUpper, type Atlas } from "../../office/world/render";
+import { loadEscenario } from "../../office/world/escenario";
 import { creatureFrame, type Dir } from "../../office/sprites/creatures";
 import { EMPTY_SKINS, fetchSkins, resolveSkin, type SkinsConfig } from "../../office/sprites/skins";
 import { loadSkinImages, skinSrc } from "../../office/sprites/skin-images";
-import type { Tile } from "../../office/world/types";
+import type { FloorMap, Tile } from "../../office/world/types";
 
 interface Props {
   state: OfficeState | undefined; onNear: (a: WorldAgent | null) => void;
@@ -19,13 +20,13 @@ interface Props {
 }
 interface Ent { agent: WorldAgent; place: Place; legs: Leg[]; piso: number; m: Mover; wanderAt: number }
 
-const COLS = 30, STEP_MS = 1000 / 60, MAX_STEPS = 4;
-const FLOOR_LABELS = ["Dirección y Recepción", "Desarrollo y Pruebas", "Estudio y Biblioteca"];
+const STEP_MS = 1000 / 60, MAX_STEPS = 4;
+const colsOf = (m: FloorMap) => m.filas[0].length;
 const DIRS: Dir[] = ["up", "down", "left", "right"];
 const lenOf = (legs: Leg[]) => legs.reduce((n, l) => n + l.path.length, 0);
 const wanderDelay = () => 120 + Math.floor(Math.random() * 180); // 2–5 s a 60 Hz
 
-export function OfficeWorld({ state, onNear, onAdvance, children }: Props) {
+function World({ state, onNear, onAdvance, children, atlas }: Props & { atlas: Map<string, Atlas> }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const onNearRef = useRef(onNear);
@@ -34,6 +35,7 @@ export function OfficeWorld({ state, onNear, onAdvance, children }: Props) {
   const [piso, setPiso] = useState(1);
   const [menu, setMenu] = useState(false);
   const [scale, setScale] = useState(3);
+  const cols = colsOf(floorOf(piso));
   // Estado del mundo en un ref: el bucle lo muta 60 veces por segundo sin pasar por React.
   const w = useRef({
     player: { piso: 1, m: newMover(floorOf(1).salida!, "down"), route: [] as Tile[] },
@@ -69,10 +71,10 @@ export function OfficeWorld({ state, onNear, onAdvance, children }: Props) {
   useEffect(() => {
     const el = wrapRef.current;
     if (!el) return;
-    const ro = new ResizeObserver(([entry]) => setScale(fitScale(entry.contentRect.width, COLS)));
+    const ro = new ResizeObserver(([entry]) => setScale(fitScale(entry.contentRect.width, cols)));
     ro.observe(el);
     return () => ro.disconnect();
-  }, []);
+  }, [cols]);
 
   // Cada estado nuevo: destino por rol; ruta caminando o teletransporte si no alcanza la animación.
   useEffect(() => {
@@ -95,6 +97,8 @@ export function OfficeWorld({ state, onNear, onAdvance, children }: Props) {
   useEffect(() => {
     const canvas = canvasRef.current!;
     const ctx = canvas.getContext("2d")!;
+
+    const atlasOf = (m: FloorMap) => (m.gen3 ? atlas.get(m.gen3.atlas) : undefined);
 
     const stepAgents = () => {
       const pl = w.player;
@@ -153,10 +157,10 @@ export function OfficeWorld({ state, onNear, onAdvance, children }: Props) {
 
     const draw = () => {
       const p = w.player, map = floorOf(p.piso), h = map.filas.length * 16;
-      if (canvas.width !== COLS * 16) canvas.width = COLS * 16;
+      if (canvas.width !== colsOf(map) * 16) canvas.width = colsOf(map) * 16;
       if (canvas.height !== h) canvas.height = h;
       ctx.imageSmoothingEnabled = false;
-      drawFloor(ctx, map, reduced ? 0 : w.tick);
+      drawFloor(ctx, map, reduced ? 0 : w.tick, atlasOf(map));
       const people = [
         ...[...w.agents.values()].filter((e) => e.piso === p.piso).map((e) => ({
           m: e.m, working: e.agent.working, kind: e.agent.criatura,
@@ -165,15 +169,17 @@ export function OfficeWorld({ state, onNear, onAdvance, children }: Props) {
         { m: p.m, working: false, kind: "jugador" as const, spec: resolveSkin(w.skins, { player: true, criatura: "jugador" }) },
       ].map((o) => ({ ...o, pos: reduced ? [o.m.tile[0], o.m.tile[1]] : moverPos(o.m) }))
         .sort((a, b) => a.pos[1] - b.pos[1]);
+      const bubbles: [number, number][] = [];
       for (const o of people) {
         const px = Math.round(o.pos[0] * 16), py = Math.round(o.pos[1] * 16);
         const img = o.spec ? w.imgs.get(skinSrc(o.spec)) : undefined;
         let top = py - 4;
         if (o.spec && img) top = drawSkin(ctx, img, o.spec, o.m.dir, o.m.step, px, py);
         else drawCreature(ctx, creatureFrame(o.kind, o.m.dir, o.m.step, o.working), px, py);
-        if (o.working) drawBubble(ctx, px, top);
+        if (o.working) bubbles.push([px, top]);
       }
-      drawUpper(ctx, map);
+      drawUpper(ctx, map, atlasOf(map));
+      for (const [bx, by] of bubbles) drawBubble(ctx, bx, by);
     };
 
     let raf = 0, last = 0, acc = 0;
@@ -190,11 +196,11 @@ export function OfficeWorld({ state, onNear, onAdvance, children }: Props) {
     document.addEventListener("visibilitychange", onVis);
     if (!document.hidden) start();
     return () => { cancelAnimationFrame(raf); document.removeEventListener("visibilitychange", onVis); };
-  }, [w, reduced]);
+  }, [w, reduced, atlas]);
 
   const onKeyDown = (e: KeyboardEvent) => {
     if (w.menu) {
-      if (["1", "2", "3"].includes(e.key)) { e.preventDefault(); choose(Number(e.key)); }
+      if (/^[1-9]$/.test(e.key) && Number(e.key) <= FLOORS.length) { e.preventDefault(); choose(Number(e.key)); }
       else if (e.key === "Escape") { e.preventDefault(); choose(0); }
       return;
     }
@@ -222,7 +228,7 @@ export function OfficeWorld({ state, onNear, onAdvance, children }: Props) {
   const onClick = (e: MouseEvent<HTMLCanvasElement>) => {
     if (w.menu) return;
     const p = w.player, map = floorOf(p.piso);
-    const t = screenToTile(e.clientX, e.clientY, e.currentTarget.getBoundingClientRect(), COLS, map.filas.length);
+    const t = screenToTile(e.clientX, e.clientY, e.currentTarget.getBoundingClientRect(), colsOf(map), map.filas.length);
     if (!t) return;
     w.held = [];
     const route = findPath(map, p.m.tile, t, agentTiles(p.piso));
@@ -243,13 +249,13 @@ export function OfficeWorld({ state, onNear, onAdvance, children }: Props) {
   return (
     <div ref={wrapRef} className="w-full overflow-hidden" onKeyDown={onKeyDown}>
       <p className="mb-1 font-pixel text-[11px] text-text-secondary">{map.nombre}</p>
-      <div className="relative" style={{ width: COLS * 16 * scale }}>
+      <div className="relative" style={{ width: cols * 16 * scale }}>
         <canvas
           ref={canvasRef}
           tabIndex={0}
           aria-label={`Oficina, ${map.nombre}. Usa clic o flechas para caminar.`}
           className="block cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-accent"
-          style={{ width: COLS * 16 * scale, height: map.filas.length * 16 * scale, imageRendering: "pixelated" }}
+          style={{ width: cols * 16 * scale, height: map.filas.length * 16 * scale, imageRendering: "pixelated" }}
           onKeyUp={onKeyUp}
           onBlur={() => { w.held = []; w.shift = false; }}
           onClick={onClick}
@@ -266,9 +272,9 @@ export function OfficeWorld({ state, onNear, onAdvance, children }: Props) {
         {menu && (
           <div role="group" aria-label="Elevador" className="px-panel absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 flex-col gap-1 border-zinc-200! bg-[#0b0b10]! p-3 font-pixel text-[12px]">
             <p className="mb-1 text-warn">ELEVADOR</p>
-            {FLOOR_LABELS.map((l, i) => (
-              <button key={l} autoFocus={i === 0} className="px-2 py-1 text-left hover:bg-white/10 focus-visible:bg-white/10" onClick={() => choose(i + 1)}>
-                {i + 1} · {l}
+            {FLOORS.map((f) => (
+              <button key={f.piso} autoFocus={f.piso === 1} className="px-2 py-1 text-left hover:bg-white/10 focus-visible:bg-white/10" onClick={() => choose(f.piso)}>
+                {f.nombre}
               </button>
             ))}
             <button className="px-2 py-1 text-left text-text-secondary hover:bg-white/10 focus-visible:bg-white/10" onClick={() => choose(0)}>salir</button>
@@ -277,4 +283,16 @@ export function OfficeWorld({ state, onNear, onAdvance, children }: Props) {
       </div>
     </div>
   );
+}
+
+/** El escenario propio (si hay) reemplaza los pisos antes de crear el mundo: el jugador nace en su salida. */
+export function OfficeWorld(props: Props) {
+  const [atlas, setAtlas] = useState<Map<string, Atlas> | null>(null);
+  useEffect(() => {
+    let alive = true;
+    void loadEscenario().then((a) => { if (alive) setAtlas(a); });
+    return () => { alive = false; };
+  }, []);
+  if (!atlas) return <p className="font-pixel text-[11px] text-text-secondary">cargando escenario…</p>;
+  return <World {...props} atlas={atlas} />;
 }

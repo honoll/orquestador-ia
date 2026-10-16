@@ -5,4 +5,5 @@ export interface FloorMap {
   filas: readonly string[]; zonas: readonly Zone[];
   elevador: Tile; llegada: Tile; // llegada = casilla donde aparece quien sale del elevador
   salida?: Tile; // aparición del jugador (solo piso 1)
+  gen3?: { ancho: number; bloques: readonly number[]; atlas: string }; // piso de un escenario propio (F13)
 }

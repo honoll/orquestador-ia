@@ -58,9 +58,9 @@ export function readSpritesConfig(dir = spritesDir()): SkinsConfig {
   }
 }
 
-/** Ruta real del archivo solo si es un nombre válido y su realpath cae dentro de la carpeta (sin enlaces que escapen). */
-export function resolveSpriteFile(name: string, dir = spritesDir()): string | null {
-  if (!SPRITE_FILE.test(name)) return null;
+/** Ruta real del archivo solo si el nombre pasa `re` y su realpath cae dentro de la carpeta (sin enlaces que escapen). */
+export function resolveSpriteFile(name: string, dir = spritesDir(), re: RegExp = SPRITE_FILE): string | null {
+  if (!re.test(name)) return null;
   try {
     const root = fs.realpathSync(dir);
     const real = fs.realpathSync(path.join(root, name));
