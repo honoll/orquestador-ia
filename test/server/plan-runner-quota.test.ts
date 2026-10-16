@@ -200,6 +200,25 @@ describe("runPlanStep", () => {
     expect(h.execute.mock.calls[0][0].prompt).toBe("con contexto");
   });
 
+  it("F14: turno retomado que cambia de cuenta a media vuelta recibe el prompt completo, sin sesión", async () => {
+    const w = await addWorker("agy2", 3121);
+    await updateAccount(localId, { manualLimit5h: 1000 });
+    await db.insert(schema.agyUsage).values({ id: randomUUID(), accountId: localId, at: new Date().toISOString(), inputTokens: 900, outputTokens: 0, source: "plan" });
+    h.execute.mockImplementationOnce(async () => { throw new WorkerUnavailableError("respondió 400", 400); }).mockImplementationOnce(async () => h.ok);
+    const { planId, stepId, cwd } = await mk({ sessionId: "ses-1", accountId: w });
+    expect((await runPlanStep({ planId, stepId, cwd, promptOverride: "DELTA", promptFull: "COMPLETO" })).status).toBe("succeeded");
+    const [a, b] = h.execute.mock.calls.map((c) => c[0]);
+    expect([a.agyWorker?.port, a.prompt, a.sessionId]).toEqual([3121, "DELTA", "ses-1"]);
+    expect([b.agyWorker, b.prompt, b.sessionId]).toEqual([undefined, "COMPLETO", undefined]);
+  });
+
+  it("F14: turno retomado en la misma cuenta recibe el delta con su sesión", async () => {
+    h.execute.mockImplementation(async () => h.ok);
+    const { planId, stepId, cwd } = await mk({ sessionId: "ses-1", accountId: localId });
+    await runPlanStep({ planId, stepId, cwd, promptOverride: "DELTA", promptFull: "COMPLETO" });
+    expect([h.execute.mock.calls[0][0].prompt, h.execute.mock.calls[0][0].sessionId]).toEqual(["DELTA", "ses-1"]);
+  });
+
   it("F4: un paso readOnly llega al adapter como readOnly: true", async () => {
     const { planId, stepId, cwd } = await mk({ readOnly: 1 });
     await runPlanStep({ planId, stepId, cwd });

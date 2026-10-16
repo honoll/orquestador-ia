@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { eq, desc, asc, and, inArray } from "drizzle-orm";
+import { eq, desc, asc, and, inArray, ne } from "drizzle-orm";
 import { db, schema } from "../../db/index.js";
 import { extendBudget, toDagSteps, pickRunnable } from "../plan-dag.js";
 import { parallelLimit } from "../agy-workers.js";
@@ -8,9 +8,21 @@ import { runPlanDag, cancelPlanRun, isPlanRunning, retrySynthesis } from "../pla
 import { broadcast } from "../ws.js";
 import { createPlan, planCwd, generatingKills } from "../plan-create.js";
 import { listOutputs, resolveOutput } from "../outputs.js";
+import { cancelTeam } from "../equipo/team-scheduler.js";
 import fs from "node:fs";
 
 const app = new Hono();
+
+// F14: las metas de equipo tienen su propio planificador (/api/equipo/metas): estas rutas no las corren ni las editan.
+app.use("*", async (c, next) => {
+  if (c.req.method === "GET" || c.req.method === "DELETE") return next();
+  const id = /(?:^|\/)([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:\/|$)/i.exec(c.req.path)?.[1];
+  if (id) {
+    const [p] = await db.select({ mode: schema.plans.mode }).from(schema.plans).where(eq(schema.plans.id, id));
+    if (p?.mode === "equipo") return c.json({ error: "Es una meta de equipo: usa la vista Equipo" }, 409);
+  }
+  return next();
+});
 
 const RUNNING = { error: "El plan ya se está ejecutando" };
 async function getPlan(id: string) {
@@ -36,10 +48,10 @@ app.get("/", async (c) => {
   let rows;
   if (projectId) {
     rows = await db.select().from(schema.plans)
-      .where(eq(schema.plans.projectId, projectId))
+      .where(and(eq(schema.plans.projectId, projectId), ne(schema.plans.mode, "equipo")))
       .orderBy(desc(schema.plans.createdAt));
   } else {
-    rows = await db.select().from(schema.plans).orderBy(desc(schema.plans.createdAt));
+    rows = await db.select().from(schema.plans).where(ne(schema.plans.mode, "equipo")).orderBy(desc(schema.plans.createdAt));
   }
   return c.json(rows);
 });
@@ -347,6 +359,13 @@ app.delete("/:id", async (c) => {
   const kill = generatingKills.get(id);
   if (kill) { kill(); generatingKills.delete(id); }
   cancelPlanRun(id); // mata la corrida en curso antes de borrar
+  const [plan] = await db.select({ mode: schema.plans.mode }).from(schema.plans).where(eq(schema.plans.id, id));
+  if (plan?.mode === "equipo") {
+    await cancelTeam(id);
+    await db.delete(schema.teamComments).where(eq(schema.teamComments.planId, id));
+    await db.delete(schema.teamWakeups).where(eq(schema.teamWakeups.planId, id));
+    await db.delete(schema.teamRunTokens).where(eq(schema.teamRunTokens.planId, id));
+  }
   await db.delete(schema.planSteps).where(eq(schema.planSteps.planId, id));
   await db.delete(schema.plans).where(eq(schema.plans.id, id));
   return c.json({ ok: true });

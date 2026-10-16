@@ -17,7 +17,7 @@ import {
   withoutSecrets,
 } from "./worker-core.mjs";
 
-export const WORKER_VERSION = "1";
+export const WORKER_VERSION = "2";
 const MAX_BODY = 1024 * 1024;
 export const WORKERS_DIR = "C:\\ProgramData\\orquestador-ia\\workers";
 
@@ -83,13 +83,22 @@ export function createWorker({ account, key, root = "C:\\estudio", agyPath = "C:
     let timedOut = false;
     let finished = false;
 
-    const child = spawn(agyPath, [...agyPrefixArgs, ...buildAgyArgs(body.model, undefined, { readOnly: body.readOnly })], {
-      cwd,
-      shell: false,
-      windowsHide: true,
-      env: withoutSecrets(process.env),
-      stdio: ["pipe", "pipe", "pipe"],
-    });
+    let child;
+    try {
+      child = spawn(agyPath, [...agyPrefixArgs, ...buildAgyArgs(body.model, body.sessionId, { readOnly: body.readOnly })], {
+        cwd,
+        shell: false,
+        windowsHide: true,
+        env: { ...withoutSecrets(process.env), ...(body.env ?? {}) },
+        stdio: ["pipe", "pipe", "pipe"],
+      });
+    } catch (err) {
+      // spawn puede lanzar síncrono: sin esto el trabajador quedaría ocupado para siempre.
+      busy.release();
+      write({ event: "worker:stderr", data: `no se pudo correr agy: ${err.message}` });
+      write({ event: "worker:done", exitCode: -1, timedOut: false });
+      return res.end();
+    }
     current = { child, runId };
     const timer = setTimeout(() => {
       timedOut = true;

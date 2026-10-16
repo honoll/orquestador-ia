@@ -1,5 +1,26 @@
 # Orquestador-IA — Continuación y Estado
 
+## F14 — Equipo multiagente (estilo Paperclip) · completada 2026-10-16
+
+**Rama:** `f14-equipo` (encima de `main`), merge solo cuando Alejandro lo diga. Detalle técnico en `CLAUDE.md`, sección "Team mode (F14)".
+
+- Una **meta** la atiende un equipo que trabaja a la vez: el Jefe (claude) la parte, delega tareas a los roles de F11 por una API local y escribe la respuesta final; los roles (agy) también pueden delegar o comentar. Convive con los planes por pasos (no se tocaron); las metas no salen en `GET /api/plans` y sus rutas dan 409
+- Cada tarea tiene bandeja, hilo de comentarios y turnos; "esperando hijas" se deduce de las hijas que espera. Un comentario despierta a su dueño; `@rol` en el texto hace una consulta a ese rol
+- Cada turno recibe `ORQ_API`, `ORQ_TAREA` y `ORQ_TOKEN` (token de un solo turno; en la base solo queda su hash). La guía para el agente es `roles/_equipo.md` (editable, con recetas para Bash y PowerShell 5.1)
+- Planificador: varios turnos a la vez en cuentas distintas, despertares fusionados, la sesión se retoma solo en la cuenta que la creó (espera hasta 5 min a esa cuenta), topes (30 tareas, profundidad 3, 8 turnos por tarea, 600 000 tokens por meta), guardia por tarea (la aprobación queda en la tarea), pausa/continuar, cancelar es definitivo, y al arrancar el servidor las metas abiertas se reanudan
+- Vista **Equipo** (pestaña EQUIPO, `?vista=equipo`): metas, árbol de tareas en vivo, panel de la tarea con resultado y comentarios, pausar / continuar / cancelar / aprobar, y comentar. En el chat, `/equipo <pedido>` lanza una meta
+- Trabajadores agy: `POST /run` acepta `env` (solo las tres variables `ORQ_*`) y `sessionId`
+- Verificado en vivo (servidor de prueba :3111, proyecto `C:\estudio\f11-demo`; la app de :3110 no se tocó): meta de la landing de un café ficticio. El Jefe delegó REDACTOR + IMAGEN en paralelo, despertó, delegó DEV y luego QA (5 turnos); corrieron a la vez en cuentas distintas; un comentario tuyo desde la vista despertó al Jefe con los acentos bien; meta `completed` en unos 7 min con 167 970 de 600 000 tokens, archivos `landing.html`, imagen y texto creados, nota en Cerebro; `GET /api/plans` no la lista y `run-all` da 409; log del servidor sin errores
+- No se vio en vivo (solo pruebas): pausa/continuar, cancelar, guardia, `@consulta`, que DEV/QA usen la API, y si agy2–agy4 ya corren el `worker.mjs` nuevo
+
+Siguiente: **F15 (barra lateral)**.
+
+Pendientes (tuyos):
+- Reiniciar las 3 tareas programadas de los trabajadores agy (`schtasks /End` + `/Run`, como administrador) para que tomen el `worker.mjs` nuevo; listo cuando `/health` de cada uno responde `version: "2"`. Sin eso, los agentes en agy2–agy4 no tienen `ORQ_*` (no delegan, no comentan, no retoman sesión) aunque sí trabajan
+- Aprobar el merge de `f14-equipo` a `main`; después del merge, `npm run build:ui` y reiniciar la app de escritorio
+- Probar a mano pausa, cancelar, guardia y `@consulta` desde la vista Equipo
+- Menores diferidos (lista completa en `CLAUDE.md`): la columna de tokens por tarea solo muestra el último turno; falso aviso de "archivos fuera de su carpeta" cuando otro agente escribe a la vez; DEV no va a Codex en modo equipo; la Oficina muestra al Jefe como "claude" y el `PlanView` abierto desde ahí sobre una meta solo muestra datos (sus botones dan 409); un único error de consola del navegador ("An unknown error occurred when fetching the script") sin relación aparente con la vista, no investigado; flakes de tiempos que rotan bajo carga (`agy-worker-client`, `process-runner-kill`, `plan-runner-roles`)
+
 ## F13 — Escenario propio (mapas de Esmeralda) · completada 2026-10-15
 
 **Rama:** `f13-escenario-gen3` (encima de `main`), merge solo cuando Alejandro lo diga. Detalle técnico en `CLAUDE.md`, sección "Custom scenery (F13)".

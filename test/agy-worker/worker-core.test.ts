@@ -70,6 +70,7 @@ describe("args de agy", () => {
       );
     }
     expect(buildAgyArgs(undefined, undefined, {})).toEqual(srcBuildAgyArgs(undefined, undefined, {}));
+    expect(buildAgyArgs("m", "conv-1", { readOnly: false })).toEqual(srcBuildAgyArgs("m", "conv-1", { readOnly: false }));
     expect(buildAgyArgs("m", undefined, { readOnly: true })).not.toContain("--dangerously-skip-permissions");
   });
   it("stdin idéntico a buildAgyStdin", () => {
@@ -95,6 +96,23 @@ describe("parseRunBody", () => {
     expect(parseRunBody({ prompt: "h", cwd: "c", timeoutSec: 1801 })).toBeNull();
     expect(parseRunBody({ prompt: "h", cwd: "c", readOnly: "no" })).toBeNull();
     expect(parseRunBody(null)).toBeNull();
+  });
+
+  it("parseRunBody acepta env ORQ_* y sessionId; rechaza otras claves o valores largos", () => {
+    const base = { prompt: "p", cwd: "C:/estudio/x" };
+    expect(parseRunBody({ ...base, env: { ORQ_API: "a", ORQ_TAREA: "b", ORQ_TOKEN: "c" }, sessionId: "s1" }))
+      .toMatchObject({ env: { ORQ_API: "a", ORQ_TAREA: "b", ORQ_TOKEN: "c" }, sessionId: "s1" });
+    expect(parseRunBody(base)).not.toHaveProperty("env");
+    expect(parseRunBody({ ...base, env: { PATH: "x" } })).toBeNull();
+    expect(parseRunBody({ ...base, env: { ORQ_TOKEN: "x".repeat(201) } })).toBeNull();
+    expect(parseRunBody({ ...base, env: [] })).toBeNull();
+    expect(parseRunBody({ ...base, sessionId: "" })).toBeNull();
+    expect(parseRunBody({ ...base, sessionId: 5 })).toBeNull();
+    expect(parseRunBody({ ...base, sessionId: "a b" })).toBeNull();
+    expect(parseRunBody({ ...base, sessionId: "x".repeat(201) })).toBeNull();
+    expect(parseRunBody({ ...base, env: { ORQ_TOKEN: "a\0b" } })).toBeNull();
+    expect(parseRunBody({ ...base, env: { ORQ_TOKEN: "a\nb" } })).toBeNull();
+    expect(parseRunBody({ ...base, env: { ORQ_TOKEN: "x".repeat(200) } })).not.toBeNull();
   });
 });
 

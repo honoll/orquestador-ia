@@ -51,6 +51,8 @@ export interface AgyExclude {
   accounts?: ReadonlySet<string>;
   /** Solo la cuenta local (proyecto fuera de la raíz de los trabajadores). */
   localOnly?: boolean;
+  /** Solo esta cuenta (F14: retomar la sesión de una tarea en la cuenta de su turno anterior). */
+  only?: string;
 }
 
 /** worker.mjs solo acepta cwd dentro de su raíz fija (C:\estudio; AGY_WORKER_ROOT solo para tests). */
@@ -246,7 +248,7 @@ export async function agyAvailability(now: number = Date.now(), ex: AgyExclude =
  * tokens en 5 h), dentro de ella la usada hace más tiempo. null si no hay ninguna libre.
  */
 export async function pickWorker(now: number = Date.now(), ex: AgyExclude = {}): Promise<AgyLease | null> {
-  const cands = (await candidates(now)).filter((c) => usable(c, now, ex));
+  const cands = (await candidates(now)).filter((c) => usable(c, now, ex) && (!ex.only || c.view.id === ex.only));
   // Sin await desde aquí hasta reservar: dos pasos concurrentes nunca toman la misma cuenta.
   const pick = cands
     .filter((c) => !reserved.has(c.view.id) && !skipForNow(c, now))

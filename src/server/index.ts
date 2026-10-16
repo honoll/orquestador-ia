@@ -25,6 +25,9 @@ import jevRoute from "./routes/jev.js";
 import memoryRoute from "./routes/memory.js";
 import officeRoute from "./routes/office.js";
 import rolesRoute from "./routes/roles.js";
+import { createEquipoRoute } from "./routes/equipo.js";
+import { createEquipoAgenteRoute } from "./routes/equipo-agente.js";
+import { kickTeam, resumeTeamsOnBoot } from "./equipo/team-scheduler.js";
 import { createSpritesRoute, createOfficeSpritesRoute } from "./routes/sprites.js";
 import { createOfficeEscenarioRoute, createEscenarioFilesRoute } from "./routes/escenario.js";
 import { startOfficeEventTracker } from "./office-state.js";
@@ -58,6 +61,9 @@ app.route("/api/projects", projectsRoute);
 app.route("/api/tasks", tasksRoute);
 app.route("/api/runs", runsRoute);
 app.route("/api/plans", plansRoute);
+// F14: equipo multiagente. Metas (humano, desde la UI) y API del agente (token de turno).
+app.route("/api/equipo/metas", createEquipoRoute());
+app.route("/api/equipo", createEquipoAgenteRoute(kickTeam));
 app.route("/api/claude-profiles", claudeProfilesRoute);
 app.route("/api/shell", shellRoute);
 app.route("/api/github", githubRoute);
@@ -76,6 +82,9 @@ app.route("/api/roles", rolesRoute);
 app.route("/api/voice/assistant", voiceAssistantRoute);
 app.route("/api/voice", voiceRoute);
 app.route("/api/system", createSystemRoute({ shutdown }));
+
+// Metas de equipo que corrían cuando se apagó el servidor: sus turnos vuelven a la cola.
+void resumeTeamsOnBoot().catch((err) => log.error({ err }, "No se pudieron reanudar las metas de equipo"));
 
 app.get(
   "/ws",

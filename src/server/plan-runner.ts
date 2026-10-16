@@ -34,12 +34,16 @@ export interface StepRunOptions {
   cwd: string;
   /** Reemplaza el prompt guardado del paso (p. ej. con contexto de pasos previos) */
   promptOverride?: string;
+  /** F14: prompt completo para un intento que termina sin sesión (promptOverride es solo el delta de un turno retomado). */
+  promptFull?: string;
   /** Kill handle set externally to allow cancellation */
   onKillRegistered?: (kill: () => void) => void;
   /** agy: cuenta ya reservada por el planificador para el primer intento (se libera siempre al terminar). */
   agyLease?: AgyLease;
   /** Reintentos ya gastados en un lanzamiento anterior que terminó requeued. */
   startAttempt?: number;
+  /** F14 (modo equipo): variables extra para el proceso del agente (ORQ_API, ORQ_TAREA, ORQ_TOKEN). */
+  extraEnv?: Record<string, string>;
 }
 
 /** No quedó cuenta de agy para el paso: cancelado, sin cuentas, todas las bolsas sin cuota (pausa) o trabajadores caídos. */
@@ -83,6 +87,7 @@ async function runPlanStepInner(options: StepRunOptions): Promise<StepOutcome> {
   if (stepRows.length === 0) throw new Error(`Step ${stepId} not found`);
   const step = stepRows[0];
   let prompt = options.promptOverride ?? step.prompt;
+  let promptFull = options.promptFull;
   const planLog = (stream: "stdout" | "stderr", data: string) =>
     broadcast({ type: "plan:log", planId, stepId, stream, data, timestamp: new Date().toISOString() } as any);
 
@@ -93,7 +98,9 @@ async function runPlanStepInner(options: StepRunOptions): Promise<StepOutcome> {
     try {
       if (ensureGitignore(cwd)) planLog("stdout", "\n[orquestador] se agregó .orquestador/ al .gitignore del proyecto\n");
       const outDir = ensureOutputsDir(cwd, planId);
-      prompt += `\n\nCARPETA DE SALIDAS de este plan: ${outDir}\nGuarda TODO lo que generes únicamente aquí; no escribas ni modifiques nada fuera de esa carpeta.`;
+      const salidas = `\n\nCARPETA DE SALIDAS de este plan: ${outDir}\nGuarda TODO lo que generes únicamente aquí; no escribas ni modifiques nada fuera de esa carpeta.`;
+      prompt += salidas;
+      if (promptFull !== undefined) promptFull += salidas;
       gitBefore = await gitSnapshot(cwd);
     } catch (err) {
       log.error({ err, stepId }, "No se pudo preparar la carpeta de salidas");
@@ -122,6 +129,8 @@ async function runPlanStepInner(options: StepRunOptions): Promise<StepOutcome> {
   const localOnly = isAgy && !cwdAllowsWorkers(cwd);
 
   let sessionId = step.sessionId ?? undefined;
+  // F14: cuenta dueña de la sesión guardada (antes de que este run escriba la cuenta de sus intentos).
+  const sessionAccount = step.accountId;
   let lastError: string | null = null;
   let tokensUsed = 0;
   // For Claude steps: track which profile we're using across retries (only if API keys configured)
@@ -157,11 +166,17 @@ async function runPlanStepInner(options: StepRunOptions): Promise<StepOutcome> {
 
     // Create a task + run record for traceability
     const taskId = randomUUID();
+    // La sesión solo se retoma en la cuenta que la creó (otra cuenta = otro perfil de Windows).
+    const attemptSession = lease && sessionId && !(lease.accountId === sessionAccount || (sessionAccount == null && !lease.worker)) ? undefined : sessionId;
+    // Sin sesión el agente no tiene el contexto anterior: recibe el prompt completo, no el delta.
+    const attemptPrompt = !attemptSession && promptFull !== undefined ? promptFull : prompt;
     try {
+      // F14: cuenta del intento; si la sesión guardada no es de esa cuenta se descarta para no desparejar cuenta y sesión.
+      if (lease) await db.update(schema.planSteps).set({ accountId: lease.accountId, ...(attemptSession === sessionId ? {} : { sessionId: null }) }).where(eq(schema.planSteps.id, stepId));
       await db.insert(schema.tasks).values({
         id: taskId,
         title: step.description.slice(0, 80),
-        prompt,
+        prompt: attemptPrompt,
         adapter: step.adapter,
         model: step.model ?? null,
         status: "running",
@@ -172,7 +187,7 @@ async function runPlanStepInner(options: StepRunOptions): Promise<StepOutcome> {
         adapter: step.adapter,
         model: step.model ?? null,
         status: "running",
-        prompt,
+        prompt: attemptPrompt,
         cwd,
       });
       // Liga el paso a su run desde el arranque: la Oficina excluye estos runs del "chat suelto".
@@ -188,12 +203,13 @@ async function runPlanStepInner(options: StepRunOptions): Promise<StepOutcome> {
       const callStartedAt = Date.now();
       const result = await adapter.execute({
         runId,
-        prompt,
+        prompt: attemptPrompt,
         model: step.model ?? undefined,
         cwd,
-        sessionId,
+        sessionId: attemptSession,
         timeoutSec: 1800,
         readOnly: step.readOnly === 1,
+        env: options.extraEnv,
         claudeProfileEnv,
         agyWorker: lease?.worker ? { port: lease.worker.port, keyPath: lease.worker.keyPath } : undefined,
         onLog: (stream, chunk) => {
@@ -308,7 +324,7 @@ async function runPlanStepInner(options: StepRunOptions): Promise<StepOutcome> {
       lastError = result.errorMessage ?? `Exit code ${result.exitCode}`;
 
       // Unknown session: retry without --resume
-      if (isUnknownSession && sessionId) {
+      if (isUnknownSession && attemptSession) {
         log.warn({ stepId, attempt }, "Unknown session, retrying without --resume");
         sessionId = undefined;
         attempt--;
