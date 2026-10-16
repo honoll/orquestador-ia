@@ -27,6 +27,7 @@ import officeRoute from "./routes/office.js";
 import rolesRoute from "./routes/roles.js";
 import { createEquipoRoute } from "./routes/equipo.js";
 import { createEquipoAgenteRoute } from "./routes/equipo-agente.js";
+import { createBandejasRoute } from "./routes/bandejas.js";
 import { kickTeam, resumeTeamsOnBoot } from "./equipo/team-scheduler.js";
 import { createSpritesRoute, createOfficeSpritesRoute } from "./routes/sprites.js";
 import { createOfficeEscenarioRoute, createEscenarioFilesRoute } from "./routes/escenario.js";
@@ -63,6 +64,7 @@ app.route("/api/runs", runsRoute);
 app.route("/api/plans", plansRoute);
 // F14: equipo multiagente. Metas (humano, desde la UI) y API del agente (token de turno).
 app.route("/api/equipo/metas", createEquipoRoute());
+app.route("/api/equipo/bandejas", createBandejasRoute());
 app.route("/api/equipo", createEquipoAgenteRoute(kickTeam));
 app.route("/api/claude-profiles", claudeProfilesRoute);
 app.route("/api/shell", shellRoute);
