@@ -91,6 +91,8 @@ describe("scheduler del equipo", () => {
     expect(await db.select().from(schema.teamRunTokens).where(eq(schema.teamRunTokens.planId, planId))).toEqual([]);
     const wk = await db.select().from(schema.teamWakeups).where(eq(schema.teamWakeups.planId, planId));
     expect(wk.filter((w) => w.status === "en_cola" || w.status === "tomado")).toEqual([]);
+    await sched.cancelTeam(planId); // una meta cerrada no se reescribe
+    expect((await plan(planId)).status).toBe("completed");
   });
 
   it("presupuesto agotado pausa la meta; continuar sube el tope y la termina", async () => {
@@ -146,6 +148,18 @@ describe("scheduler del equipo", () => {
     } finally { for (const l of leases) l.release(); }
     expect((await plan(planId)).status).toBe("completed");
     expect(h.jefeTurns).toBe(1);
+  });
+
+  it("runTeam sobre un plan de pasos 'running' sale y no se vuelve a arrancar solo", async () => {
+    const id = randomUUID();
+    await db.insert(schema.plans).values({ id, description: "plan de pasos", status: "running" });
+    await sched.runTeam(id);
+    for (let i = 0; i < 10; i++) {
+      expect(sched.isTeamRunning(id)).toBe(false);
+      await new Promise((r) => setTimeout(r, 5));
+    }
+    await expect(sched.humanComment(id, "x", "hola")).rejects.toMatchObject({ status: 404 });
+    expect((await plan(id)).status).toBe("running");
   });
 
   it("cancelar con un turno en curso lo mata, deja la tarea cancelada y la meta cancelada", async () => {

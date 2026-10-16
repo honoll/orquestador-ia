@@ -16,7 +16,7 @@ import {
   cancelPlanWakeups, claimWakeup, enqueueWakeup, finishWakeup, hasQueued, hasQueuedFor, parsePayload, requeueWakeup, type WakeupRow,
 } from "./wakeups.js";
 import {
-  addComment, ancestorsOf, authorLabel, childSummary, childrenOf, commentsByIds, commentsFor, createGoal, getStep, onTaskTerminal,
+  addComment, ancestorsOf, TeamError, authorLabel, childSummary, childrenOf, commentsByIds, commentsFor, createGoal, getStep, onTaskTerminal,
   parseIds, roleCatalog, type StepRow,
 } from "./tasks.js";
 import { buildTurnPrompt, JEFE_BODY, JEFE_NOMBRE, loadEquipoGuide } from "./prompts.js";
@@ -44,6 +44,10 @@ const GOAL_DONE = ["completed", "failed", "cancelled"] as const;
 async function setPlanOpen(id: string, patch: Partial<typeof P.$inferInsert>): Promise<boolean> {
   const r = await db.update(P).set({ ...patch, updatedAt: now() }).where(and(eq(P.id, id), notInArray(P.status, [...GOAL_DONE]))).returning({ id: P.id });
   return r.length > 0;
+}
+/** Pasos aún abiertos (pending/running) de la meta → cancelled. */
+async function cancelOpenSteps(planId: string): Promise<void> {
+  await db.update(S).set({ status: "cancelled", finishedAt: now() }).where(and(eq(S.planId, planId), inArray(S.status, ["pending", "running"])));
 }
 const killAll = (run: TeamRun) => { for (const k of run.kills) { try { k(); } catch { /* ya terminó */ } } };
 async function setStep(id: string, patch: Partial<typeof S.$inferInsert>) {
@@ -84,9 +88,10 @@ async function failGoal(run: TeamRun, planId: string, err: unknown): Promise<voi
   killAll(run);
   ring(run);
   try {
+    if (!(await setPlanOpen(planId, { status: "failed", pauseReason: null, errorMessage: String((err as Error)?.message ?? err).slice(0, 2000) }))) return;
     await cancelPlanWakeups(planId);
     await revokePlanTokens(planId);
-    if (!(await setPlanOpen(planId, { status: "failed", pauseReason: null, errorMessage: String((err as Error)?.message ?? err).slice(0, 2000) }))) return;
+    await cancelOpenSteps(planId);
   } catch { return; /* sin base */ }
   emit({ type: "team:goal", planId, status: "failed" });
 }
@@ -110,12 +115,14 @@ export async function continueTeam(planId: string): Promise<void> {
 }
 
 export async function cancelTeam(planId: string): Promise<void> {
+  const [p] = await db.select({ status: P.status }).from(P).where(eq(P.id, planId));
+  if (!p || (GOAL_DONE as readonly string[]).includes(p.status)) return; // una meta cerrada no se reescribe
   const run = active.get(planId);
   if (run) { run.cancelled = true; killAll(run); ring(run); }
   await cancelPlanWakeups(planId);
   await revokePlanTokens(planId);
-  await db.update(S).set({ status: "cancelled", finishedAt: now() }).where(and(eq(S.planId, planId), inArray(S.status, ["pending", "running"])));
-  await setPlan(planId, { status: "cancelled", pauseReason: null });
+  await cancelOpenSteps(planId);
+  if (!(await setPlanOpen(planId, { status: "cancelled", pauseReason: null }))) return;
   emit({ type: "team:goal", planId, status: "cancelled" });
 }
 
@@ -134,6 +141,8 @@ export async function startGoal(input: { pedido: unknown; projectId?: string | n
 }
 
 export async function humanComment(planId: string, stepId: string, texto: unknown): Promise<{ id: string }> {
+  const [meta] = await db.select({ mode: P.mode }).from(P).where(eq(P.id, planId));
+  if (meta?.mode !== "equipo") throw new TeamError(404, "La meta no existe");
   const r = await addComment(planId, stepId, HUMANO, texto);
   const p = await getPlan(planId);
   if (!p.pauseReason && !["completed", "failed", "cancelled"].includes(p.status)) kickTeam(planId);
@@ -313,7 +322,7 @@ async function closeGoal(run: TeamRun, planId: string, root: StepRow): Promise<v
   killAll(run); // turnos de hijas aún en curso: su afterTurn las deja canceladas
   await cancelPlanWakeups(planId);
   await revokePlanTokens(planId);
-  await db.update(S).set({ status: "cancelled", finishedAt: now() }).where(and(eq(S.planId, planId), inArray(S.status, ["pending", "running"])));
+  await cancelOpenSteps(planId);
   if (root.status === "succeeded") {
     if (!(await setPlanOpen(planId, { status: "completed", pauseReason: null, synthesis: root.result, synthesisStatus: "succeeded" }))) return;
     emit({ type: "team:goal", planId, status: "completed" });
@@ -348,6 +357,7 @@ export async function runTeam(planId: string): Promise<void> {
   const run: TeamRun = { cancelled: false, stopped: false, kills: new Set(), bell: null };
   active.set(planId, run);
   const inFlight = new Map<string, Promise<void>>();
+  let ran = false; // el bucle llegó a correr: solo entonces el finally puede rearrancarlo
   try {
     const p0 = await getPlan(planId);
     if (p0.mode !== "equipo" || p0.pauseReason || ["completed", "failed", "cancelled"].includes(p0.status)) return;
@@ -355,6 +365,7 @@ export async function runTeam(planId: string): Promise<void> {
     const localOnly = !cwdAllowsWorkers(cwd);
     // Una cancelación durante planCwd gana: no se reabre la meta.
     if (run.cancelled || !(await setPlanOpen(planId, { status: "running" }))) return;
+    ran = true;
     emit({ type: "team:goal", planId, status: "running" });
 
     for (;;) {
@@ -392,11 +403,11 @@ export async function runTeam(planId: string): Promise<void> {
     try {
       // A5: salir cancelado deja la meta cancelada aunque un turno o una pausa hayan escrito después.
       if (run.cancelled) await setPlan(planId, { status: "cancelled", pauseReason: null });
-      else if (!run.stopped) {
+      else if (ran && !run.stopped) {
         // Llegó un despertar o un "continuar" mientras el bucle drenaba sus turnos: se vuelve a arrancar
         // (sin trabajo, el bucle nuevo deja la meta en pending).
         const p = await getPlan(planId);
-        if (!p.pauseReason && (p.status === "running" || (p.status === "pending" && await hasQueued(planId)))) kickTeam(planId);
+        if (p.mode === "equipo" && !p.pauseReason && (p.status === "running" || (p.status === "pending" && await hasQueued(planId)))) kickTeam(planId);
       }
     } catch { /* meta borrada */ }
   }
