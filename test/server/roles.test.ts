@@ -21,6 +21,14 @@ describe("parseRole", () => {
     expect(r.body).not.toContain("---");
   });
 
+  it("adaptadores: por defecto [agy]; lista válida con modeloCodex; adaptador desconocido → error", () => {
+    expect(parseRole(roleMd(FM), "prueba").adaptadores).toEqual(["agy"]);
+    const r = parseRole(roleMd(`${FM}\nadaptadores: [agy, codex]\nmodeloCodex: gpt-5.6-sol`), "prueba");
+    expect(r).toMatchObject({ adaptadores: ["agy", "codex"], modeloCodex: "gpt-5.6-sol" });
+    expect(() => parseRole(roleMd(`${FM}\nadaptadores: [agy, gemini]`), "prueba")).toThrow(/adaptadores/);
+    expect(() => parseRole(roleMd(`${FM}\nadaptadores: agy`), "prueba")).toThrow(/adaptadores/);
+  });
+
   it("escribe acepta true y salidas", () => {
     expect(parseRole(roleMd(FM.replace("escribe: false", "escribe: true")), "prueba").escribe).toBe(true);
     expect(parseRole(roleMd(FM.replace("escribe: false", "escribe: salidas")), "prueba").escribe).toBe("salidas");

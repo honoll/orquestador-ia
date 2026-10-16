@@ -9,9 +9,14 @@ export const ROLES_DIR = path.resolve(import.meta.dirname, "../../roles");
 export const ROLE_SECTIONS = ["Identidad", "Qué haces", "Qué no haces", "Cómo entregas", "Terminado cuando", "Estado final"];
 const ID_RE = /^[a-z0-9][a-z0-9-]*$/;
 
+/** Adaptadores que un rol puede usar (el primero es el de siempre; `modelo` es para agy). */
+export const ROLE_ADAPTERS = ["agy", "codex"] as const;
+export type RoleAdapter = (typeof ROLE_ADAPTERS)[number];
+
 export interface RoleDef {
   id: string; nombre: string; modelo: string; modeloDificil?: string; escribe: boolean | "salidas";
   herramientas: string[]; presupuestoTokens?: number; body: string /* markdown sin frontmatter */
+  adaptadores: RoleAdapter[]; modeloCodex?: string;
 }
 
 /** Valida frontmatter + las 6 secciones en orden; lanza un Error que nombra lo que falla. */
@@ -30,6 +35,10 @@ export function parseRole(markdown: string, fileId: string): RoleDef {
   if (!["true", "false", "salidas"].includes(esc)) throw new Error(`rol "${fileId}": "escribe" debe ser true, false o salidas`);
   const herramientas = data.herramientasPermitidas;
   if (!Array.isArray(herramientas)) throw new Error(`rol "${fileId}": "herramientasPermitidas" debe ser una lista [a, b]`);
+  const ad = data.adaptadores ?? ["agy"];
+  if (!Array.isArray(ad) || !ad.length || !ad.every((a) => (ROLE_ADAPTERS as readonly string[]).includes(a))) {
+    throw new Error(`rol "${fileId}": "adaptadores" debe ser una lista con ${ROLE_ADAPTERS.join(" y/o ")} (p. ej. [agy, codex])`);
+  }
   const pres = str("presupuestoTokens", false);
   if (pres !== undefined && !/^[1-9]\d*$/.test(pres)) throw new Error(`rol "${fileId}": "presupuestoTokens" debe ser un entero positivo`);
 
@@ -45,6 +54,7 @@ export function parseRole(markdown: string, fileId: string): RoleDef {
     id, nombre: str("nombre")!, modelo: str("modelo")!, modeloDificil: str("modeloDificil", false),
     escribe: esc === "salidas" ? "salidas" : esc === "true", herramientas,
     presupuestoTokens: pres === undefined ? undefined : Number(pres), body: body.trimStart(),
+    adaptadores: ad as RoleAdapter[], modeloCodex: str("modeloCodex", false),
   };
 }
 

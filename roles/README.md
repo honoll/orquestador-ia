@@ -25,6 +25,7 @@ presupuestoTokens: 50000
 
 - `id`: igual al nombre del archivo (`dev` → `dev.md`); minúsculas, números y guiones.
 - `modelo`: modelo de agy por defecto. `modeloDificil` (opcional): el que se usa si el Jefe marca el paso como difícil.
+- `adaptadores` (opcional, default `[agy]`): con qué CLIs puede correr el rol, `agy` y/o `codex`. Si incluye `codex`, `PLANNER_ADAPTERS` lo permite y el Jefe elige codex para ese paso, corre en Codex con `modeloCodex` (default del catálogo de codex); si no, va a agy con `modelo`. Hoy solo DEV lo usa.
 - `escribe`: `true`, `false` (solo lectura) o `salidas` (solo escribe en la carpeta de salidas del plan).
   Ojo: con `false` agy corre sin permisos y **niega todo `run_command`** (probado 2026-10-15, también con `--mode auto`);
   un rol que deba correr pruebas o builds (QA) necesita `true` y la regla "no edites" va en su texto.

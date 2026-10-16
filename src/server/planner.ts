@@ -87,11 +87,17 @@ function roleSummary(r: RoleDef): string {
 function rolesSection(): string {
   const roles = loadRoles();
   if (!roles.length) return "";
-  const list = roles.map((r) => `- ${r.id} (${r.nombre}): ${roleSummary(r)} Writes: ${WRITES_LABEL[String(r.escribe) as keyof typeof WRITES_LABEL]}.`).join("\n");
+  const allowed = plannerAdapters() as string[];
+  const usable = (r: RoleDef) => r.adaptadores.filter((a) => allowed.includes(a));
+  const list = roles.map((r) => {
+    const ads = usable(r);
+    return `- ${r.id} (${r.nombre}): ${roleSummary(r)} Writes: ${WRITES_LABEL[String(r.escribe) as keyof typeof WRITES_LABEL]}.${ads.length > 1 ? ` Adapters: ${ads.join(", ")}.` : ""}`;
+  }).join("\n");
+  const multi = roles.some((r) => usable(r).length > 1);
   return `Agent roles (assign one to EVERY step with "role"; the role decides the model and whether the step may write, and the agent receives the role's own instructions, so the step prompt only describes the specific task):
 ${list}
 - Set "dificil": true only for dev steps that are truly hard (architecture, multi-file refactors, tricky bugs).
-
+${multi ? `- For a role that lists "Adapters", set "adapter" to the one that fits: "agy" by default (spreads work over several accounts in parallel); "codex" for direct, self-contained implementation in a few files, or to keep agy quota free. Otherwise "adapter" is ignored for role steps.\n` : ""}
 `;
 }
 
@@ -211,9 +217,13 @@ export function normalizeSteps(raw: unknown[]): PlanStep[] {
     }
     if (role) {
       const allowed = plannerAdapters();
-      adapter = allowed.includes("agy") ? "agy" : allowed.includes("claude") ? "claude" : allowed[0];
       writes = role.escribe !== false;
-      rawModel = s.dificil === true && role.modeloDificil ? role.modeloDificil : role.modelo;
+      if (adapter === "codex" && role.adaptadores.includes("codex") && allowed.includes("codex")) {
+        rawModel = role.modeloCodex ?? ""; // vacío o fuera de catálogo → default de codex
+      } else {
+        adapter = allowed.includes("agy") ? "agy" : allowed.includes("claude") ? "claude" : allowed[0];
+        rawModel = s.dificil === true && role.modeloDificil ? role.modeloDificil : role.modelo;
+      }
     } else if (!(plannerAdapters() as string[]).includes(adapter)) {
       const allowed = plannerAdapters();
       const to = allowed.includes("agy") ? "agy" : allowed[0];

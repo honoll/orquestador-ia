@@ -16,6 +16,30 @@ describe("routingSystem: catálogo de roles (F11)", () => {
   });
 });
 
+describe("DEV puede ir a codex (rol con adaptadores: [agy, codex])", () => {
+  it("con codex permitido, un paso dev que el Jefe manda a codex se queda en codex con modeloCodex", () => {
+    vi.stubEnv("PLANNER_ADAPTERS", "claude,agy,codex");
+    const [d, a, q] = normalizeSteps([
+      { adapter: "codex", model: "gpt-5.5", role: "dev" },
+      { adapter: "agy", role: "dev" },
+      { adapter: "codex", role: "qa" },
+    ]);
+    expect(d).toMatchObject({ adapter: "codex", model: "gpt-5.6-sol", writes: true, role: "dev" });
+    expect(a).toMatchObject({ adapter: "agy", model: "claude-sonnet-4-6", role: "dev" });
+    expect(q).toMatchObject({ adapter: "agy", role: "qa" }); // qa no lista codex
+  });
+  it("sin codex en PLANNER_ADAPTERS, dev vuelve a agy", () => {
+    vi.stubEnv("PLANNER_ADAPTERS", "claude,agy");
+    expect(normalizeSteps([{ adapter: "codex", role: "dev" }])[0]).toMatchObject({ adapter: "agy", model: "claude-sonnet-4-6" });
+  });
+  it("el catálogo de roles le dice al Jefe que dev puede ir a codex solo si codex está permitido", () => {
+    vi.stubEnv("PLANNER_ADAPTERS", "claude,agy,codex");
+    expect(routingSystem()).toMatch(/- dev \(DEV\): .+ Adapters: agy, codex\./);
+    vi.stubEnv("PLANNER_ADAPTERS", "claude,agy");
+    expect(routingSystem()).not.toMatch(/Adapters: agy, codex/);
+  });
+});
+
 describe("normalizeSteps con roles (F11)", () => {
   it("modelo y writes salen del rol; el adapter se fuerza a agy", () => {
     const [l, d, dh, q, img] = normalizeSteps([
