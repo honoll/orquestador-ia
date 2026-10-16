@@ -13,7 +13,7 @@
 - Verificado en vivo (servidor de prueba :3111, la app de :3110 no se tocó): los 6 pisos cargan, el piso 1 se ve como Devon 1F, el jugador rodea el mostrador, el menú del elevador lista los 6 pisos y las teclas 2, 3, 6 y 5 llevaron a esos pisos, los fijos están en su lugar, los agy en reposo deambulan en el Centro Pokémon, consola sin avisos `escenario:`, y con una carpeta vacía vuelve F12. 1031 tests
 - No se vio: agy2 caminando de descanso a la zona lector (el paso duró segundos), reduced motion, el mundo a ×1, el piso 4 (laboratorio) y elegir piso con clic en el menú
 
-Siguiente: integrar a `main` cuando lo apruebes; para verlo en la app de escritorio hay que reiniciarla después del merge.
+Siguiente: integrar a `main` cuando lo apruebes; para verlo en la app de escritorio, después del merge hay que correr `npm run build:ui` y reiniciarla.
 
 Pendientes (tuyos):
 - Probar el mundo a mano (caminar por los 6 pisos, elevador, cuadro de texto)

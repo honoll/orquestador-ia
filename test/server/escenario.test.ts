@@ -100,6 +100,14 @@ describe("readEscenario", () => {
     fs.writeFileSync(path.join(dir, "escenario.json"), "{roto");
     expect(readEscenario(dir).warnings).toEqual(["escenario.json: no es JSON"]);
   });
+
+  it("acepta JSON con BOM al inicio (editores de Windows)", () => {
+    fs.writeFileSync(path.join(dir, "escenario.json"), "\uFEFF" + JSON.stringify(ESCENARIO));
+    fs.writeFileSync(path.join(dir, "prueba.json"), "\uFEFF" + JSON.stringify(MAPA));
+    const r = readEscenario(dir);
+    expect(r.warnings).toEqual([]);
+    expect(r.pisos).toHaveLength(1);
+  });
 });
 
 describe("rutas del escenario", () => {

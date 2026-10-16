@@ -105,7 +105,7 @@ export function validateEscenario(raw: unknown, readMap: (file: string) => unkno
 function readJson(dir: string, name: string, max: number): unknown {
   const real = resolveSpriteFile(name, dir, JSON_FILE) ?? fail(`${name}: no existe o está fuera de la carpeta`);
   if (fs.statSync(real).size > max) fail(`${name}: pesa más de ${max / 1024} KB`);
-  try { return JSON.parse(fs.readFileSync(real, "utf8")); } catch { return fail(`${name}: no es JSON`); }
+  try { return JSON.parse(fs.readFileSync(real, "utf8").replace(/^\uFEFF/, "")); } catch { return fail(`${name}: no es JSON`); }
 }
 
 export function readEscenario(dir = escenarioDir()): Escenario {

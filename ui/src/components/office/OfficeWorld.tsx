@@ -169,15 +169,17 @@ function World({ state, onNear, onAdvance, children, atlas }: Props & { atlas: M
         { m: p.m, working: false, kind: "jugador" as const, spec: resolveSkin(w.skins, { player: true, criatura: "jugador" }) },
       ].map((o) => ({ ...o, pos: reduced ? [o.m.tile[0], o.m.tile[1]] : moverPos(o.m) }))
         .sort((a, b) => a.pos[1] - b.pos[1]);
+      const bubbles: [number, number][] = [];
       for (const o of people) {
         const px = Math.round(o.pos[0] * 16), py = Math.round(o.pos[1] * 16);
         const img = o.spec ? w.imgs.get(skinSrc(o.spec)) : undefined;
         let top = py - 4;
         if (o.spec && img) top = drawSkin(ctx, img, o.spec, o.m.dir, o.m.step, px, py);
         else drawCreature(ctx, creatureFrame(o.kind, o.m.dir, o.m.step, o.working), px, py);
-        if (o.working) drawBubble(ctx, px, top);
+        if (o.working) bubbles.push([px, top]);
       }
       drawUpper(ctx, map, atlasOf(map));
+      for (const [bx, by] of bubbles) drawBubble(ctx, bx, by);
     };
 
     let raf = 0, last = 0, acc = 0;
