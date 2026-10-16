@@ -29,7 +29,8 @@ interface SlashCommand {
 
 const SLASH_COMMANDS: SlashCommand[] = [
   { name: "/plan",   args: "<descripción>", description: "Genera un plan de ejecución multi-agente", icon: "◈" },
-  { name: "/run",    args: "<comando>",     description: "Ejecuta un comando de terminal",            icon: "⬡" },
+  { name: "/equipo", args: "<pedido>", description: "Lanza una meta al equipo multiagente", icon: "◆" },
+  { name: "/run",   args: "<comando>",     description: "Ejecuta un comando de terminal",            icon: "⬡" },
   { name: "/clone",  args: "<url>",         description: "Clona un repositorio de GitHub",            icon: "⬇" },
   { name: "/nuevo",                         description: "Inicia una conversación nueva",             icon: "○" },
   { name: "/clear",                         description: "Limpia el historial visual",                icon: "◻" },
@@ -95,7 +96,7 @@ export function Chat() {
   const {
     selectedAdapter, selectedModel, setAdapter, setModel,
     selectedProjectId, conversationId, setConversation, newChat,
-    activePlanId, setActivePlanId,
+    activePlanId, setActivePlanId, setView,
   } = useAppState();
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<Message[]>([]);
@@ -407,6 +408,21 @@ export function Chat() {
     return buildFileContext(files);
   }
 
+  // /equipo: meta para el equipo multiagente (F14); se sigue en la vista Equipo.
+  async function handleEquipoCommand(pedido: string) {
+    setInput("");
+    try {
+      const r = await fetch("/api/equipo/metas", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pedido, projectId: selectedProjectId || undefined }),
+      });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? `Error ${r.status}`);
+      setView("equipo");
+    } catch (err: any) {
+      setMessages((prev) => [...prev, { role: "user", content: `/equipo ${pedido}` }, { role: "assistant", content: `Error lanzando la meta: ${err.message}`, status: "failed" }]);
+    }
+  }
+
   function processPrompt(prompt: string) {
     if (!prompt || sendMutation.isPending || activeRunId) return;
 
@@ -450,6 +466,12 @@ export function Chat() {
           ]);
         }
       })();
+      return;
+    }
+
+    const equipoMatch = prompt.match(/^\/equipo\s+(.+)/si);
+    if (equipoMatch) {
+      handleEquipoCommand(equipoMatch[1].trim());
       return;
     }
 
