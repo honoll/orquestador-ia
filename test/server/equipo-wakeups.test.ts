@@ -68,6 +68,35 @@ describe("despertares", () => {
     expect(await w.hasQueued(planId)).toBe(false);
   });
 
+  it("cinco encolados simultáneos de la misma tarea dejan un solo despertar", async () => {
+    const { planId, step } = await plan();
+    const s = await step();
+    const ids = await Promise.all([1, 2, 3, 4, 5].map((i) => w.enqueueWakeup(planId, s, "comentario", { commentIds: [`c${i}`] })));
+    expect(new Set(ids).size).toBe(1);
+    const rows = await db.select().from(schema.teamWakeups).where(eq(schema.teamWakeups.stepId, s));
+    expect(rows.filter((r) => r.status === "en_cola")).toHaveLength(1);
+    expect(w.parsePayload(rows[0].payload).commentIds.sort()).toEqual(["c1", "c2", "c3", "c4", "c5"]);
+  });
+
+  it("dos claim simultáneos sobre un despertar: uno lo toma y el otro recibe null", async () => {
+    const { planId, step } = await plan();
+    await w.enqueueWakeup(planId, await step(), "asignada");
+    const got = await Promise.all([w.claimWakeup(planId), w.claimWakeup(planId)]);
+    expect(got.filter((g) => g !== null)).toHaveLength(1);
+    expect(got.filter((g) => g === null)).toHaveLength(1);
+  });
+
+  it("requeue después de cancelPlanWakeups no revive el despertar", async () => {
+    const { planId, step } = await plan();
+    await w.enqueueWakeup(planId, await step(), "asignada");
+    const t = (await w.claimWakeup(planId))!;
+    await w.cancelPlanWakeups(planId);
+    await w.requeueWakeup(t.id);
+    const [row] = await db.select().from(schema.teamWakeups).where(eq(schema.teamWakeups.id, t.id));
+    expect(row.status).toBe("cancelado");
+    expect(await w.hasQueued(planId)).toBe(false);
+  });
+
   it("parsePayload tolera basura", () => {
     expect(w.parsePayload("no json")).toEqual({ reasons: [], commentIds: [], childIds: [] });
     expect(w.parsePayload(null)).toEqual({ reasons: [], commentIds: [], childIds: [] });

@@ -68,27 +68,29 @@ export function claimWakeup(planId: string, skip: ReadonlySet<string> = new Set(
   });
 }
 
-export async function finishWakeup(id: string, status: "hecho" | "cancelado"): Promise<void> {
-  await db.update(W).set({ status }).where(eq(W.id, id));
+export function finishWakeup(id: string, status: "hecho" | "cancelado"): Promise<void> {
+  return serial(async () => { await db.update(W).set({ status }).where(eq(W.id, id)); });
 }
 
 /** El turno no pudo arrancar (sin cuenta, cuota, guardia): el despertar vuelve a la cola, o se funde con uno nuevo. */
 export function requeueWakeup(id: string): Promise<void> {
   return serial(async () => {
     const [w] = await db.select().from(W).where(eq(W.id, id));
-    if (!w) return;
+    if (!w || w.status !== "tomado") return; // ya lo cerraron (cancelado/hecho): no se revive
     const [other] = await db.select().from(W).where(and(eq(W.stepId, w.stepId), eq(W.status, "en_cola")));
     if (other && other.id !== w.id) {
       await db.update(W).set({ payload: JSON.stringify(mergePayload(parsePayload(other.payload), parsePayload(w.payload))) }).where(eq(W.id, other.id));
       await db.update(W).set({ status: "hecho" }).where(eq(W.id, w.id));
       return;
     }
-    await db.update(W).set({ status: "en_cola", takenAt: null }).where(eq(W.id, id));
+    await db.update(W).set({ status: "en_cola", takenAt: null }).where(and(eq(W.id, id), eq(W.status, "tomado")));
   });
 }
 
-export async function cancelPlanWakeups(planId: string): Promise<void> {
-  await db.update(W).set({ status: "cancelado" }).where(and(eq(W.planId, planId), inArray(W.status, ["en_cola", "tomado"])));
+export function cancelPlanWakeups(planId: string): Promise<void> {
+  return serial(async () => {
+    await db.update(W).set({ status: "cancelado" }).where(and(eq(W.planId, planId), inArray(W.status, ["en_cola", "tomado"])));
+  });
 }
 
 export async function hasQueued(planId: string): Promise<boolean> {
