@@ -1,7 +1,7 @@
 ---
 id: redactor
 nombre: REDACTOR
-modelo: gemini-3.8-flash-medium
+modelo: claude-sonnet-4-6
 escribe: true
 herramientasPermitidas: [view_file, list_dir, grep_search, find_by_name, write_to_file, replace_file_content, multi_replace_file_content]
 ---
