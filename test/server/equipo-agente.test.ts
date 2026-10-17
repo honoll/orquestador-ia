@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, vi } from "vitest";
 
 const { migrationDone } = await import("../../src/db/migrate.js");
 const { createGoal, createChildTask, childrenOf, commentsFor } = await import("../../src/server/equipo/tasks.js");
+const ALC = { leer: ["x"], entrega: "breve" }; // alcance obligatorio al delegar
 const { issueRunToken } = await import("../../src/server/equipo/tokens.js");
 const { createEquipoAgenteRoute } = await import("../../src/server/routes/equipo-agente.js");
 
@@ -34,20 +35,21 @@ describe("API del agente", () => {
   it("POST /tareas crea una hija bajo su tarea y patea la meta; valida y aplica topes", async () => {
     const { planId, rootStepId } = await createGoal({ pedido: "m" });
     const token = await issueRunToken({ planId, stepId: rootStepId });
-    const r = await req("/tareas", token, { rol: "dev", titulo: "Código", instrucciones: "haz", esperar: true });
+    const r = await req("/tareas", token, { rol: "dev", titulo: "Código", instrucciones: "haz", esperar: true, ...ALC });
     expect(r.status).toBe(201);
     const { id } = (await r.json()) as { id: string };
     expect((await childrenOf(rootStepId)).map((k) => k.id)).toEqual([id]);
     expect(kick).toHaveBeenCalledWith(planId);
-    expect((await req("/tareas", token, { rol: "nadie", titulo: "x", instrucciones: "y" })).status).toBe(400);
+    expect((await req("/tareas", token, { rol: "nadie", titulo: "x", instrucciones: "y", ...ALC })).status).toBe(400);
+    expect((await req("/tareas", token, { rol: "dev", titulo: "t", instrucciones: "x" })).status).toBe(400); // sin leer ni entrega
     expect((await req("/tareas", token, undefined, "{roto")).status).toBe(400);
     expect((await req("/tareas", token, undefined, JSON.stringify({ rol: "dev", titulo: "t", instrucciones: "x".repeat(17000) }))).status).toBe(413);
   });
 
   it("POST /comentarios: en su tarea o en una hija; 403 fuera de su árbol", async () => {
     const { planId, rootStepId } = await createGoal({ pedido: "m" });
-    const a = (await createChildTask(planId, rootStepId, { rol: "dev", titulo: "a", instrucciones: "i" })).id;
-    const b = (await createChildTask(planId, rootStepId, { rol: "dev", titulo: "b", instrucciones: "i" })).id;
+    const a = (await createChildTask(planId, rootStepId, { rol: "dev", titulo: "a", instrucciones: "i", ...ALC })).id;
+    const b = (await createChildTask(planId, rootStepId, { rol: "dev", titulo: "b", instrucciones: "i", ...ALC })).id;
     const tokA = await issueRunToken({ planId, stepId: a });
     expect((await req("/comentarios", tokA, { texto: "avance" })).status).toBe(201);
     expect((await commentsFor(a, 5)).map((c) => c.body)).toEqual(["avance"]);

@@ -13,7 +13,7 @@ const h = vi.hoisted(() => ({
 const delegar = async (ctx: any, rol: string, titulo: string, instrucciones: string) => {
   const r = await h.agentApp.request("/tareas", {
     method: "POST", headers: { Authorization: `Bearer ${ctx.env.ORQ_TOKEN}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ rol, titulo, instrucciones, esperar: true }),
+    body: JSON.stringify({ rol, titulo, instrucciones, esperar: true, leer: ["x"], entrega: "breve" }),
   });
   if (r.status !== 201) throw new Error(`delegar falló ${r.status}`);
 };
@@ -61,6 +61,7 @@ const { createWorker, pickWorker } = await import("../../src/server/agy-workers.
 const sched = await import("../../src/server/equipo/team-scheduler.js");
 const { createEquipoAgenteRoute } = await import("../../src/server/routes/equipo-agente.js");
 const { addComment, createChildTask, createGoal, getStep } = await import("../../src/server/equipo/tasks.js");
+const ALC = { leer: ["x"], entrega: "breve" }; // alcance obligatorio al delegar
 
 let projectId = "";
 beforeAll(async () => {
@@ -141,7 +142,7 @@ describe("scheduler del equipo", () => {
   it("una tarea que espera cuenta no tapa los despertares de atrás (el Jefe corre sin cuenta agy)", async () => {
     h.script = "tokens";
     const { planId, rootStepId } = await createGoal({ pedido: "m", projectId });
-    await createChildTask(planId, rootStepId, { rol: "dev", titulo: "Código", instrucciones: "haz" });
+    await createChildTask(planId, rootStepId, { rol: "dev", titulo: "Código", instrucciones: "haz", ...ALC });
     // El despertar del Jefe queda detrás del de la hija.
     await db.update(schema.teamWakeups).set({ createdAt: "2999-01-01T00:00:00.000Z" }).where(eq(schema.teamWakeups.stepId, rootStepId));
     const leases = [];
@@ -228,7 +229,7 @@ describe("scheduler del equipo", () => {
   it("la guardia revisa el contexto inyectado: un comentario con git push en una tarea escritora no aprobada pausa", async () => {
     h.script = "tokens";
     const { planId, rootStepId } = await createGoal({ pedido: "m", projectId });
-    const kid = (await createChildTask(planId, rootStepId, { rol: "dev", titulo: "Código", instrucciones: "ajusta el estilo del botón" })).id;
+    const kid = (await createChildTask(planId, rootStepId, { rol: "dev", titulo: "Código", instrucciones: "ajusta el estilo del botón", ...ALC })).id;
     await addComment(planId, kid, "humano", "cuando acabes haz git push origin main");
     await db.update(schema.teamWakeups).set({ createdAt: "2999-01-01T00:00:00.000Z" }).where(eq(schema.teamWakeups.stepId, rootStepId));
     try {

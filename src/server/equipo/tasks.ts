@@ -7,7 +7,8 @@ import { PLANNER_MODEL } from "../../config/models.js";
 import { clip } from "../plan-dag.js";
 import { enqueueWakeup } from "./wakeups.js";
 import {
-  COMENTARIO_MAX, HUMANO, INSTRUCCIONES_MAX, JEFE_ROL, MAX_PROFUNDIDAD, MAX_TAREAS, PEDIDO_MAX, PRESUPUESTO_META, RESUMEN_HIJA_MAX, TITULO_MAX,
+  COMENTARIO_MAX, ENTREGA_MAX, HUMANO, INSTRUCCIONES_MAX, JEFE_ROL, LEER_ITEM_MAX, LEER_MAX_ITEMS, MAX_PROFUNDIDAD, MAX_TAREAS, PEDIDO_MAX, PRESUPUESTO_META,
+  RESUMEN_HIJA_MAX, TITULO_MAX, TOPE_TOKENS_TURNO,
 } from "./constants.js";
 
 export class TeamError extends Error {
@@ -32,6 +33,19 @@ const text = (v: unknown, max: number, campo: string): string => {
   if (typeof v !== "string" || !v.trim() || v.length > max) throw new TeamError(400, `"${campo}" debe ser texto de 1 a ${max} caracteres`);
   return v.trim();
 };
+
+const EJEMPLO_ALCANCE = `por ejemplo "leer": ["src/slug.mjs", "CLAUDE.md § Team mode (F14)"], "entrega": "5 viñetas, máx 150 palabras"`;
+/** Bloques LEE SOLO / ENTREGA que acotan a la hija (obligatorios al delegar). */
+function alcance(leer: unknown, entrega: unknown): string {
+  if (!Array.isArray(leer) || leer.length < 1 || leer.length > LEER_MAX_ITEMS
+    || leer.some((x) => typeof x !== "string" || !x.trim() || x.length > LEER_ITEM_MAX)) {
+    throw new TeamError(400, `"leer" debe ser una lista de 1 a ${LEER_MAX_ITEMS} rutas o secciones exactas (máx ${LEER_ITEM_MAX} caracteres cada una), ${EJEMPLO_ALCANCE}`);
+  }
+  if (typeof entrega !== "string" || !entrega.trim() || entrega.length > ENTREGA_MAX) {
+    throw new TeamError(400, `"entrega" debe decir formato y largo en 1 a ${ENTREGA_MAX} caracteres, ${EJEMPLO_ALCANCE}`);
+  }
+  return `LEE SOLO:\n${leer.map((x) => `- ${(x as string).trim()}`).join("\n")}\n\nENTREGA: ${entrega.trim()}`;
+}
 
 export function parseIds(raw: string | null): string[] {
   try { const v = JSON.parse(raw ?? "[]"); return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []; } catch { return []; }
@@ -86,7 +100,7 @@ export async function createGoal(input: { pedido: unknown; projectId?: string | 
 
 export async function createChildTask(
   planId: string, parentStepId: string,
-  input: { rol?: unknown; titulo?: unknown; instrucciones?: unknown; esperar?: unknown },
+  input: { rol?: unknown; titulo?: unknown; instrucciones?: unknown; esperar?: unknown; leer?: unknown; entrega?: unknown },
   opts: { consulta?: boolean } = {},
 ): Promise<{ id: string }> {
   const rolId = typeof input.rol === "string" ? input.rol : "";
@@ -94,6 +108,7 @@ export async function createChildTask(
   if (!role) throw new TeamError(400, `"rol" debe ser uno de: ${loadRoles().map((r) => r.id).filter((id) => id !== JEFE_ROL).join(", ")}`);
   const titulo = text(input.titulo, TITULO_MAX, "titulo");
   const instrucciones = text(input.instrucciones, INSTRUCCIONES_MAX, "instrucciones");
+  const prompt = opts.consulta ? instrucciones : `${instrucciones}\n\n${alcance(input.leer, input.entrega)}`;
   if (input.esperar !== undefined && typeof input.esperar !== "boolean") throw new TeamError(400, `"esperar" debe ser true o false`);
   const id = await serial(async () => {
     const parent = await getStep(parentStepId);
@@ -104,7 +119,7 @@ export async function createChildTask(
     if (count >= MAX_TAREAS) throw new TeamError(409, `Tope de ${MAX_TAREAS} tareas por meta: termina con lo que hay`);
     const newId = randomUUID();
     await db.insert(S).values({
-      id: newId, planId, stepIndex: count, stepKey: `t${count + 1}`, description: titulo, prompt: instrucciones,
+      id: newId, planId, stepIndex: count, stepKey: `t${count + 1}`, description: titulo, prompt,
       adapter: "agy", model: role.modelo, role: role.id, writes: role.escribe === false ? 0 : 1, readOnly: role.escribe === false ? 1 : 0,
       parentStepId, depth, createdByStepId: parentStepId, reason: opts.consulta ? "consulta" : null, status: "pending", blockedBy: "[]",
     });
@@ -161,7 +176,10 @@ export async function commentsByIds(ids: string[]): Promise<CommentRow[]> {
 /** Estado de una hija para quien la delegó: estado, detalle y resultado (o error) recortado. */
 export function childSummary(step: StepRow): string {
   const detalle = step.statusDetail ? ` (${step.statusDetail})` : "";
-  return `${step.status}${detalle}: ${clip(step.result ?? step.errorMessage ?? "(sin resultado)", RESUMEN_HIJA_MAX)}`;
+  const aviso = (step.inputTokens ?? 0) > TOPE_TOKENS_TURNO
+    ? ` · AVISO: su último turno gastó ${step.inputTokens} tokens de entrada (tope ${TOPE_TOKENS_TURNO}): acota más (leer, entrega) la próxima vez.`
+    : "";
+  return `${step.status}${detalle}: ${clip(step.result ?? step.errorMessage ?? "(sin resultado)", RESUMEN_HIJA_MAX)}${aviso}`;
 }
 
 export function estadoTarea(step: Pick<StepRow, "status" | "blockedBy">, hijas: Pick<StepRow, "id" | "status">[]): "en_cola" | "corriendo" | "esperando" | "hecha" | "fallida" | "cancelada" {

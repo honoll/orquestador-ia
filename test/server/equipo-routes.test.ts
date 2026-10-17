@@ -10,6 +10,7 @@ const { migrationDone } = await import("../../src/db/migrate.js");
 const { db, schema } = await import("../../src/db/index.js");
 const { eq } = await import("drizzle-orm");
 const { createGoal, createChildTask, addComment } = await import("../../src/server/equipo/tasks.js");
+const ALC = { leer: ["x"], entrega: "breve" }; // alcance obligatorio al delegar
 const { createEquipoRoute } = await import("../../src/server/routes/equipo.js");
 const plansRoute = (await import("../../src/server/routes/plans.js")).default;
 
@@ -38,7 +39,7 @@ describe("API humana del equipo", () => {
 
   it("GET /:id arma meta, árbol con estados y comentarios; GET / lista solo metas", async () => {
     const { planId, rootStepId } = await createGoal({ pedido: "La meta" });
-    const a = (await createChildTask(planId, rootStepId, { rol: "dev", titulo: "Código", instrucciones: "haz", esperar: true })).id;
+    const a = (await createChildTask(planId, rootStepId, { rol: "dev", titulo: "Código", instrucciones: "haz", esperar: true, ...ALC })).id;
     await addComment(planId, a, "humano", "ojo");
     const r = await app.request(`/${planId}`);
     expect(r.status).toBe(200);

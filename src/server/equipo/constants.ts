@@ -9,6 +9,11 @@ export const COMENTARIO_MAX = 4000;
 export const TITULO_MAX = 120;
 export const INSTRUCCIONES_MAX = 8000;
 export const PEDIDO_MAX = 4000;
+export const LEER_MAX_ITEMS = 10;
+export const LEER_ITEM_MAX = 200;
+export const ENTREGA_MAX = 300;
+/** Tokens de entrada de un turno a partir de los cuales el resumen de la hija avisa al Jefe. */
+export const TOPE_TOKENS_TURNO = 60_000;
 export const CUERPO_MAX = 16 * 1024;
 export const ESPERA_CUENTA_MS = 5 * 60 * 1000; // cuánto se espera la cuenta del turno anterior para retomar su sesión
 export const COMENTARIOS_EN_PROMPT = 20;

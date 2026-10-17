@@ -5,6 +5,7 @@ const { migrationDone } = await import("../../src/db/migrate.js");
 const { db, schema } = await import("../../src/db/index.js");
 const { eq } = await import("drizzle-orm");
 const { createGoal, createChildTask } = await import("../../src/server/equipo/tasks.js");
+const ALC = { leer: ["x"], entrega: "breve" }; // alcance obligatorio al delegar
 const { createAccount } = await import("../../src/server/agy-accounts.js");
 const { loadRoles } = await import("../../src/server/roles.js");
 const { buildBandejas, MAX_POR_GRUPO } = await import("../../src/server/equipo/bandejas.js");
@@ -28,9 +29,9 @@ describe("bandejas por rol", () => {
   it("agrupa trabajo activo de metas y planes por rol, en el orden de la barra", async () => {
     const acc = await createAccount("Cuenta B");
     const { planId: meta, rootStepId } = await createGoal({ pedido: "Meta X" });
-    const dev = (await createChildTask(meta, rootStepId, { rol: "dev", titulo: "Código", instrucciones: "i", esperar: true })).id;
+    const dev = (await createChildTask(meta, rootStepId, { rol: "dev", titulo: "Código", instrucciones: "i", esperar: true, ...ALC })).id;
     await db.update(S).set({ status: "running", accountId: acc.id, startedAt: "2026-10-16T10:00:00.000Z" }).where(eq(S.id, dev));
-    await createChildTask(meta, rootStepId, { rol: "redactor", titulo: "Textos", instrucciones: "i" });
+    await createChildTask(meta, rootStepId, { rol: "redactor", titulo: "Textos", instrucciones: "i", ...ALC });
     const plan = await pasos("running", null, "Plan P");
     await paso(plan, { role: "qa", status: "running", accountId: acc.id, description: "Probar", startedAt: "2026-10-16T10:05:00.000Z" });
     await paso(plan, { role: null, adapter: "claude", description: "Viejo sin rol" });
@@ -58,7 +59,7 @@ describe("bandejas por rol", () => {
   it("tope de 20 por grupo con el total completo", async () => {
     // Base nueva por archivo, pero esta prueba corre después de la anterior: se mide solo el rol 'investigador'.
     const { planId, rootStepId } = await createGoal({ pedido: "Muchas" });
-    for (let i = 0; i < 25; i++) await createChildTask(planId, rootStepId, { rol: "investigador", titulo: `t${i}`, instrucciones: "i" });
+    for (let i = 0; i < 25; i++) await createChildTask(planId, rootStepId, { rol: "investigador", titulo: `t${i}`, instrucciones: "i", ...ALC });
     const inv = (await buildBandejas()).find((b) => b.rol === "investigador")!;
     expect(inv.enCola).toHaveLength(MAX_POR_GRUPO);
     expect(inv.total.enCola).toBe(25);
@@ -66,7 +67,7 @@ describe("bandejas por rol", () => {
 
   it("recorta la meta a 120 caracteres + elipsis", async () => {
     const { planId, rootStepId } = await createGoal({ pedido: "x".repeat(500) });
-    await createChildTask(planId, rootStepId, { rol: "redactor", titulo: "Larga", instrucciones: "i" });
+    await createChildTask(planId, rootStepId, { rol: "redactor", titulo: "Larga", instrucciones: "i", ...ALC });
     const t = (await buildBandejas()).flatMap((b) => b.enCola).find((x) => x.titulo === "Larga")!;
     expect(t.meta.length).toBeLessThanOrEqual(121);
     expect(t.meta.endsWith("…")).toBe(true);
