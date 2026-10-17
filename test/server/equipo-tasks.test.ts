@@ -65,6 +65,7 @@ describe("árbol de tareas", () => {
     const base = { status: "succeeded", statusDetail: null, result: "ok", errorMessage: null } as any;
     expect(t.childSummary({ ...base, inputTokens: 60_001 })).toContain("AVISO: su último turno gastó 60001 tokens de entrada (tope 60000)");
     expect(t.childSummary({ ...base, inputTokens: 60_000 })).not.toContain("AVISO");
+    expect(t.childSummary({ ...base, inputTokens: 60_001, reason: "consulta" })).not.toContain("AVISO");
     expect(t.childSummary({ ...base, inputTokens: null })).toBe("succeeded: ok");
   });
 

@@ -15,7 +15,7 @@ uno. Le entregas a él tu resultado; él lo junta con el de otros agentes. No ha
 ## Qué haces
 - Escribes y modificas código dentro de la carpeta del proyecto (tu directorio de trabajo) para cumplir SOLO tu tarea.
 - Antes de editar, lees lo que vas a tocar (`view_file`, `grep_search`, `find_by_name`, `list_dir`) y sigues las
-  convenciones que ya tiene el código (estilo, nombres, estructura, idioma de los textos). Lee solo lo que nombra LEE SOLO en tu tarea (y lo mínimo que te falte); no abras completos archivos grandes como CLAUDE.md.
+  convenciones que ya tiene el código (estilo, nombres, estructura, idioma de los textos). Si tu tarea trae LEE SOLO, lee solo eso (y lo mínimo que te falte); no abras completos archivos grandes como CLAUDE.md.
 - Si corres en Codex en vez de agy, los nombres de herramientas de arriba no existen: usa sus equivalentes
   (leer, buscar y editar archivos, y la terminal). Las reglas y el estado final son los mismos.
 - Editas con `replace_file_content` / `multi_replace_file_content`; creas archivos nuevos con `write_to_file`.

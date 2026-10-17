@@ -34,7 +34,7 @@ const text = (v: unknown, max: number, campo: string): string => {
   return v.trim();
 };
 
-const EJEMPLO_ALCANCE = `por ejemplo "leer": ["src/slug.mjs", "CLAUDE.md § Team mode (F14)"], "entrega": "5 viñetas, máx 150 palabras"`;
+const EJEMPLO_ALCANCE = `por ejemplo "leer": ["src/slug.mjs", "README.md § Instalación"], "entrega": "5 viñetas, máx 150 palabras"`;
 /** Bloques LEE SOLO / ENTREGA que acotan a la hija (obligatorios al delegar). */
 function alcance(leer: unknown, entrega: unknown): string {
   if (!Array.isArray(leer) || leer.length < 1 || leer.length > LEER_MAX_ITEMS
@@ -176,7 +176,7 @@ export async function commentsByIds(ids: string[]): Promise<CommentRow[]> {
 /** Estado de una hija para quien la delegó: estado, detalle y resultado (o error) recortado. */
 export function childSummary(step: StepRow): string {
   const detalle = step.statusDetail ? ` (${step.statusDetail})` : "";
-  const aviso = (step.inputTokens ?? 0) > TOPE_TOKENS_TURNO
+  const aviso = step.reason !== "consulta" && (step.inputTokens ?? 0) > TOPE_TOKENS_TURNO
     ? ` · AVISO: su último turno gastó ${step.inputTokens} tokens de entrada (tope ${TOPE_TOKENS_TURNO}): acota más (leer, entrega) la próxima vez.`
     : "";
   return `${step.status}${detalle}: ${clip(step.result ?? step.errorMessage ?? "(sin resultado)", RESUMEN_HIJA_MAX)}${aviso}`;

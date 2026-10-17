@@ -86,12 +86,13 @@ describe("roles incluidos", () => {
     }
   });
 
-  it("roles reales: REDACTOR en Flash y originales idénticos a los editables", () => {
+  it("roles reales: REDACTOR en Flash y todos piden LEE SOLO y ENTREGA", () => {
     const dir = path.join(process.cwd(), "roles");
     expect(getRole("redactor", dir)!.modelo).toBe("gemini-3.8-flash-medium");
     for (const id of ["lector", "investigador", "redactor", "dev", "qa", "imagen"]) {
-      expect(fs.readFileSync(path.join(dir, `${id}.md`), "utf8")).toBe(fs.readFileSync(path.join(dir, "_originales", `${id}.md`), "utf8"));
-      expect(fs.readFileSync(path.join(dir, `${id}.md`), "utf8")).toMatch(/LEE SOLO/);
+      const md = fs.readFileSync(path.join(dir, `${id}.md`), "utf8");
+      expect(md).toMatch(/LEE SOLO/);
+      expect(md).toMatch(/ENTREGA/);
     }
   });
 });

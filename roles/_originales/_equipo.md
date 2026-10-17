@@ -16,9 +16,9 @@ o con comillas usa una here-string (`@'…'@`) en vez de escribirlas en línea.
 `esperar: true` si necesitas su resultado antes de terminar: al acabar tu turno quedarás dormido y despertarás
 con los resúmenes de tus hijas. Instrucciones completas y concretas: la otra persona no ve tu conversación.
 La respuesta trae el `id` de la tarea nueva.
-Toda tarea lleva `leer` (lista de 1 a 10 rutas o secciones exactas que la otra agente debe leer, p. ej.
-`["src/slug.mjs", "CLAUDE.md § Team mode (F14)"]`) y `entrega` (formato y largo, p. ej. `"5 viñetas, máx 150
-palabras"`). Sin ellos la API responde 400. Una tarea = una pregunta o un entregable.
+Toda tarea lleva `leer` (lista de 1 a 10 rutas o secciones exactas que el otro agente debe leer, p. ej.
+`["src/slug.mjs", "README.md § Instalación"]`) y `entrega` (formato y largo, p. ej. `"5 viñetas, máx 150
+palabras"`). Sin ellos la API responde 400. Si no necesita leer nada (p. ej. IMAGEN generando una imagen, un archivo nuevo desde cero), usa `"leer": ["(nada)"]`. Una tarea = una pregunta o un entregable.
 - Bash (el cuerpo va por heredoc para conservar acentos y apóstrofos):
 ```bash
 curl -s -X POST "$ORQ_API/api/equipo/tareas" -H "Authorization: Bearer $ORQ_TOKEN" -H "Content-Type: application/json; charset=utf-8" --data-binary @- <<'EOF'
