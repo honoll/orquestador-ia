@@ -193,7 +193,7 @@ async function promptFor(pedido: string, step: StepRow, w: WakeupRow, resume: bo
   const prompt = buildTurnPrompt({
     pedido, tarea: { titulo: step.description, instrucciones: step.prompt }, roleBlock: role, escribe: role.escribe,
     catalogo: step.role === JEFE_ROL ? roleCatalog() : undefined, ancestros, hijas, comentarios,
-    motivos: payload.reasons, resume,
+    motivos: payload.reasons, resume, alcance: step.role !== JEFE_ROL,
   }, loadEquipoGuide());
   return { prompt, deps: [...hijas.map((h) => h.resumen), ...comentarios.map((c) => c.texto)] };
 }

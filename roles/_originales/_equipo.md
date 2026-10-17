@@ -16,13 +16,16 @@ o con comillas usa una here-string (`@'…'@`) en vez de escribirlas en línea.
 `esperar: true` si necesitas su resultado antes de terminar: al acabar tu turno quedarás dormido y despertarás
 con los resúmenes de tus hijas. Instrucciones completas y concretas: la otra persona no ve tu conversación.
 La respuesta trae el `id` de la tarea nueva.
+Toda tarea lleva `leer` (lista de 1 a 10 rutas o secciones exactas que la otra agente debe leer, p. ej.
+`["src/slug.mjs", "CLAUDE.md § Team mode (F14)"]`) y `entrega` (formato y largo, p. ej. `"5 viñetas, máx 150
+palabras"`). Sin ellos la API responde 400. Una tarea = una pregunta o un entregable.
 - Bash (el cuerpo va por heredoc para conservar acentos y apóstrofos):
 ```bash
 curl -s -X POST "$ORQ_API/api/equipo/tareas" -H "Authorization: Bearer $ORQ_TOKEN" -H "Content-Type: application/json; charset=utf-8" --data-binary @- <<'EOF'
-{"rol":"qa","titulo":"Probar el formulario","instrucciones":"…","esperar":true}
+{"rol":"qa","titulo":"Probar el formulario","instrucciones":"…","leer":["src/form.ts"],"entrega":"PASA/FALLA y máx 5 viñetas","esperar":true}
 EOF
 ```
-- PowerShell: `Invoke-RestMethod -Method Post "$env:ORQ_API/api/equipo/tareas" -Headers @{ Authorization = "Bearer $env:ORQ_TOKEN" } -ContentType "application/json; charset=utf-8" -Body (@{ rol = "qa"; titulo = "Probar el formulario"; instrucciones = "…"; esperar = $true } | ConvertTo-Json) | ConvertTo-Json -Depth 8`
+- PowerShell: `Invoke-RestMethod -Method Post "$env:ORQ_API/api/equipo/tareas" -Headers @{ Authorization = "Bearer $env:ORQ_TOKEN" } -ContentType "application/json; charset=utf-8" -Body (@{ rol = "qa"; titulo = "Probar el formulario"; instrucciones = "…"; leer = @("src/form.ts"); entrega = "PASA/FALLA y máx 5 viñetas"; esperar = $true } | ConvertTo-Json) | ConvertTo-Json -Depth 8`
 
 ## Comentar (en tu tarea o en una hija)
 Un comentario en una hija la despierta. `@rol` dentro del texto (por ejemplo `@qa`) le hace una consulta a ese rol.
@@ -40,4 +43,5 @@ EOF
 - Si la API responde 409 (tope de tareas o de profundidad), no reintentes: resuélvelo tú o explícalo en tu entrega.
 - Si responde 401 o 403, no insistas: entrega lo que tengas.
 - Máximo 2 reintentos por llamada que falle por red.
+- Lee solo lo que dice LEE SOLO en tu tarea; no recorras el proyecto ni abras completos archivos grandes.
 - Tu entrega es tu respuesta final, cerrada con tu línea de estado (`<<<ESTADO …>>>`).

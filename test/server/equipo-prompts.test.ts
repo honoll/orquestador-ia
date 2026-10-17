@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { buildTurnPrompt, loadEquipoGuide, GUIA_SOLO_LECTURA, JEFE_BODY, type TurnInput } from "../../src/server/equipo/prompts.js";
+import { buildTurnPrompt, loadEquipoGuide, GUIA_SOLO_LECTURA, JEFE_BODY, REGLA_ALCANCE, type TurnInput } from "../../src/server/equipo/prompts.js";
 
 const base: TurnInput = {
   pedido: "Haz una landing",
@@ -33,6 +33,22 @@ describe("prompts del equipo", () => {
     expect(buildTurnPrompt({ ...base, escribe: false }, "GUIA-X", "n")).toContain(GUIA_SOLO_LECTURA);
     expect(buildTurnPrompt({ ...base, escribe: false }, "GUIA-X", "n")).not.toContain("GUIA-X");
     expect(buildTurnPrompt({ ...base, catalogo: "- dev: DEV" }, "G", "n")).toContain("ROLES A LOS QUE PUEDES DELEGAR:\n- dev: DEV");
+  });
+
+  it("regla de alcance: en turno completo de hija (escriba o solo lectura), no en el Jefe ni al retomar", () => {
+    expect(buildTurnPrompt({ ...base, alcance: true }, "G", "n")).toContain(REGLA_ALCANCE);
+    expect(buildTurnPrompt({ ...base, alcance: true, escribe: false }, "G", "n")).toContain(REGLA_ALCANCE);
+    expect(buildTurnPrompt(base, "G", "n")).not.toContain(REGLA_ALCANCE);
+    expect(buildTurnPrompt({ ...base, alcance: true, resume: true }, "G", "n")).not.toContain(REGLA_ALCANCE);
+  });
+
+  it("el Jefe y las guías piden leer y entrega", () => {
+    expect(JEFE_BODY).toContain('"leer"');
+    expect(JEFE_BODY).toContain('"entrega"');
+    expect(JEFE_BODY).toContain("CLAUDE.md");
+    const guia = fs.readFileSync(path.join(process.cwd(), "roles", "_equipo.md"), "utf8");
+    expect(guia).toContain('"leer"');
+    expect(guia).toBe(fs.readFileSync(path.join(process.cwd(), "roles", "_originales", "_equipo.md"), "utf8"));
   });
 
   it("delta: sin rol ni guía; motivos legibles, hijas y comentarios nuevos", () => {

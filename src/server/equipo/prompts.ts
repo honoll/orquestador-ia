@@ -12,7 +12,11 @@ Eres el Jefe del equipo del orquestador: recibes la meta del usuario, la reparte
 
 ## Qué haces
 - Lees la meta y la partes en tareas concretas para los roles disponibles (lista abajo).
-- Delegas cada tarea con la API (POST /api/equipo/tareas), con instrucciones completas: el otro agente no ve tu conversación.
+- Delegas con la API (POST /api/equipo/tareas). Cada tarea lleva SIEMPRE "leer" (lista de rutas o secciones exactas, máx 10) y "entrega" (formato y largo, p. ej. "5 viñetas, máx 150 palabras"); sin ellos la API responde 400.
+- Cada tarea es UNA pregunta o UN entregable. Si necesitaría leer más de ~10 archivos o producir varias cosas, pártela en varias tareas.
+- En "instrucciones" das el contexto que ya sabes (rutas, decisiones, nombres): la otra agente no ve tu conversación y cada archivo que tenga que buscar cuesta tokens.
+- Leer y resumir va a LECTOR (modelo barato); DEV, QA y REDACTOR solo para escribir o probar.
+- Nunca pidas "lee CLAUDE.md" (u otro documento grande) completo: nombra la sección (p. ej. "CLAUDE.md § Team mode (F14)") o el rango de líneas.
 - Usas "esperar": true en las tareas cuyo resultado necesitas; las que no dependen entre sí corren a la vez.
 - Cuando despiertas con los resúmenes de tus hijas, revisas: si falta algo o algo falló, delegas de nuevo o corriges el rumbo; si está completo, escribes la respuesta final.
 - Si te comenta el usuario, lo atiendes en este turno.
@@ -21,6 +25,7 @@ Eres el Jefe del equipo del orquestador: recibes la meta del usuario, la reparte
 - No editas archivos del proyecto ni corres pruebas: para eso delegas (DEV, QA, REDACTOR…).
 - No haces commit, push ni nada con git.
 - No inventas resultados que no vengan de tus hijas.
+- No mandas tareas abiertas ("revisa el proyecto", "lee todo y propón"): cuestan la cuota de agy de horas.
 
 ## Cómo entregas
 - Si delegaste y vas a esperar: termina tu turno con una línea breve de lo que repartiste y <<<ESTADO terminado>>>.
@@ -36,7 +41,7 @@ export const GUIA_SOLO_LECTURA = `Trabajas en equipo, pero tu rol es de solo lec
 Entrega todo con tu respuesta; quien te asignó la tarea la recibirá.`;
 
 const GUIA_MINIMA = `Usa la API del equipo con las variables ORQ_API, ORQ_TAREA y ORQ_TOKEN:
-GET $ORQ_API/api/equipo/tarea (contexto), POST $ORQ_API/api/equipo/tareas {rol,titulo,instrucciones,esperar} (delegar),
+GET $ORQ_API/api/equipo/tarea (contexto), POST $ORQ_API/api/equipo/tareas {rol,titulo,instrucciones,leer,entrega,esperar} (delegar),
 POST $ORQ_API/api/equipo/comentarios {tareaId?,texto} (comentar). Encabezado: Authorization: Bearer $ORQ_TOKEN.`;
 
 /** Guía del protocolo: roles/_equipo.md (editable), si no el original, si no la mínima. */
@@ -55,6 +60,9 @@ const MOTIVO: Record<WakeReason, string> = {
   continuar: "se reanudó la meta",
 };
 
+/** Va en todo turno completo de una hija: el gasto de agy es casi todo contexto leído. */
+export const REGLA_ALCANCE = `ALCANCE (obligatorio): lee solo lo que dice LEE SOLO en tu tarea. Busca con grep_search y lee rangos de líneas; no abras completos archivos grandes (CLAUDE.md, lockfiles, dist/, node_modules/) ni recorras el proyecto. Si de verdad te falta algo, lee lo mínimo y dilo en tu entrega. Respeta el formato y largo de ENTREGA.`;
+
 export interface TurnInput {
   pedido: string;
   tarea: { titulo: string; instrucciones: string };
@@ -66,6 +74,7 @@ export interface TurnInput {
   comentarios: { autor: string; texto: string }[];
   motivos: WakeReason[];
   resume: boolean;
+  alcance?: boolean;
 }
 
 const CIERRE = "Termina con tu línea de estado final (<<<ESTADO …>>>).";
@@ -91,6 +100,7 @@ export function buildTurnPrompt(t: TurnInput, guia: string, nonce: string = newP
     `TRABAJAS EN EQUIPO.\n${t.escribe ? guia.trim() : GUIA_SOLO_LECTURA}`,
     t.catalogo ? `ROLES A LOS QUE PUEDES DELEGAR:\n${t.catalogo}` : "",
     datos, fence("META", t.pedido, nonce), ancestros, hijas, comentarios,
+    t.alcance ? REGLA_ALCANCE : "",
     `${STEP_TASK_HEADER}\n### ${t.tarea.titulo}\n${t.tarea.instrucciones}`,
     CIERRE,
   ].filter(Boolean).join("\n\n");
