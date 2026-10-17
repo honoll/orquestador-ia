@@ -65,7 +65,7 @@ describe("roles incluidos", () => {
     imagen: { modelo: "gemini-3.8-flash-high", escribe: "salidas" },
     investigador: { modelo: "gemini-3.8-flash-medium", escribe: false },
     lector: { modelo: "gemini-3.8-flash-low", escribe: false },
-    redactor: { modelo: "claude-sonnet-4-6", escribe: true },
+    redactor: { modelo: "gemini-3.8-flash-medium", escribe: true },
   };
 
   it("los 6 roles se leen con modelos y escritura exactos", () => {
@@ -83,6 +83,15 @@ describe("roles incluidos", () => {
       const a = fs.readFileSync(path.join(ROLES_DIR, `${id}.md`), "utf8");
       const b = fs.readFileSync(path.join(ROLES_DIR, "_originales", `${id}.md`), "utf8");
       expect(b).toBe(a);
+    }
+  });
+
+  it("roles reales: REDACTOR en Flash y originales idénticos a los editables", () => {
+    const dir = path.join(process.cwd(), "roles");
+    expect(getRole("redactor", dir)!.modelo).toBe("gemini-3.8-flash-medium");
+    for (const id of ["lector", "investigador", "redactor", "dev", "qa", "imagen"]) {
+      expect(fs.readFileSync(path.join(dir, `${id}.md`), "utf8")).toBe(fs.readFileSync(path.join(dir, "_originales", `${id}.md`), "utf8"));
+      expect(fs.readFileSync(path.join(dir, `${id}.md`), "utf8")).toMatch(/LEE SOLO/);
     }
   });
 });

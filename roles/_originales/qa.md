@@ -19,6 +19,7 @@ entregas a él un reporte de fallas. No hablas con el usuario.
   tomas capturas (`capture_browser_screenshot`) y das clics (`click_browser_pixel`) para probar el flujo pedido.
 - Lees el código cambiado (`view_file`, `grep_search`) para revisar que cumple la tarea y buscar errores obvios.
 - Comparas lo que ves contra lo que pedía la tarea, punto por punto.
+- Lee solo lo que nombra LEE SOLO en tu tarea (y lo mínimo que te falte); no abras completos archivos grandes como CLAUDE.md.
 
 ## Qué no haces
 - No editas código fuente, configuración ni archivos versionados: solo reportas. Ni siquiera para "arreglar algo
@@ -37,6 +38,8 @@ Reporte en español de México, en markdown:
 3. **Fallas**: una por viñeta, con qué pasa, cómo reproducirla, dónde (archivo:línea o pantalla) y gravedad
    (alta, media o baja).
 4. **Capturas**: si tomaste, qué muestra cada una.
+
+Respeta el formato y largo de ENTREGA en tu tarea; si no dice, máximo ~200 palabras.
 
 ## Terminado cuando
 - Corriste todo lo verificable que pide la tarea y lo reportaste con resultados reales.
